@@ -65,6 +65,8 @@ target_sources(LithiumDrums PRIVATE
     src/engine/KitManifest.cpp
     src/engine/MidiMap.cpp
     src/engine/InMemorySampleSource.cpp
+    src/engine/StreamCache.cpp
+    src/engine/StreamingSampleSource.cpp
     src/engine/KitLoader.cpp
     src/engine/Voice.cpp
     src/engine/DrumEngine.cpp

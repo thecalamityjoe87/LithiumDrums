@@ -11,6 +11,8 @@ namespace
     constexpr float wordmarkTracking = 0.14f;
     constexpr float tabTracking = 0.1f;
     constexpr int readoutWidth = 78;
+    constexpr int numReadouts = 4;
+    constexpr double dropoutHighlightMs = 4000.0;   // how long the disk readout stays red after a dropout
     constexpr int iconSize = 30;
 
     juce::String formatBytes (std::size_t bytes)
@@ -225,7 +227,10 @@ void HeaderBar::refreshKitBox()
 
     if (processor.isKitLoading())
     {
-        kitBox.setText ("Loading " + currentName + "...", juce::dontSendNotification);
+        // Decoding a big kit into the stream cache takes a while the first
+        // time, so say so.
+        const auto caching = processor.getKitLoadPhase() == LoadPhase::caching;
+        kitBox.setText ((caching ? "Caching " : "Loading ") + currentName + "...", juce::dontSendNotification);
     }
     else if (processor.getKitError().isNotEmpty() && (info == nullptr || info->folder != current))
     {
@@ -283,20 +288,47 @@ void HeaderBar::timerCallback()
     const auto newVoices = processor.getFeedback().activeVoices.load (std::memory_order_relaxed);
     const auto newBytes = processor.getSampleMemoryUsage();
 
-    if (newCpu != cpuPercent || newVoices != voices || newBytes != sampleBytes)
-    {
-        cpuPercent = newCpu;
-        voices = newVoices;
-        sampleBytes = newBytes;
-        repaint (getReadoutArea());
-    }
+    // Disk throughput over the last tick, and whether a voice has had to
+    // play silence lately because the disk didn't keep up.
+    const auto& stats = processor.getStreamStats();
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+    const auto bytesRead = stats.bytesRead.load (std::memory_order_relaxed);
+    const auto dropouts = stats.dropouts.load (std::memory_order_relaxed);
 
-    const auto newProgress = processor.isKitLoading() ? processor.getKitLoadProgress() : -1.0f;
+    if (lastReadTime > 0.0 && now > lastReadTime)
+        diskBytesPerSecond = (double) (bytesRead - lastBytesRead) * 1000.0 / (now - lastReadTime);
+
+    if (dropouts != lastDropouts)
+        lastDropoutTime = now;
+
+    lastBytesRead = bytesRead;
+    lastDropouts = dropouts;
+    lastReadTime = now;
+
+    const auto info = processor.getKitInfo();
+    streaming = info != nullptr && info->streaming;
+    recentDropouts = now - lastDropoutTime < dropoutHighlightMs;
+
+    // Repainting four numbers is cheap; just do it every tick.
+    cpuPercent = newCpu;
+    voices = newVoices;
+    sampleBytes = newBytes;
+    repaint (getReadoutArea());
+
+    const auto loading = processor.isKitLoading();
+    const auto newProgress = loading ? processor.getKitLoadProgress() : -1.0f;
+    const auto newPhase = processor.getKitLoadPhase();
 
     if (std::abs (newProgress - loadProgress) > 0.001f)
     {
         loadProgress = newProgress;
         repaint (getProgressArea());
+    }
+
+    if (loading && newPhase != loadPhase)
+    {
+        loadPhase = newPhase;
+        refreshKitBox();     // "Caching..." rather than "Loading..."
     }
 }
 
@@ -310,7 +342,50 @@ float HeaderBar::getWordmarkRight() const
 
 juce::Rectangle<int> HeaderBar::getReadoutArea() const
 {
-    return getLocalBounds().withTrimmedRight (20 + 2 * iconSize + 8 + 16).removeFromRight (readoutWidth * 3);
+    return getLocalBounds().withTrimmedRight (20 + 2 * iconSize + 8 + 16).removeFromRight (readoutWidth * numReadouts);
+}
+
+juce::String HeaderBar::getTooltip()
+{
+    const auto area = getReadoutArea();
+    const auto mouse = getMouseXYRelative();
+
+    if (! area.contains (mouse))
+        return {};
+
+    const auto info = processor.getKitInfo();
+    const auto& stats = processor.getStreamStats();
+
+    switch ((mouse.x - area.getX()) / readoutWidth)
+    {
+        case 0:
+            return "Audio processing load";
+
+        case 1:
+            if (info != nullptr && info->streaming)
+                return "Sample data in RAM: " + formatBytes (sampleBytes) + ", of which "
+                       + formatBytes (info->streamBufferBytes) + " is stream buffers.\nThe rest of the kit streams from disk; "
+                       "fully in RAM it would take " + formatBytes (info->fullMemoryBytes) + ".\nMuted mics are unloaded after a couple of seconds.";
+
+            return "Sample data in RAM. Muted mics are unloaded after a couple of seconds.";
+
+        case 2:
+        {
+            auto text = streaming ? juce::String ("Reading from the stream cache.")
+                                  : juce::String ("This kit is held in RAM, so nothing streams.");
+            const auto dropouts = stats.dropouts.load (std::memory_order_relaxed);
+
+            if (dropouts > 0)
+                text << "\n" << (juce::int64) dropouts << " dropouts since this instance started ("
+                     << juce::String ((double) stats.dropoutFrames.load (std::memory_order_relaxed) / (info != nullptr ? info->sampleRate : 44100.0), 2)
+                     << " s of audio played as silence). A larger preload in Settings helps.";
+
+            return text;
+        }
+
+        default:
+            return "Voices playing";
+    }
 }
 
 juce::Rectangle<int> HeaderBar::getProgressArea() const
@@ -342,19 +417,22 @@ void HeaderBar::paint (juce::Graphics& g)
 
     // Readouts: a small label above a monospaced value.
     auto area = getReadoutArea();
-    const std::pair<juce::String, juce::String> readouts[] {
-        { "CPU", juce::String (cpuPercent) + "%" },
-        { "RAM", formatBytes (sampleBytes) },     // sample data; muted mics are unloaded
-        { "VOICES", juce::String (voices) },
+    const auto diskValue = streaming ? juce::String (diskBytesPerSecond / (1024.0 * 1024.0), diskBytesPerSecond < 10.0 * 1024 * 1024 ? 1 : 0) + " MB/s"
+                                     : juce::String ("-");
+    const std::tuple<juce::String, juce::String, juce::Colour> readouts[] {
+        { "CPU", juce::String (cpuPercent) + "%", colours::text },
+        { "RAM", formatBytes (sampleBytes), colours::text },     // sample data; muted mics are unloaded
+        { "DISK", diskValue, recentDropouts ? colours::warning : colours::text },
+        { "VOICES", juce::String (voices), colours::text },
     };
 
-    for (const auto& [name, value] : readouts)
+    for (const auto& [name, value, colour] : readouts)
     {
         auto r = area.removeFromLeft (readoutWidth).toFloat().withSizeKeepingCentre ((float) readoutWidth, 34.0f);
         g.setColour (colours::textMuted);
         drawTrackedText (g, name, label (11.0f, Weight::semibold), 0.12f, r.removeFromTop (14.0f),
                          juce::Justification::centredRight);
-        g.setColour (colours::text);
+        g.setColour (colour);
         g.setFont (mono (14.0f, Weight::medium));
         g.drawText (value, r, juce::Justification::centredRight, false);
     }

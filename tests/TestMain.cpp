@@ -3,8 +3,11 @@
 //   LithiumDrumsTests                 run all tests
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
-//   LithiumDrumsTests --measure-kit <kit folder>
-//                                     load a real kit, report its RAM use and play every mapped note
+//   LithiumDrumsTests --measure-kit <kit folder> [--stream] [--preload <frames>] [--stress <seconds>] [--cold]
+//                                     load a real kit, report its RAM use and play every mapped note.
+//                                     --stream streams it from the stream cache (building the cache if needed),
+//                                     --stress then plays a dense groove in real time and counts dropouts,
+//                                     --cold first drops the cache file from the OS page cache (Linux)
 
 #include "AllocationCounter.h"
 #include "PluginEditor.h"
@@ -12,14 +15,20 @@
 #include "engine/DrumEngine.h"
 #include "engine/KitLoader.h"
 #include "engine/Mixer.h"
+#include "engine/StreamCache.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdlib>
-#include <stdlib.h>   // setenv / _putenv_s
 #include <iostream>
 #include <optional>
 #include <new>
+#include <thread>
+
+#if JUCE_LINUX
+ #include <fcntl.h>
+ #include <unistd.h>
+#endif
 
 //==============================================================================
 // Replacing the global operator new lets the tests count heap allocations made
@@ -152,14 +161,153 @@ static long residentKb()
     return line.isNotEmpty() ? line.trim().getLargeIntValue() : -1;
 }
 
-static int measureKit (const juce::File& folder)
+/** Plays a dense groove through the engine in real time (each block waits
+    for its deadline, as an audio callback would) and reports what the disk
+    streaming did. Every hit is at least velocity 90, there's a crash or china
+    on every beat and a tom fill every other bar, so dozens of long cymbal
+    tails stream at once. */
+static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::StreamStats& stats, double seconds)
 {
     using namespace lithium;
+
+    // The first (or first "open") articulation of the nth piece of a role.
+    auto articulation = [&] (PieceRole role, int nth, const char* named = nullptr)
+    {
+        for (size_t p = 0; p < info.pieces.size(); ++p)
+        {
+            if (info.pieces[p].role != role || nth-- > 0)
+                continue;
+
+            const auto& pd = kit.pieces[p];
+
+            for (int a = 0; named != nullptr && a < pd.numArticulations; ++a)
+                if (info.pieces[p].articulations[a].containsIgnoreCase (named))
+                    return pd.firstArticulation + a;
+
+            return pd.firstArticulation;
+        }
+
+        return -1;
+    };
+
+    const auto kick = articulation (PieceRole::kick, 0), snare = articulation (PieceRole::snare, 0);
+    const auto hatClosed = articulation (PieceRole::hihat, 0), hatOpen = articulation (PieceRole::hihat, 0, "open");
+    const auto ride = articulation (PieceRole::ride, 0), china = articulation (PieceRole::china, 0);
+    const std::array<int, 2> crashes { articulation (PieceRole::crash, 0), articulation (PieceRole::crash, 1) };
+    const std::array<int, 4> toms { articulation (PieceRole::tom, 0), articulation (PieceRole::tom, 1),
+                                    articulation (PieceRole::floorTom, 0), articulation (PieceRole::floorTom, 1) };
+
+    EngineFeedback feedback;
+    DrumEngine engine (feedback);
+    Mixer mixer;
+    EngineParams params;
+    params.resetForKit (kit);
+    engine.prepare (kit.sampleRate);
+
+    constexpr int blockSize = 256;
+    mixer.prepare (kit.sampleRate, blockSize);
+    juce::AudioBuffer<float> out (2, blockSize);
+    juce::Random random (1);
+
+    const auto stepFrames = kit.sampleRate * 60.0 / 160.0 / 4.0;   // 16th notes at 160 BPM
+    const auto totalBlocks = (int) (seconds * kit.sampleRate / blockSize);
+    const auto blockDuration = std::chrono::duration<double> (blockSize / kit.sampleRate);
+    const auto start = std::chrono::steady_clock::now();
+
+    const auto dropoutsBefore = stats.dropouts.load(), framesBefore = stats.dropoutFrames.load();
+    const auto bytesBefore = stats.bytesRead.load();
+    int peakVoices = 0, peakStreams = 0, nextStep = 0, lateBlocks = 0;
+    double renderSeconds = 0.0;
+
+    auto hit = [&] (int art, int low = 90)
+    {
+        if (art >= 0)
+            engine.trigger (kit, art, random.nextInt ({ low, 128 }), params);
+    };
+
+    for (int b = 0; b < totalBlocks; ++b)
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+
+        while (nextStep * stepFrames < (double) (b + 1) * blockSize)
+        {
+            const auto step = nextStep % 16, bar = nextStep / 16;
+            const auto fill = bar % 2 == 1 && step >= 8;
+
+            if (step % 4 == 0)
+                hit (step == 0 && china >= 0 ? china : crashes[(size_t) (step / 4) % 2] >= 0 ? crashes[(size_t) (step / 4) % 2] : crashes[0], 100);
+
+            if (step % 2 == 0)
+                hit (kick);
+
+            if (step == 4 || step == 12)
+                hit (snare, 110);
+
+            if (fill)
+                hit (toms[(size_t) (step % 4)]);
+            else
+                hit (step == 14 ? hatOpen : hatClosed);
+
+            if (step % 2 == 1)
+                hit (ride);
+
+            ++nextStep;
+        }
+
+        mixer.clearMicBus (blockSize);
+        engine.render (kit, mixer.getMicBus(), 0, blockSize, params);
+        mixer.process (kit, blockSize, params, { out.getWritePointer (0), out.getWritePointer (1) }, {});
+
+        peakVoices = std::max (peakVoices, engine.getNumActiveVoices());
+        peakStreams = std::max (peakStreams, stats.activeStreams.load());
+
+        const auto t1 = std::chrono::steady_clock::now();
+        renderSeconds += std::chrono::duration<double> (t1 - t0).count();
+
+        const auto deadline = start + std::chrono::duration_cast<std::chrono::steady_clock::duration> (blockDuration * (b + 1));
+
+        if (t1 > deadline)
+            ++lateBlocks;
+        else
+            std::this_thread::sleep_until (deadline);
+    }
+
+    engine.stopAll (kit);
+
+    const auto dropouts = stats.dropouts.load() - dropoutsBefore;
+    const auto mbRead = (double) (stats.bytesRead.load() - bytesBefore) / (1024.0 * 1024.0);
+
+    std::cout << "  stress, " << juce::String (seconds, 0) << " s real time: peak " << peakVoices << " voices, "
+              << peakStreams << " streams; read " << juce::String (mbRead, 0) << " MB ("
+              << juce::String (mbRead / seconds, 1) << " MB/s); engine load "
+              << juce::String (100.0 * renderSeconds / seconds, 1) << "%; "
+              << (juce::int64) dropouts << " dropouts (" << (juce::int64) (stats.dropoutFrames.load() - framesBefore)
+              << " frames), " << lateBlocks << " late blocks, " << (juce::int64) stats.readErrors.load() << " read errors" << std::endl;
+
+    return dropouts == 0 ? 0 : 1;
+}
+
+static int measureKit (const juce::File& folder, const juce::StringArray& args)
+{
+    using namespace lithium;
+
+    auto option = [&] (const char* name) { return args.contains (name) ? args[args.indexOf (name) + 1] : juce::String(); };
+
+    KitLoader::Options options;
+    options.streamStats = std::make_shared<StreamStats>();
+
+    if (args.contains ("--stream"))
+    {
+        options.streaming.mode = StreamingMode::always;
+        options.streaming.cacheFolder = juce::SharedResourcePointer<Settings>()->getStreaming().cacheFolder;
+        options.streaming.preloadFrames = option ("--preload").isNotEmpty() ? option ("--preload").getIntValue()
+                                                                             : Settings::defaultPreloadFrames;
+    }
 
     const auto rssBefore = residentKb();
     KitInfo info;
     juce::String error;
-    auto kit = KitLoader::loadKit (folder, MidiMap::generalMidi(), info, error);
+    auto kit = KitLoader::loadKit (folder, MidiMap::generalMidi(), info, error, options);
 
     if (kit == nullptr)
     {
@@ -175,6 +323,14 @@ static int measureKit (const juce::File& folder)
               << "  sample data in RAM: " << mb ((double) info.memoryBytes) << " (" << info.bitsPerSample << "-bit)\n"
               << "  process RAM grew by: " << mb ((double) (rssAfter - rssBefore) * 1024.0) << "\n"
               << "  load time: " << juce::String (info.loadSeconds, 1) << " s" << std::endl;
+
+    if (info.streaming)
+        std::cout << "  streaming: preload " << info.preloadFrames << " frames; "
+                  << mb ((double) (info.memoryBytes - info.streamBufferBytes)) << " of preloads + "
+                  << mb ((double) info.streamBufferBytes) << " of stream buffers, instead of "
+                  << mb ((double) info.fullMemoryBytes) << " fully in RAM\n"
+                  << "  stream cache: " << mb ((double) streamcache::getCacheSize (info.streamCache)) << " in "
+                  << info.streamCache.getFullPathName() << std::endl;
 
     for (const auto& w : info.warnings)
         std::cout << "  warning: " << w << std::endl;
@@ -292,7 +448,30 @@ static int measureKit (const juce::File& folder)
         }
     }
 
-    return silent == 0 ? 0 : 1;
+    auto result = silent == 0 ? 0 : 1;
+
+    if (const auto seconds = option ("--stress").getDoubleValue(); seconds > 0.0)
+    {
+       #if JUCE_LINUX
+        // Ask the kernel to forget the cache file's pages, so every read
+        // really goes to the disk. No root needed: it only drops clean pages.
+        if (args.contains ("--cold") && info.streaming)
+        {
+            const auto data = info.streamCache.getChildFile ("audio.bin").getFullPathName();
+
+            if (const auto fd = ::open (data.toRawUTF8(), O_RDONLY); fd >= 0)
+            {
+                ::posix_fadvise (fd, 0, 0, POSIX_FADV_DONTNEED);
+                ::close (fd);
+                std::cout << "  dropped the stream cache from the page cache" << std::endl;
+            }
+        }
+       #endif
+
+        result |= stressKit (*kit, info, *options.streamStats, seconds);
+    }
+
+    return result;
 }
 
 int main (int argc, char* argv[])
@@ -310,15 +489,19 @@ int main (int argc, char* argv[])
         return writeSnapshot (args);
 
     if (args.contains ("--measure-kit"))
-        return measureKit (juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--measure-kit") + 1]));
+        return measureKit (juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--measure-kit") + 1]), args);
 
     // The tests use a kits folder holding only the synthetic test kit, so a
     // new processor loads that rather than whatever real kits are installed.
-   #if JUCE_WINDOWS
-    _putenv_s ("LITHIUM_KITS_FOLDER", LITHIUM_TEST_KITS_FOLDER);
-   #else
-    setenv ("LITHIUM_KITS_FOLDER", LITHIUM_TEST_KITS_FOLDER, 1);
-   #endif
+    // Likewise the stream cache goes in the build folder, starting empty so
+    // the tests build it, and kits stay in RAM unless a test asks otherwise,
+    // whatever the user's own settings say.
+    const auto testCache = juce::File (LITHIUM_TEST_KITS_FOLDER).getSiblingFile ("test-cache");
+    testCache.deleteRecursively();
+
+    lithium::test::setEnvironment ("LITHIUM_KITS_FOLDER", LITHIUM_TEST_KITS_FOLDER);
+    lithium::test::setEnvironment ("LITHIUM_CACHE_FOLDER", testCache.getFullPathName());
+    lithium::test::setEnvironment ("LITHIUM_STREAMING", "never");
 
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);

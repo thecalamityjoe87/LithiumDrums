@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 
 #include "PluginEditor.h"
+#include "engine/StreamCache.h"
 
 namespace lithium
 {
@@ -231,16 +232,21 @@ MicMask LithiumDrumsProcessor::currentlyUnmutedMics() const
     return mask;
 }
 
-void LithiumDrumsProcessor::loadKit (const juce::File& folder, bool resetMixer)
+void LithiumDrumsProcessor::requestKit (const juce::File& folder, bool resetMixer, bool force)
 {
+    if (folder == juce::File())
+        return;
+
     KitLoader::Request request;
+    request.streaming = settings->getStreaming();
+    request.streamStats = streamStats;
 
     {
         std::scoped_lock lock (stateMutex);
 
         // Asking for the kit that's already loaded (or loading) doesn't load
         // it again; it only updates whether the mixer should be reset.
-        if (folder == kitFolder && (kitLoadPending || (kitInfo != nullptr && kitInfo->folder == folder)))
+        if (! force && folder == kitFolder && (kitLoadPending || (kitInfo != nullptr && kitInfo->folder == folder)))
         {
             resetWanted = resetMixer && kitLoadPending;
             return;
@@ -272,6 +278,26 @@ void LithiumDrumsProcessor::setKitsFolder (const juce::File& folder)
 {
     settings->setKitsFolder (folder);
     sendChangeMessage();
+}
+
+void LithiumDrumsProcessor::setStreamingMode (StreamingMode mode)
+{
+    settings->setStreamingMode (mode);
+    reloadKit();
+}
+
+void LithiumDrumsProcessor::setPreloadFrames (int frames)
+{
+    settings->setPreloadFrames (frames);
+    reloadKit();
+}
+
+int LithiumDrumsProcessor::clearStreamCache()
+{
+    // Deleting a pack that is open would pull the audio out from under a
+    // playing kit (and fails on Windows), so those stay.
+    const juce::SharedResourcePointer<DiskStreamer> streamer;
+    return streamcache::clear (settings->getStreaming().cacheFolder, streamer->getPacksInUse());
 }
 
 void LithiumDrumsProcessor::handleAsyncUpdate()

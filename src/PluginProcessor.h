@@ -74,12 +74,17 @@ public:
     /** Loads a kit. With resetMixer (choosing a kit from the menu), the
         piece and mixer settings go back to neutral for the new kit; without
         it (restoring a project), they're kept. */
-    void loadKit (const juce::File& folder, bool resetMixer);
+    void loadKit (const juce::File& folder, bool resetMixer)        { requestKit (folder, resetMixer, false); }
+
+    /** Loads the current kit again, keeping its settings (after the
+        streaming settings change). */
+    void reloadKit()                                                 { requestKit (getKitFolder(), false, true); }
 
     juce::File getKitFolder() const;
     std::shared_ptr<const KitInfo> getKitInfo() const                { std::scoped_lock lock (stateMutex); return kitInfo; }
     bool isKitLoading() const noexcept                               { return kitLoadPending.load(); }
     float getKitLoadProgress() const noexcept                        { return loader.getProgress(); }
+    LoadPhase getKitLoadPhase() const noexcept                       { return loader.getPhase(); }
     juce::String getKitError() const                                 { return kitError; }
 
     /** Applies a finished kit load now, rather than when the message loop
@@ -92,12 +97,26 @@ public:
     juce::File getKitsFolder() const                                 { return settings->getKitsFolder(); }
     void setKitsFolder (const juce::File&);
 
+    /** Disk reads and dropouts of this instance's streaming kits. */
+    const StreamStats& getStreamStats() const noexcept               { return *streamStats; }
+
+    StreamingSettings getStreamingSettings() const                   { return settings->getStreaming(); }
+
+    /** These save the setting and reload the kit, so it takes effect at once. */
+    void setStreamingMode (StreamingMode);
+    void setPreloadFrames (int);
+
+    /** Deletes the stream cache, except the packs that are streaming right
+        now (in any instance in this process). Returns the number deleted. */
+    int clearStreamCache();
+
     /** Plays a piece's first articulation, as if hit from MIDI. */
     void audition (int piece, int velocity);
 
     static constexpr int auditionVelocity = 90;
 
 private:
+    void requestKit (const juce::File& folder, bool resetMixer, bool force);
     void handleAsyncUpdate() override;
     void applyLoadResult (const KitLoader::Result&);
     void applySelection();
@@ -135,6 +154,7 @@ private:
     KitHandoff handoff;
     KitLoader loader;
     SpscQueue<AuditionRequest, 32> auditions;
+    std::shared_ptr<StreamStats> streamStats = std::make_shared<StreamStats>();
     std::atomic<bool> kitLoadPending { false };
     std::atomic<std::uint64_t> confirmedResetToken { 0 };   // see Kit::resetToken
 

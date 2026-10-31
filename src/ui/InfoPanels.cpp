@@ -1,6 +1,7 @@
 #include "InfoPanels.h"
 
 #include "Theme.h"
+#include "engine/StreamCache.h"
 
 namespace lithium
 {
@@ -267,14 +268,36 @@ void AboutPanel::layoutContent (juce::Rectangle<int> area)
 }
 
 //==============================================================================
-SettingsPanel::SettingsPanel (LithiumDrumsProcessor& p) : OverlayPanel ("Settings", 640, 300), processor (p)
+namespace
 {
-    folderLabel.setFont (theme::mono (13.0f));
-    folderLabel.setColour (juce::Label::textColourId, theme::colours::text);
-    folderLabel.setColour (juce::Label::backgroundColourId, theme::colours::raised);
-    folderLabel.setColour (juce::Label::outlineColourId, theme::colours::border);
-    folderLabel.setMinimumHorizontalScale (0.6f);
+    juce::String describeBytes (std::int64_t bytes)
+    {
+        const auto mb = (double) bytes / (1024.0 * 1024.0);
+        return mb >= 1000.0 ? juce::String (mb / 1024.0, 2) + " GB" : juce::String (juce::roundToInt (mb)) + " MB";
+    }
+
+    void styleLabel (juce::Label& l)
+    {
+        l.setFont (theme::mono (13.0f));
+        l.setColour (juce::Label::textColourId, theme::colours::text);
+        l.setColour (juce::Label::backgroundColourId, theme::colours::raised);
+        l.setColour (juce::Label::outlineColourId, theme::colours::border);
+        l.setMinimumHorizontalScale (0.6f);
+    }
+
+    constexpr std::pair<StreamingMode, const char*> modeItems[] {
+        { StreamingMode::automatic, "Large kits (over 512 MB)" },
+        { StreamingMode::always, "Every kit" },
+        { StreamingMode::never, "Never: load kits fully into RAM" },
+    };
+}
+
+SettingsPanel::SettingsPanel (LithiumDrumsProcessor& p) : OverlayPanel ("Settings", 640, 610), processor (p)
+{
+    styleLabel (folderLabel);
+    styleLabel (cacheLabel);
     addAndMakeVisible (folderLabel);
+    addAndMakeVisible (cacheLabel);
 
     changeButton.onClick = [this]
     {
@@ -299,14 +322,114 @@ SettingsPanel::SettingsPanel (LithiumDrumsProcessor& p) : OverlayPanel ("Setting
 
     defaultButton.onClick = [this] { setFolder (Settings::getDefaultKitsFolder()); };
 
-    addAndMakeVisible (changeButton);
-    addAndMakeVisible (openButton);
-    addAndMakeVisible (defaultButton);
+    for (const auto& [mode, name] : modeItems)
+        modeBox.addItem (name, (int) mode + 1);
+
+    for (const auto frames : Settings::preloadChoices)
+        preloadBox.addItem (juce::String (frames) + " frames (" + juce::String (juce::roundToInt (frames * 1000.0 / 44100.0))
+                              + " ms at 44.1 kHz)", frames);
+
+    modeBox.onChange = [this]
+    {
+        const auto mode = (StreamingMode) (modeBox.getSelectedId() - 1);
+
+        if (modeBox.getSelectedId() > 0 && mode != processor.getStreamingSettings().mode)
+            processor.setStreamingMode (mode);
+
+        preloadBox.setEnabled (mode != StreamingMode::never);
+    };
+
+    preloadBox.onChange = [this]
+    {
+        if (const auto frames = preloadBox.getSelectedId(); frames > 0 && frames != processor.getStreamingSettings().preloadFrames)
+            processor.setPreloadFrames (frames);
+    };
+
+    clearCacheButton.onClick = [this]
+    {
+        processor.clearStreamCache();
+        cacheSummary = {};
+        updateStatus();
+    };
+
+    openCacheButton.onClick = [this]
+    {
+        const auto folder = processor.getStreamingSettings().cacheFolder;
+        folder.createDirectory();
+        folder.revealToUser();
+    };
+
+    for (auto* c : std::initializer_list<juce::Component*> { &changeButton, &openButton, &defaultButton, &modeBox,
+                                                             &preloadBox, &clearCacheButton, &openCacheButton })
+        addAndMakeVisible (c);
 }
 
 void SettingsPanel::refresh()
 {
     folderLabel.setText (" " + processor.getKitsFolder().getFullPathName(), juce::dontSendNotification);
+
+    const auto streaming = processor.getStreamingSettings();
+    modeBox.setSelectedId ((int) streaming.mode + 1, juce::dontSendNotification);
+    preloadBox.setSelectedId (streaming.preloadFrames, juce::dontSendNotification);
+    preloadBox.setEnabled (streaming.mode != StreamingMode::never);
+    cacheLabel.setText (" " + streaming.cacheFolder.getFullPathName(), juce::dontSendNotification);
+
+    statusFor = nullptr;
+    cacheSummary = {};
+    updateStatus();
+}
+
+void SettingsPanel::visibilityChanged()
+{
+    // Only poll while the panel is showing.
+    if (isVisible())
+        startTimerHz (2);
+    else
+        stopTimer();
+}
+
+void SettingsPanel::timerCallback()
+{
+    updateStatus();
+}
+
+void SettingsPanel::updateStatus()
+{
+    auto newStatus = juce::String();
+    const auto info = processor.getKitInfo();
+
+    if (processor.isKitLoading())
+    {
+        newStatus = processor.getKitLoadPhase() == LoadPhase::caching
+                      ? "Decoding the kit into the stream cache (only the first time it streams)..."
+                      : "Loading the kit...";
+    }
+    else if (info != nullptr && info->streaming)
+    {
+        newStatus = info->credits.name + " streams from disk: " + describeBytes ((std::int64_t) info->memoryBytes)
+                    + " in RAM (preloads and stream buffers) instead of " + describeBytes ((std::int64_t) info->fullMemoryBytes) + ".";
+    }
+    else if (info != nullptr)
+    {
+        newStatus = info->credits.name + " is fully in RAM: " + describeBytes ((std::int64_t) info->memoryBytes) + ".";
+    }
+
+    // The cache size means walking the cache folder, so only redo it when
+    // something could have changed it.
+    if (info != statusFor || cacheSummary.isEmpty())
+    {
+        statusFor = info;
+        const auto folder = processor.getStreamingSettings().cacheFolder;
+        const auto bytes = streamcache::getCacheSize (folder);
+        cacheSummary = bytes > 0 ? "The cache takes " + describeBytes (bytes) + " on disk. Clearing it is safe: "
+                                   "kits cache their audio again the next time they stream. Kits playing now keep theirs."
+                                 : "The cache is empty.";
+    }
+
+    if (newStatus != status)
+        status = newStatus;
+
+    repaint();
 }
 
 void SettingsPanel::setFolder (const juce::File& folder)
@@ -323,31 +446,74 @@ void SettingsPanel::paint (juce::Graphics& g)
     OverlayPanel::paint (g);
 
     using namespace theme;
-    auto area = textArea;
 
-    g.setColour (colours::textMuted);
-    drawTrackedText (g, "KITS FOLDER", label (12.0f), 0.1f, area.removeFromTop (18).toFloat(), juce::Justification::centredLeft);
+    auto heading = [&] (const juce::String& text, juce::Rectangle<int> r)
+    {
+        g.setColour (colours::textMuted);
+        drawTrackedText (g, text, label (12.0f), 0.1f, r.toFloat(), juce::Justification::centredLeft);
+    };
 
-    g.setFont (body (13.0f));
-    g.drawFittedText ("Lithium Drums lists the kits in this folder: content packs, and loose kit folders. Import "
-                      "DrumGizmo kits and SFZ instruments into it with the LithiumImport tool (see the README). "
-                      "Every instance uses the same folder.",
-                      area.withTrimmedTop (92).withHeight (40), juce::Justification::topLeft, 2, 1.0f);
+    auto paragraph = [&] (const juce::String& text, juce::Rectangle<int> r, juce::Colour colour)
+    {
+        g.setColour (colour);
+        g.setFont (body (13.0f));
+        g.drawFittedText (text, r, juce::Justification::topLeft, 3, 1.0f);
+    };
+
+    heading ("KITS FOLDER", kitsHeading);
+    paragraph ("Lithium Drums lists the kits in this folder: content packs, and loose kit folders. Import "
+               "DrumGizmo kits and SFZ instruments into it with the LithiumImport tool (see the README). "
+               "Every instance uses the same folder.", kitsText, colours::textMuted);
+
+    heading ("STREAMING", streamingHeading);
+    g.setColour (colours::text);
+    g.setFont (body (14.0f));
+    g.drawText ("Stream from disk", modeLabel, juce::Justification::centredLeft);
+    g.drawText ("Preload per sample", preloadLabel, juce::Justification::centredLeft);
+    paragraph (status, statusText, colours::text);
+
+    heading ("STREAM CACHE", cacheHeading);
+    paragraph (cacheSummary, cacheText, colours::textMuted);
 }
 
 void SettingsPanel::layoutContent (juce::Rectangle<int> area)
 {
-    textArea = area;
-    area.removeFromTop (24);
-    folderLabel.setBounds (area.removeFromTop (30));
-    area.removeFromTop (10);
+    auto take = [&area] (int h, int gapAfter = 0)
+    {
+        auto r = area.removeFromTop (h);
+        area.removeFromTop (gapAfter);
+        return r;
+    };
 
-    auto buttons = area.removeFromTop (28);
-    changeButton.setBounds (buttons.removeFromLeft (100));
-    buttons.removeFromLeft (8);
-    openButton.setBounds (buttons.removeFromLeft (110));
-    buttons.removeFromLeft (8);
-    defaultButton.setBounds (buttons.removeFromLeft (110));
+    auto buttonRow = [] (juce::Rectangle<int> row, std::initializer_list<std::pair<juce::Button*, int>> buttons)
+    {
+        for (const auto& [b, w] : buttons)
+        {
+            b->setBounds (row.removeFromLeft (w));
+            row.removeFromLeft (8);
+        }
+    };
+
+    kitsHeading = take (18, 6);
+    folderLabel.setBounds (take (30, 10));
+    buttonRow (take (28, 10), { { &changeButton, 100 }, { &openButton, 110 }, { &defaultButton, 110 } });
+    kitsText = take (40, 22);
+
+    streamingHeading = take (18, 6);
+
+    auto row = take (28, 8);
+    modeLabel = row.removeFromLeft (150);
+    modeBox.setBounds (row.removeFromLeft (280));
+
+    row = take (28, 10);
+    preloadLabel = row.removeFromLeft (150);
+    preloadBox.setBounds (row.removeFromLeft (280));
+    statusText = take (36, 18);
+
+    cacheHeading = take (18, 6);
+    cacheLabel.setBounds (take (30, 10));
+    buttonRow (take (28, 10), { { &clearCacheButton, 110 }, { &openCacheButton, 110 } });
+    cacheText = area.removeFromTop (40);
 }
 
 } // namespace lithium

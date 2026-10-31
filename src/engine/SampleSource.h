@@ -5,10 +5,10 @@
 
 // How voices get at sample audio, without knowing where it lives.
 //
-// Milestone 1 keeps every sample fully in RAM (InMemorySampleSource). A later
-// milestone will add a streaming source that serves the first part of each
-// sample from RAM and the tail from disk. Voices only ever talk to this
-// interface, so that change won't touch the voice code.
+// Small kits are held fully in RAM (InMemorySampleSource). Large ones keep the
+// first part of each sample in RAM and stream the rest from disk
+// (StreamingSampleSource). Voices only ever talk to this interface, so they
+// don't know which they're playing from.
 //
 // The contract is shaped around streaming: a voice opens a cursor at note-on
 // and then reads strictly forwards, block by block. A streaming source can
@@ -26,7 +26,7 @@ struct SampleCursor
 {
     SampleId sample = invalidSampleId;
     std::int64_t position = 0;     // next frame to be read
-    int streamSlot = -1;           // reserved for the streaming source
+    int streamSlot = -1;           // the streaming source's ring buffer for this cursor
 };
 
 class SampleSource

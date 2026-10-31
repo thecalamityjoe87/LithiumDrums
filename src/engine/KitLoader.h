@@ -3,6 +3,8 @@
 #include "Kit.h"
 #include "KitHandoff.h"
 #include "MidiMap.h"
+#include "StreamingSampleSource.h"
+#include "StreamingSettings.h"
 
 #include <juce_core/juce_core.h>
 
@@ -40,13 +42,20 @@ struct LoadPlan
     std::vector<File> files;
     int numMics = 0;
 
-    /** Memory used by the given mics' stores. */
+    // Streaming kits: where the samples are in the stream cache. Preloads
+    // are read from there (no decoding) rather than from the source files.
+    std::shared_ptr<const StreamMap> stream;
+    std::size_t streamBufferBytes = 0;        // allocated whichever mics are loaded
+
+    /** Memory used with the given mics loaded: their stores, plus the stream buffers. */
     std::size_t bytesFor (std::uint32_t micMask) const noexcept;
 };
 
 using MicMask = std::uint32_t;   // bit n = mic n
 inline constexpr MicMask allMics = 0xffffffffu;
 static_assert (maxMics <= 32, "MicMask needs a bit per mic");
+
+enum class LoadPhase { reading, caching, loading };
 
 /** How KitLoader::loadKit() and decode() run. (Declared outside KitLoader
     because a nested struct with default member values can't be used as a
@@ -56,6 +65,11 @@ struct KitLoadOptions
     MicMask mics = allMics;                     // mics to decode into RAM
     std::function<bool()> shouldAbort;          // polled between files
     std::atomic<float>* progress = nullptr;     // set to 0..1 as loading goes on
+    std::atomic<LoadPhase>* phase = nullptr;    // what loading is busy with
+    float progressFrom = 0.1f;                  // decode() moves progress from here to 1
+
+    StreamingSettings streaming;
+    std::shared_ptr<StreamStats> streamStats;   // where a streaming kit counts its reads and dropouts
 };
 
 /** Loads kits on a background thread and publishes them through a KitHandoff.
@@ -73,6 +87,8 @@ public:
         juce::File folder;
         std::uint64_t resetToken = 0;   // copied into the Kit, see Kit::resetToken
         MicMask mics = allMics;         // mics to load into RAM straight away
+        StreamingSettings streaming;
+        std::shared_ptr<StreamStats> streamStats;
     };
 
     struct Result
@@ -94,6 +110,7 @@ public:
 
     bool isLoading() const noexcept           { return loading.load(); }
     float getProgress() const noexcept        { return progress.load(); }
+    LoadPhase getPhase() const noexcept       { return phase.load(); }
 
     /** Which mics of the current kit should be in RAM. The loader thread
         loads and unloads mics until it matches. Any thread. */
@@ -134,6 +151,7 @@ private:
     std::atomic<std::uint64_t> generation { 0 };
     std::atomic<bool> loading { false };
     std::atomic<float> progress { 0.0f };
+    std::atomic<LoadPhase> phase { LoadPhase::reading };
     std::atomic<MicMask> wantedMics { allMics };
     std::atomic<std::size_t> memoryUsage { 0 };
     juce::WaitableEvent wakeUp;

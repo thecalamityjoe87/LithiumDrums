@@ -22,6 +22,7 @@ namespace colours
     inline const juce::Colour text         { 0xffe6edf2 };
     inline const juce::Colour textMuted    { 0xff93a3b1 };
     inline const juce::Colour accent       { 0xff3cc4d6 };
+    inline const juce::Colour warning      { 0xfff07167 };   // the kick red, for things that need attention
 
     inline const juce::Colour groupKick    { 0xfff07167 };
     inline const juce::Colour groupSnare   { 0xff3cc4d6 };

@@ -3,6 +3,7 @@
 #include "engine/DrumEngine.h"
 #include "engine/KitLoader.h"
 #include "engine/KitManifest.h"
+#include "engine/StreamCache.h"
 #include "KitLibrary.h"
 #include "importer/DrumGizmoImporter.h"
 #include "importer/SfzImporter.h"
@@ -1301,6 +1302,318 @@ private:
 };
 
 //==============================================================================
+class StreamingTests final : public juce::UnitTest
+{
+public:
+    StreamingTests() : juce::UnitTest ("Streaming", "Lithium") {}
+
+    static juce::File testCache()   { return juce::File (LITHIUM_TEST_KITS_FOLDER).getSiblingFile ("test-cache").getChildFile ("unit"); }
+
+    struct StreamingKit
+    {
+        std::unique_ptr<Kit> kit;
+        KitInfo info;
+        std::shared_ptr<const LoadPlan> plan;
+        std::shared_ptr<StreamStats> stats = std::make_shared<StreamStats>();
+        juce::String error;
+
+        StreamingSampleSource& source()   { return static_cast<StreamingSampleSource&> (*kit->samples); }
+    };
+
+    static StreamingKit loadStreaming (const juce::File& folder, const juce::File& cache, MicMask mics = allMics)
+    {
+        StreamingKit k;
+        KitLoader::Options options;
+        options.mics = mics;
+        options.streaming.mode = StreamingMode::always;
+        options.streaming.cacheFolder = cache;
+        options.streaming.preloadFrames = 4096;    // small, so most of each test sample streams
+        options.streamStats = k.stats;
+        k.kit = KitLoader::loadKit (folder, MidiMap::generalMidi(), k.info, k.error, options, &k.plan);
+        return k;
+    }
+
+    /** The samples that stream furthest past their preload, longest first. */
+    static std::vector<SampleId> longSamples (const SampleLayout& layout, size_t count)
+    {
+        std::vector<SampleId> ids;
+
+        for (SampleId id = 0; id < (SampleId) layout.samples.size(); ++id)
+            if (layout.samples[id].numFrames > layout.samples[id].storedFrames + 2 * StreamingSampleSource::ringFrames)
+                ids.push_back (id);
+
+        std::sort (ids.begin(), ids.end(), [&] (auto a, auto b) { return layout.samples[a].numFrames > layout.samples[b].numFrames; });
+        ids.resize (std::min (ids.size(), count));
+        return ids;
+    }
+
+    /** Reads a whole sample (or its first maxFrames) from a source in 512-frame blocks. */
+    static juce::AudioBuffer<float> readAll (SampleSource& source, SampleId id, std::int64_t maxFrames = 1 << 30)
+    {
+        const auto n = (int) std::min (source.getNumFrames (id), maxFrames);
+        juce::AudioBuffer<float> out (source.getNumChannels (id), n);
+        SampleCursor cursor;
+        source.open (id, cursor);
+
+        for (int pos = 0; pos < n; pos += 512)
+        {
+            std::array<float*, 2> dest { out.getWritePointer (0, pos), out.getWritePointer (out.getNumChannels() - 1, pos) };
+            source.read (cursor, dest.data(), std::min (512, n - pos));
+        }
+
+        source.close (cursor);
+        return out;
+    }
+
+    void runTest() override
+    {
+        auto& ram = *shared().kit;
+
+        beginTest ("A streaming kit keeps only its preloads in RAM and caches its audio once");
+        {
+            testCache().deleteRecursively();
+            auto k = loadStreaming (testKitFolder, testCache());
+            expect (k.kit != nullptr, k.error);
+
+            if (k.kit == nullptr)
+                return;
+
+            expect (k.info.streaming);
+            expect (k.kit->samples->isStreaming());
+            expectEquals (k.info.fullMemoryBytes, shared().info.memoryBytes);
+            expect (k.info.memoryBytes - k.info.streamBufferBytes < k.info.fullMemoryBytes / 2,
+                    "preloads should be a fraction of the kit");
+
+            const auto pack = streamcache::Pack::open (testCache(), k.plan->folder);
+            const auto dataSize = pack.getDataFile().getSize();
+            expect (dataSize > 0);
+
+            for (const auto& f : k.plan->files)
+                expect (pack.find (f.path) != nullptr, f.path);
+
+            // Loading again reads the cache rather than adding to it.
+            auto again = loadStreaming (testKitFolder, testCache());
+            expect (again.kit != nullptr, again.error);
+            expectEquals (pack.getDataFile().getSize(), dataSize);
+        }
+
+        auto k = loadStreaming (testKitFolder, testCache());
+
+        if (k.kit == nullptr)
+            return;
+
+        auto& source = k.source();
+        const auto ids = longSamples (source.getLayout(), 12);
+        expect (ids.size() >= 4, "the test kit needs samples longer than preload + ring");
+
+        beginTest ("Streamed audio is bit-identical to the same audio held in RAM");
+        {
+            // Twelve voices at once, read a little faster than real time
+            // (512 frames per 4 ms), which the disk thread easily keeps up with.
+            constexpr std::int64_t maxFrames = 3 * 44100;
+            std::vector<juce::AudioBuffer<float>> streamed;
+            std::vector<SampleCursor> cursors (ids.size());
+
+            for (size_t v = 0; v < ids.size(); ++v)
+            {
+                streamed.emplace_back (source.getNumChannels (ids[v]), (int) std::min (source.getNumFrames (ids[v]), maxFrames));
+                source.open (ids[v], cursors[v]);
+                expect (cursors[v].streamSlot >= 0);
+            }
+
+            for (int pos = 0; pos < (int) maxFrames; pos += 512)
+            {
+                for (size_t v = 0; v < ids.size(); ++v)
+                {
+                    auto& out = streamed[v];
+
+                    if (pos >= out.getNumSamples())
+                        continue;
+
+                    std::array<float*, 2> dest { out.getWritePointer (0, pos), out.getWritePointer (out.getNumChannels() - 1, pos) };
+                    source.read (cursors[v], dest.data(), std::min (512, out.getNumSamples() - pos));
+                }
+
+                juce::Thread::sleep (4);
+            }
+
+            for (auto& c : cursors)
+                source.close (c);
+
+            expectEquals ((int) k.stats->dropouts.load(), 0);
+            expectEquals ((int) k.stats->activeStreams.load(), 0);
+            expect (k.stats->bytesRead.load() > 0);
+
+            for (size_t v = 0; v < ids.size(); ++v)
+            {
+                const auto reference = readAll (*ram.samples, ids[v], maxFrames);
+                float maxDiff = 0.0f;
+
+                for (int ch = 0; ch < reference.getNumChannels(); ++ch)
+                    for (int i = 0; i < reference.getNumSamples(); ++i)
+                        maxDiff = std::max (maxDiff, std::abs (reference.getSample (ch, i) - streamed[v].getSample (ch, i)));
+
+                expectEquals (maxDiff, 0.0f);
+            }
+        }
+
+        beginTest ("A voice that outruns the disk plays silence for the gap and stays in step");
+        {
+            // Reading a whole sample in one go (thousands of times faster than
+            // real time) must run past what the disk thread has read ahead.
+            const auto id = ids[0];
+            const auto before = k.stats->dropouts.load();
+            const auto burst = readAll (source, id);
+            const auto reference = readAll (*ram.samples, id);
+            expect (k.stats->dropouts.load() > before, "expected dropouts");
+
+            // Every frame is either the right audio or silence: never audio from elsewhere.
+            int wrong = 0, silent = 0;
+
+            for (int i = 0; i < reference.getNumSamples(); ++i)
+            {
+                const auto got = burst.getSample (0, i);
+
+                const auto expected = reference.getSample (0, i);
+
+                if (juce::exactlyEqual (got, 0.0f) && ! juce::exactlyEqual (expected, 0.0f))
+                    ++silent;
+                else if (! juce::exactlyEqual (got, expected))
+                    ++wrong;
+            }
+
+            expectEquals (wrong, 0);
+            expect (silent > 0);
+
+            // The preload itself always plays.
+            for (int i = 0; i < 4096; ++i)
+                if (! juce::exactlyEqual (burst.getSample (0, i), reference.getSample (0, i)))
+                    ++wrong;
+
+            expectEquals (wrong, 0);
+        }
+
+        beginTest ("Stream slots are reused safely");
+        {
+            // Many more opens than there are slots, closed straight away while
+            // the disk thread may still be reading for them.
+            for (int i = 0; i < 1000; ++i)
+            {
+                SampleCursor c;
+                source.open (ids[(size_t) i % ids.size()], c);
+                std::array<float, 512> a {}, b {};
+                std::array<float*, 2> dest { a.data(), b.data() };
+                source.read (c, dest.data(), 512);
+                source.close (c);
+            }
+
+            expectEquals ((int) k.stats->activeStreams.load(), 0);
+
+            // ... and a slot that was reused plays the right audio afterwards.
+            const auto id = ids[1];
+            juce::AudioBuffer<float> out (source.getNumChannels (id), 3 * 44100);
+            SampleCursor c;
+            const auto before = k.stats->dropouts.load();
+            source.open (id, c);
+
+            for (int pos = 0; pos < out.getNumSamples(); pos += 512)
+            {
+                std::array<float*, 2> dest { out.getWritePointer (0, pos), out.getWritePointer (out.getNumChannels() - 1, pos) };
+                source.read (c, dest.data(), std::min (512, out.getNumSamples() - pos));
+                juce::Thread::sleep (2);
+            }
+
+            source.close (c);
+            const auto reference = readAll (*ram.samples, id, out.getNumSamples());
+            expectEquals ((int) (k.stats->dropouts.load() - before), 0);
+
+            float maxDiff = 0.0f;
+
+            for (int i = 0; i < reference.getNumSamples(); ++i)
+                maxDiff = std::max (maxDiff, std::abs (reference.getSample (0, i) - out.getSample (0, i)));
+
+            expectEquals (maxDiff, 0.0f);
+        }
+
+        beginTest ("A muted mic's preload comes back from the cache when it's unmuted");
+        {
+            const auto snareTop = shared().mic ("snareTop");
+            const auto bit = 1u << snareTop;
+            auto muted = loadStreaming (testKitFolder, testCache(), allMics & ~bit);
+            expect (muted.kit != nullptr, muted.error);
+
+            if (muted.kit == nullptr)
+                return;
+
+            expect (! muted.source().isMicLoaded (snareTop));
+
+            std::array<std::unique_ptr<MicStore>, maxMics> stores;
+            juce::String error;
+            expect (KitLoader::decode (*muted.plan, bit, stores, error), error);
+            muted.source().swapStore (snareTop, std::move (stores[(size_t) snareTop]));   // this thread plays the audio thread
+
+            int checked = 0;
+
+            for (SampleId id = 0; id < (SampleId) muted.source().getLayout().samples.size() && checked < 4; ++id)
+            {
+                if (muted.source().getLayout().samples[id].mic != snareTop)
+                    continue;
+
+                const auto reference = readAll (*ram.samples, id, 4096);
+                const auto reloaded = readAll (muted.source(), id, 4096);
+
+                for (int i = 0; i < reference.getNumSamples(); ++i)
+                    expectEquals (reloaded.getSample (0, i), reference.getSample (0, i));
+
+                ++checked;
+            }
+
+            expect (checked > 0);
+        }
+
+        beginTest ("Changed source files are cached again, and the cache can be cleared");
+        {
+            const auto temp = juce::File::createTempFile ("lithium-stream-test");
+            const auto kitCopy = temp.getChildFile ("kit");
+            const auto cache = temp.getChildFile ("cache");
+            expect (testKitFolder.copyDirectoryTo (kitCopy));
+
+            auto first = loadStreaming (kitCopy, cache);
+            expect (first.kit != nullptr, first.error);
+
+            if (first.kit != nullptr)
+            {
+                const auto path = first.plan->files.front().path;   // a copy: the plan goes away below
+                const auto pack = streamcache::Pack::open (cache, first.plan->folder);
+                const auto size = pack.getDataFile().getSize();
+                const auto entryBytes = pack.find (path)->offsetOf (pack.find (path)->numChannels, 0) - pack.find (path)->offset;
+
+                // Touch one file: it no longer matches its entry.
+                const auto touched = first.plan->folder.getChildFile (path);
+                expect (touched.setLastModificationTime (touched.getLastModificationTime() + juce::RelativeTime::seconds (10)));
+                expect (streamcache::Pack::open (cache, first.plan->folder).find (path) == nullptr);
+
+                first = {};   // close the old kit's cache file before appending to it
+                auto second = loadStreaming (kitCopy, cache);
+                expect (second.kit != nullptr, second.error);
+
+                const auto updated = streamcache::Pack::open (cache, second.plan->folder);
+                expect (updated.find (path) != nullptr);
+                expectEquals (updated.getDataFile().getSize(), size + entryBytes);
+
+                // Clearing leaves packs that are in use alone.
+                expectEquals (streamcache::clear (cache, { updated.getFolder() }), 0);
+                second = {};
+                expectEquals (streamcache::clear (cache, {}), 1);
+                expectEquals (streamcache::getCacheSize (cache), (std::int64_t) 0);
+            }
+
+            temp.deleteRecursively();
+        }
+    }
+};
+
+//==============================================================================
 class ProcessorTests final : public juce::UnitTest
 {
 public:
@@ -1389,6 +1702,55 @@ public:
             }
 
             expectEquals (allocations, 0);
+        }
+
+        beginTest ("processBlock doesn't allocate while a kit streams from disk");
+        {
+            test::setEnvironment ("LITHIUM_STREAMING", "always");
+            LithiumDrumsProcessor streaming;
+            expect (waitForKit (streaming), "no sound from the streaming test kit");
+            expect (streaming.getKitInfo() != nullptr && streaming.getKitInfo()->streaming, "the kit should stream");
+
+            constexpr int blockSize = 256;
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            std::vector<juce::MidiBuffer> blocks (600);
+
+            for (size_t i = 0; i < blocks.size(); ++i)
+                for (const auto note : { 36, 38, 42, 46, 49, 51, 57 })
+                    if ((i + (size_t) note) % 7 == 0)
+                        blocks[i].addEvent (juce::MidiMessage::noteOn (10, note, (juce::uint8) 110), 17);
+
+            streaming.prepareToPlay (sampleRate, blockSize);
+            int allocations = 0;
+
+            {
+                test::ScopedAllocationCounter counter;
+
+                // Roughly real time, so the disk thread has to keep up.
+                for (auto& midi : blocks)
+                {
+                    streaming.processBlock (buffer, midi);
+                    juce::Thread::sleep (3);
+                }
+
+                allocations = counter.count();
+            }
+
+            expectEquals (allocations, 0);
+            expect (streaming.getStreamStats().bytesRead.load() > 0, "nothing was read from disk");
+            expectEquals ((int) streaming.getStreamStats().dropouts.load(), 0);
+
+            // Turning streaming off reloads the kit into RAM.
+            test::setEnvironment ("LITHIUM_STREAMING", "never");
+            streaming.reloadKit();
+
+            for (int i = 0; i < 200 && (streaming.isKitLoading() || streaming.getKitInfo()->streaming); ++i)
+            {
+                juce::Thread::sleep (20);
+                streaming.applyPendingKitLoad();
+            }
+
+            expect (! streaming.getKitInfo()->streaming, "the kit should be back in RAM");
         }
 
         beginTest ("Mics routed to a direct out leave the main mix");
@@ -1589,6 +1951,7 @@ public:
 static ManifestTests manifestTests;
 static LoaderTests loaderTests;
 static StorageTests storageTests;
+static StreamingTests streamingTests;
 static EngineTests engineTests;
 static ImporterTests importerTests;
 static PresetTests presetTests;

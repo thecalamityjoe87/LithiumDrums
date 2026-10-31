@@ -195,21 +195,25 @@ role. E-kit maps (Roland, Alesis) will use the same role-based form.
 
 ## Audio and memory
 
-WAV and FLAC files are read with JUCE's readers. The whole kit is held in RAM
-for now, stored per mic as 16-bit integers (if every file is 16-bit) or 24-bit
-integers (anything deeper, including 32-bit float sources), and converted to
-float as it plays. That's 2 or 3 bytes per sample instead of float's 4. When a
-mic is muted for a couple of seconds its audio is unloaded, and reloaded when
-it's unmuted.
+WAV and FLAC files are read with JUCE's readers. Audio in RAM is stored per
+mic as 16-bit integers (if every file is 16-bit) or 24-bit integers (anything
+deeper, including 32-bit float sources), and converted to float as it plays.
+That's 2 or 3 bytes per sample instead of float's 4. When a mic is muted for a
+couple of seconds its audio is unloaded, and reloaded when it's unmuted.
+
+Small kits are held in RAM whole. Large ones keep only the first part of each
+sample in RAM and stream the rest from a cache that's built from the kit's
+audio the first time it streams. That needs nothing from the kit format; see
+[streaming.md](streaming.md).
 
 ## Scaling to large libraries
 
 - `kit.json` describes structure, not audio, so it stays small: imported
   DrumGizmo kits are 40-100 KB for 200-550 hits, because hits are plain file
   names and the channel map is written once per articulation.
-- All sample access goes through one interface (`SampleSource`), shaped for
-  streaming: a voice opens a cursor and reads forwards, and a streaming source
-  may serve the start of each sample from RAM and the rest from disk.
+- All sample access goes through one interface (`SampleSource`): a voice opens
+  a cursor and reads forwards. The streaming source serves the start of each
+  sample from RAM and the rest from disk, behind the same interface.
 - Many short files or one long file per hit both work; the loader reads every
   file's header first, lays memory out once, then decodes in parallel.
 

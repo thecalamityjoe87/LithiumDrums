@@ -84,7 +84,9 @@ public:
     // One SampleId per hit per mic: hitSamples[hit * numMics + mic], with
     // invalidSampleId where that mic has no recording of the hit.
     std::vector<SampleId> hitSamples;
-    std::unique_ptr<InMemorySampleSource> samples;   // voices use it only through the SampleSource interface
+    // An InMemorySampleSource, or a StreamingSampleSource (which builds on it).
+    // Voices use it only through the SampleSource interface.
+    std::unique_ptr<InMemorySampleSource> samples;
 
     // When a kit is chosen from the kit menu, the mixer and piece parameters
     // are reset to neutral on the message thread after the kit arrives. Until
@@ -194,7 +196,16 @@ struct KitInfo
     std::vector<KitMicInfo> mics;
     std::array<int, numStageSlots> slotPiece {};   // the piece shown in each stage slot, -1 for none
     int bitsPerSample = 24;
-    std::size_t memoryBytes = 0;                    // with every mic loaded
+    double sampleRate = 44100.0;
+    std::size_t memoryBytes = 0;                    // with every mic loaded (for a streaming kit: preloads plus stream buffers)
+    std::size_t fullMemoryBytes = 0;                // what the whole kit would take in RAM
+
+    // Streaming: the first preloadFrames of each sample are in RAM, the rest
+    // streams from the cache pack.
+    bool streaming = false;
+    int preloadFrames = 0;
+    std::size_t streamBufferBytes = 0;
+    juce::File streamCache;
     int numSampleFiles = 0;
     double loadSeconds = 0.0;
     juce::StringArray warnings;

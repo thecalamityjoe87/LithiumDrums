@@ -1,6 +1,9 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 #include <atomic>
+#include <stdlib.h>   // setenv / _putenv_s
 
 namespace lithium::test
 {
@@ -15,4 +18,13 @@ namespace lithium::test
 
         int count() const             { return allocationCount.load(); }
     };
+
+    inline void setEnvironment (const char* name, const juce::String& value)
+    {
+       #if JUCE_WINDOWS
+        _putenv_s (name, value.toRawUTF8());
+       #else
+        setenv (name, value.toRawUTF8(), 1);
+       #endif
+    }
 }

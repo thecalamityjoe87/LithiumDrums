@@ -12,7 +12,10 @@ enum class Tab { kit, edit, mixer, grooves, fx };
 
 /** The 56 px bar across the top: logo, tabs, kit picker, live readouts and
     the info and settings buttons. */
-class HeaderBar final : public juce::Component, private juce::ChangeListener, private juce::Timer
+class HeaderBar final : public juce::Component,
+                        public juce::TooltipClient,
+                        private juce::ChangeListener,
+                        private juce::Timer
 {
 public:
     explicit HeaderBar (LithiumDrumsProcessor&);
@@ -27,6 +30,9 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    /** Explains the readout under the mouse. */
+    juce::String getTooltip() override;
 
 private:
     class TabButton;
@@ -49,6 +55,13 @@ private:
     int cpuPercent = 0, voices = 0;
     std::size_t sampleBytes = 0;
     float loadProgress = -1.0f;   // -1 while no kit is loading
+    LoadPhase loadPhase = LoadPhase::reading;
+
+    // Disk readout: bytes per second, worked out from the stream counters.
+    std::uint64_t lastBytesRead = 0, lastDropouts = 0;
+    double lastReadTime = 0.0, lastDropoutTime = -1.0e9;
+    double diskBytesPerSecond = 0.0;
+    bool streaming = false, recentDropouts = false;
 
     static constexpr int refreshItemId = 10000, settingsItemId = 10001, browseItemId = 10002;
 };

@@ -7,13 +7,14 @@
 namespace lithium
 {
 
-SampleId SampleLayout::add (int mic, int numChannels, std::int64_t numFrames)
+SampleId SampleLayout::add (int mic, int numChannels, std::int64_t numFrames, std::int64_t maxStoredFrames)
 {
     jassert (juce::isPositiveAndBelow (mic, maxMics) && numChannels >= 1 && numChannels <= maxChannelsPerMic);
 
     auto& size = storeSizes[(size_t) mic];
-    samples.push_back ({ mic, numChannels, numFrames, size });
-    size += (size_t) numFrames * (size_t) numChannels * (size_t) bytesPerSample;
+    const auto stored = std::min (numFrames, maxStoredFrames);
+    samples.push_back ({ mic, numChannels, numFrames, stored, size });
+    size += (size_t) stored * (size_t) numChannels * (size_t) bytesPerSample;
     return (SampleId) (samples.size() - 1);
 }
 
@@ -60,56 +61,67 @@ void InMemorySampleSource::open (SampleId id, SampleCursor& cursor) noexcept
     cursor.position = 0;
 }
 
-void InMemorySampleSource::read (SampleCursor& cursor, float* const* dest, int numFrames) noexcept
+void SampleLayout::unpack (const std::byte* bytes, int bytesPerSample, int channels,
+                           float* const* dest, int destOffset, int numFrames) noexcept
 {
-    const auto& s = layout->samples[cursor.sample];
-    const auto* store = stores[(size_t) s.mic].get();
-    const auto channels = s.numChannels;
-    const auto bytes = layout->bytesPerSample;
+    const auto* src = reinterpret_cast<const unsigned char*> (bytes);
 
-    // An unloaded (muted) mic reads as silence. Voices keep running either
-    // way, so the mic stays in step if it's reloaded mid-hit.
-    const auto available = store == nullptr ? 0
-                         : (int) std::clamp<std::int64_t> (s.numFrames - cursor.position, 0, numFrames);
-
-    if (available > 0)
+    if (bytesPerSample == 2)
     {
-        const auto* src = reinterpret_cast<const unsigned char*> (store->data.data() + s.offset)
-                        + (size_t) cursor.position * (size_t) channels * (size_t) bytes;
+        constexpr float scale = 1.0f / 32768.0f;
 
-        if (bytes == 2)
+        for (int i = destOffset; i < destOffset + numFrames; ++i)
         {
-            constexpr float scale = 1.0f / 32768.0f;
-
-            for (int i = 0; i < available; ++i)
+            for (int ch = 0; ch < channels; ++ch, src += 2)
             {
-                for (int ch = 0; ch < channels; ++ch, src += 2)
-                {
-                    // Assemble the bytes into an unsigned value, then reinterpret
-                    // as signed 16-bit: well defined, and endian-independent.
-                    const auto v = (std::int16_t) (std::uint16_t) (src[0] | (src[1] << 8));
-                    dest[ch][i] = (float) v * scale;
-                }
-            }
-        }
-        else
-        {
-            constexpr float scale = 1.0f / 8388608.0f;
-
-            for (int i = 0; i < available; ++i)
-            {
-                for (int ch = 0; ch < channels; ++ch, src += 3)
-                {
-                    // Put the 24 bits at the top of a 32-bit word, then shift back
-                    // down as signed: the arithmetic shift sign-extends.
-                    const auto word = (std::uint32_t) src[0] << 8 | (std::uint32_t) src[1] << 16 | (std::uint32_t) src[2] << 24;
-                    dest[ch][i] = (float) ((std::int32_t) word >> 8) * scale;
-                }
+                // Assemble the bytes into an unsigned value, then reinterpret
+                // as signed 16-bit: well defined, and endian-independent.
+                const auto v = (std::int16_t) (std::uint16_t) (src[0] | (src[1] << 8));
+                dest[ch][i] = (float) v * scale;
             }
         }
     }
+    else
+    {
+        constexpr float scale = 1.0f / 8388608.0f;
 
-    for (int ch = 0; ch < channels; ++ch)
+        for (int i = destOffset; i < destOffset + numFrames; ++i)
+        {
+            for (int ch = 0; ch < channels; ++ch, src += 3)
+            {
+                // Put the 24 bits at the top of a 32-bit word, then shift back
+                // down as signed: the arithmetic shift sign-extends.
+                const auto word = (std::uint32_t) src[0] << 8 | (std::uint32_t) src[1] << 16 | (std::uint32_t) src[2] << 24;
+                dest[ch][i] = (float) ((std::int32_t) word >> 8) * scale;
+            }
+        }
+    }
+}
+
+int InMemorySampleSource::readStored (SampleId id, std::int64_t position, float* const* dest, int numFrames) const noexcept
+{
+    const auto& s = layout->samples[id];
+    const auto* store = stores[(size_t) s.mic].get();
+
+    // An unloaded (muted) mic reads as silence. Voices keep running either
+    // way, so the mic stays in step if it's reloaded mid-hit.
+    if (store == nullptr)
+        return 0;
+
+    const auto available = (int) std::clamp<std::int64_t> (s.storedFrames - position, 0, numFrames);
+
+    if (available > 0)
+        SampleLayout::unpack (store->data.data() + s.offset + (size_t) position * (size_t) s.numChannels * (size_t) layout->bytesPerSample,
+                              layout->bytesPerSample, s.numChannels, dest, 0, available);
+
+    return available;
+}
+
+void InMemorySampleSource::read (SampleCursor& cursor, float* const* dest, int numFrames) noexcept
+{
+    const auto available = readStored (cursor.sample, cursor.position, dest, numFrames);
+
+    for (int ch = 0; ch < layout->samples[cursor.sample].numChannels; ++ch)
         std::fill (dest[ch] + available, dest[ch] + numFrames, 0.0f);
 
     cursor.position += numFrames;

@@ -1,6 +1,9 @@
 #include "KitLoader.h"
 
+#include "DrumEngine.h"
 #include "KitManifest.h"
+#include "ParallelJobs.h"
+#include "StreamCache.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -46,61 +49,6 @@ namespace
     MicMask validMics (int numMics) noexcept
     {
         return numMics >= 32 ? allMics : (MicMask) ((1u << numMics) - 1);
-    }
-
-    /** Runs job(i, formats, error) for every i in [0, numJobs) on a pool of
-        worker threads. Workers pull the next index from an atomic counter, so
-        the load balances itself. Each worker has its own AudioFormatManager,
-        because format readers aren't shared between threads. Stops at the
-        first failure, or when shouldAbort() says so. */
-    template <typename Job>
-    bool runParallel (size_t numJobs, const std::function<bool()>& shouldAbort, juce::String& error, Job&& job)
-    {
-        std::atomic<size_t> next { 0 };
-        std::atomic<bool> failed { false };
-        std::mutex errorMutex;
-
-        const auto numWorkers = (size_t) juce::jlimit (1, 8, (int) std::thread::hardware_concurrency() - 1);
-
-        {
-            // std::jthread joins in its destructor, so leaving this scope waits for every worker.
-            std::vector<std::jthread> workers;
-
-            for (size_t w = 0; w < std::min (numWorkers, std::max<size_t> (numJobs, 1)); ++w)
-            {
-                workers.emplace_back ([&]
-                {
-                    juce::AudioFormatManager formats;
-                    formats.registerBasicFormats();
-
-                    for (auto i = next++; i < numJobs && ! failed; i = next++)
-                    {
-                        if (shouldAbort && shouldAbort())
-                        {
-                            failed = true;
-                            break;
-                        }
-
-                        juce::String jobError;
-
-                        if (! job (i, formats, jobError))
-                        {
-                            std::scoped_lock lock (errorMutex);
-
-                            if (error.isEmpty())
-                                error = jobError;
-
-                            failed = true;
-                        }
-                    }
-                });
-            }
-        }
-
-        if (failed && error.isEmpty())
-            error = "Loading was cancelled";
-
-        return ! failed;
     }
 
     struct FileHeader
@@ -239,6 +187,72 @@ namespace
         if (options.progress != nullptr)
             options.progress->store (value, std::memory_order_relaxed);
     }
+
+    void setPhase (const KitLoader::Options& options, LoadPhase phase)
+    {
+        if (options.phase != nullptr)
+            options.phase->store (phase, std::memory_order_relaxed);
+    }
+
+    /** Reads one packed little-endian 16- or 24-bit value, sign-extended. */
+    int unpackInt (const std::byte* p, int bytes) noexcept
+    {
+        const auto* b = reinterpret_cast<const unsigned char*> (p);
+
+        if (bytes == 2)
+            return (std::int16_t) (std::uint16_t) (b[0] | (b[1] << 8));
+
+        return (std::int32_t) ((std::uint32_t) b[0] << 8 | (std::uint32_t) b[1] << 16 | (std::uint32_t) b[2] << 24) >> 8;
+    }
+
+    /** Fills the preloads of one file's samples from the stream cache: no
+        decoding, just reads, so it's much quicker than decodeFile(). */
+    bool fillFromCache (const LoadPlan& plan, const LoadPlan::File& f, MicMask mask,
+                        std::array<std::unique_ptr<MicStore>, maxMics>& stores, juce::String& error)
+    {
+        const auto& layout = *plan.layout;
+        juce::FileInputStream in (plan.stream->dataFile);
+
+        if (! in.openedOk())
+        {
+            error = "Can't open the stream cache " + plan.stream->dataFile.getFullPathName();
+            return false;
+        }
+
+        const auto outBytes = layout.bytesPerSample;
+        std::vector<std::byte> buffer;
+
+        for (const auto& t : f.targets)
+        {
+            if ((mask & (1u << t.mic)) == 0)
+                continue;
+
+            const auto& s = layout.samples[t.sample];
+            const auto& region = plan.stream->regions[t.sample];
+            const auto inBytes = region.bytesPerSample;
+            const auto n = (size_t) s.storedFrames;
+            auto* dest = layout.getWritePointer (*stores[(size_t) t.mic], t.sample);
+            buffer.resize (n * (size_t) inBytes);
+
+            for (int ch = 0; ch < s.numChannels; ++ch)
+            {
+                if (! in.setPosition (region.offset[(size_t) ch]) || in.read (buffer.data(), buffer.size()) != (int) buffer.size())
+                {
+                    error = "The stream cache for " + f.path + " is damaged; clear the cache in Settings";
+                    return false;
+                }
+
+                // A 16-bit file in a kit that also has deeper ones is held as 24-bit.
+                const auto shift = (outBytes - inBytes) * 8;
+
+                for (size_t i = 0; i < n; ++i)
+                    SampleLayout::pack (dest + (i * (size_t) s.numChannels + (size_t) ch) * (size_t) outBytes, outBytes,
+                                        unpackInt (buffer.data() + i * (size_t) inBytes, inBytes) * (1 << shift));
+            }
+        }
+
+        return true;
+    }
 } // namespace
 
 //==============================================================================
@@ -250,7 +264,7 @@ std::size_t LoadPlan::bytesFor (MicMask mask) const noexcept
         if ((mask & (1u << m)) != 0)
             bytes += layout->storeSizes[(size_t) m];
 
-    return bytes;
+    return bytes + streamBufferBytes;
 }
 
 bool KitLoader::decode (const LoadPlan& plan, MicMask mask, std::array<std::unique_ptr<MicStore>, maxMics>& stores,
@@ -273,10 +287,13 @@ bool KitLoader::decode (const LoadPlan& plan, MicMask mask, std::array<std::uniq
     return runParallel (jobs.size(), options.shouldAbort, error,
                         [&] (size_t i, juce::AudioFormatManager& formats, juce::String& jobError)
                         {
-                            if (! decodeFile (formats, plan, *jobs[i], mask, stores, jobError))
+                            const auto ok = plan.stream != nullptr ? fillFromCache (plan, *jobs[i], mask, stores, jobError)
+                                                                   : decodeFile (formats, plan, *jobs[i], mask, stores, jobError);
+                            if (! ok)
                                 return false;
 
-                            setProgress (options, 0.1f + 0.9f * (float) ++done / (float) jobs.size());
+                            const auto from = options.progressFrom;
+                            setProgress (options, from + (1.0f - from) * (float) ++done / (float) jobs.size());
                             return true;
                         });
 }
@@ -288,6 +305,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 {
     const auto startTime = juce::Time::getMillisecondCounterHiRes();
     setProgress (options, 0.0f);
+    setPhase (options, LoadPhase::reading);
 
     KitManifest manifest;
 
@@ -426,12 +444,27 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         sourceFile.push_back (it->second);
     }
 
-    // Pass 1: read every file's header (in parallel; large kits have thousands).
+    // Pass 1: every file's header (in parallel; large kits have thousands).
+    // Files already in the stream cache don't need opening: their entries
+    // say everything the header would.
+    const auto& streaming = options.streaming;
+    const auto mayStream = streaming.mode != StreamingMode::never && streaming.cacheFolder != juce::File();
+    auto pack = mayStream ? streamcache::Pack::open (streaming.cacheFolder, plan->folder) : streamcache::Pack();
     std::vector<FileHeader> headers (plan->files.size());
+    std::vector<size_t> uncached;
 
-    if (! runParallel (plan->files.size(), options.shouldAbort, error,
-                       [&] (size_t i, juce::AudioFormatManager& formats, juce::String& jobError)
+    for (size_t i = 0; i < plan->files.size(); ++i)
+    {
+        if (const auto* e = mayStream ? pack.find (plan->files[i].path) : nullptr)
+            headers[i] = { e->numChannels, e->numFrames, e->sourceBits };
+        else
+            uncached.push_back (i);
+    }
+
+    if (! runParallel (uncached.size(), options.shouldAbort, error,
+                       [&] (size_t j, juce::AudioFormatManager& formats, juce::String& jobError)
                        {
+                           const auto i = uncached[j];
                            const auto& f = plan->files[i];
                            return readHeader (formats, plan->folder.getChildFile (f.path), f.path, manifest.sampleRate, headers[i], jobError);
                        }))
@@ -445,7 +478,55 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     for (const auto& h : headers)
         bits = std::max (bits, h.bitsPerSample);
 
+    // What the whole kit takes in RAM decides whether it streams.
+    const auto bytesPerSample = (size_t) (bits <= 16 ? 2 : 3);
+    std::size_t fullBytes = 0;
+
+    for (const auto& [i, s] : juce::enumerate (sources))
+        fullBytes += (size_t) std::max<std::int64_t> (0, headers[sourceFile[(size_t) i]].length - s.source.start)
+                     * (size_t) manifest.mics[(size_t) s.source.mic].channels * bytesPerSample;
+
+    auto stream = mayStream && (streaming.mode == StreamingMode::always || fullBytes > streaming.autoThresholdBytes);
+
+    if (stream && ! uncached.empty())
+    {
+        // Check there's room for the cache before decoding gigabytes into it.
+        std::int64_t needed = 0;
+
+        for (const auto i : uncached)
+            needed += headers[i].length * headers[i].numChannels * (headers[i].bitsPerSample <= 16 ? 2 : 3);
+
+        streaming.cacheFolder.createDirectory();
+
+        if (streaming.cacheFolder.getBytesFreeOnVolume() < needed + ((std::int64_t) 256 << 20))
+        {
+            info.warnings.add ("Not enough free disk space for the stream cache (needs "
+                               + juce::File::descriptionOfSizeInBytes (needed) + "), so the kit is held in RAM");
+            stream = false;
+        }
+    }
+
+    // Streaming: decode whatever isn't cached yet into the cache. From then
+    // on, the source files aren't read again.
+    if (stream && ! uncached.empty())
+    {
+        setPhase (options, LoadPhase::caching);
+        juce::StringArray paths;
+
+        for (const auto i : uncached)
+            paths.add (plan->files[i].path);
+
+        if (! streamcache::cacheFiles (streaming.cacheFolder, plan->folder, paths, manifest.sampleRate, pack, error,
+                                       options.shouldAbort, [&] (float p) { setProgress (options, 0.1f + 0.75f * p); }))
+            return nullptr;
+    }
+
+    setPhase (options, LoadPhase::loading);
+
     auto layout = std::make_shared<SampleLayout> (bits);
+    const auto maxStored = stream ? (std::int64_t) std::max (StreamingSampleSource::chunkFrames, streaming.preloadFrames)
+                                  : std::numeric_limits<std::int64_t>::max();
+    std::vector<StreamRegion> regions;
     kit->hitSamples.assign ((size_t) numHits * (size_t) kit->numMics, invalidSampleId);
 
     for (const auto& [i, s] : juce::enumerate (sources))
@@ -476,29 +557,89 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
             return nullptr;
         }
 
-        const auto id = layout->add (s.source.mic, micChannels, header.length - s.source.start);
+        const auto id = layout->add (s.source.mic, micChannels, header.length - s.source.start, maxStored);
         auto& slot = kit->hitSamples[(size_t) (s.hit * kit->numMics + s.source.mic)];
 
         if (slot != invalidSampleId)
             info.warnings.addIfNotAlreadyThere ("Some hits list the same mic twice; the last one is used");
 
         slot = id;
-        file.targets.push_back ({ s.source.mic, id, { channels[0] - 1, (micChannels == 2 ? channels[1] : channels[0]) - 1 },
-                                  s.source.start });
+        const std::array<int, 2> fileChannels { channels[0] - 1, (micChannels == 2 ? channels[1] : channels[0]) - 1 };
+        file.targets.push_back ({ s.source.mic, id, fileChannels, s.source.start });
+
+        if (stream)
+        {
+            const auto* e = pack.find (file.path);
+
+            if (e == nullptr)
+            {
+                error = "The stream cache has no entry for " + file.path;
+                return nullptr;
+            }
+
+            StreamRegion r;
+            r.bytesPerSample = e->bytesPerSample;
+
+            for (int ch = 0; ch < micChannels; ++ch)
+                r.offset[(size_t) ch] = e->offsetOf (fileChannels[(size_t) ch], s.source.start);
+
+            regions.push_back (r);
+        }
     }
 
     plan->layout = layout;
 
-    // Pass 2: decode the audio of every mic that should be in RAM.
-    std::array<std::unique_ptr<MicStore>, maxMics> stores;
+    std::array<int, maxMics> micChannels {};
 
-    if (! decode (*plan, options.mics, stores, error, options))
+    for (int m = 0; m < kit->numMics; ++m)
+        micChannels[(size_t) m] = kit->mics[(size_t) m].numChannels;
+
+    if (stream)
+    {
+        auto map = std::make_shared<StreamMap>();
+        map->dataFile = pack.getDataFile();
+        map->regions = std::move (regions);
+        plan->stream = std::move (map);
+        plan->streamBufferBytes = StreamingSampleSource::bufferBytesFor (micChannels, kit->numMics, DrumEngine::numVoices);
+    }
+
+    // Pass 2: the audio of every mic that should be in RAM: decoded from the
+    // source files, or for a streaming kit, its preloads read from the cache.
+    std::array<std::unique_ptr<MicStore>, maxMics> stores;
+    auto decodeOptions = options;
+    decodeOptions.progressFrom = stream ? 0.85f : 0.1f;
+
+    if (! decode (*plan, options.mics, stores, error, decodeOptions))
         return nullptr;
 
-    auto source = std::make_unique<InMemorySampleSource> (layout);
+    std::unique_ptr<InMemorySampleSource> source;
+
+    if (stream)
+    {
+        auto streamer = std::make_unique<StreamingSampleSource> (layout, plan->stream, micChannels, kit->numMics, DrumEngine::numVoices,
+                                                                 options.streamStats != nullptr ? options.streamStats
+                                                                                                : std::make_shared<StreamStats>());
+        if (! streamer->isValid())
+        {
+            error = "Can't open the stream cache " + plan->stream->dataFile.getFullPathName();
+            return nullptr;
+        }
+
+        source = std::move (streamer);
+    }
+    else
+    {
+        source = std::make_unique<InMemorySampleSource> (layout);
+    }
 
     for (int m = 0; m < kit->numMics; ++m)
         source->attachStore (m, std::move (stores[(size_t) m]));
+
+    info.streaming = stream;
+    info.preloadFrames = stream ? (int) maxStored : 0;
+    info.fullMemoryBytes = fullBytes;
+    info.streamBufferBytes = plan->streamBufferBytes;
+    info.streamCache = stream ? pack.getFolder() : juce::File();
 
     // MIDI: the kit's own map if it has one, otherwise General MIDI resolved by role.
     std::vector<int> mappedNotes;
@@ -579,6 +720,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
     info.slotPiece = assignStageSlots (roles);
     info.bitsPerSample = layout->bytesPerSample * 8;
+    info.sampleRate = manifest.sampleRate;
     info.memoryBytes = plan->bytesFor (allMics);
     info.numSampleFiles = (int) plan->files.size();
     info.loadSeconds = (juce::Time::getMillisecondCounterHiRes() - startTime) / 1000.0;
@@ -676,6 +818,9 @@ void KitLoader::loadRequested (const Request& r, std::uint64_t myGeneration)
     Options options;
     options.mics = r.mics;
     options.progress = &progress;
+    options.phase = &phase;
+    options.streaming = r.streaming;
+    options.streamStats = r.streamStats;
     options.shouldAbort = [this, myGeneration] { return threadShouldExit() || generation.load() != myGeneration; };
 
     auto kit = loadKit (r.folder, generalMidi, *info, error, options, &plan);

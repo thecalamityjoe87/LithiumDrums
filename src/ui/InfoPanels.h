@@ -60,8 +60,8 @@ private:
     std::vector<std::unique_ptr<juce::Component>> cards;
 };
 
-/** Settings: where the kits are. */
-class SettingsPanel final : public OverlayPanel
+/** Settings: where the kits are, and how they stream from disk. */
+class SettingsPanel final : public OverlayPanel, private juce::Timer
 {
 public:
     explicit SettingsPanel (LithiumDrumsProcessor&);
@@ -74,13 +74,21 @@ public:
 
 private:
     void layoutContent (juce::Rectangle<int>) override;
+    void visibilityChanged() override;
+    void timerCallback() override;
     void setFolder (const juce::File&);
+    void updateStatus();
 
     LithiumDrumsProcessor& processor;
-    juce::Label folderLabel;
+    juce::Label folderLabel, cacheLabel;
     juce::TextButton changeButton { "Change..." }, openButton { "Open folder" }, defaultButton { "Use default" };
+    juce::TextButton clearCacheButton { "Clear cache" }, openCacheButton { "Open folder" };
+    juce::ComboBox modeBox, preloadBox;
     std::unique_ptr<juce::FileChooser> chooser;   // must stay alive while the async dialog is open
-    juce::Rectangle<int> textArea;
+
+    juce::Rectangle<int> kitsHeading, kitsText, streamingHeading, modeLabel, preloadLabel, statusText, cacheHeading, cacheText;
+    juce::String status, cacheSummary;
+    std::shared_ptr<const KitInfo> statusFor;     // the kit the status line describes
 };
 
 } // namespace lithium

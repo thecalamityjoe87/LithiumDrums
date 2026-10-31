@@ -6,6 +6,14 @@ namespace lithium
 namespace
 {
     const juce::Identifier kitsFolderKey { "kitsFolder" };
+    const juce::Identifier streamingKey { "streaming" };
+    const juce::Identifier preloadKey { "preloadFrames" };
+
+    constexpr std::array<std::pair<StreamingMode, const char*>, 3> modeNames {{
+        { StreamingMode::automatic, "auto" },
+        { StreamingMode::always, "always" },
+        { StreamingMode::never, "never" },
+    }};
 
     juce::PropertiesFile::Options settingsOptions (juce::InterProcessLock& lock)
     {
@@ -41,6 +49,61 @@ void Settings::setKitsFolder (const juce::File& folder)
 {
     file->setValue (kitsFolderKey.toString(), folder.getFullPathName());
     file->saveIfNeeded();
+}
+
+StreamingSettings Settings::getStreaming() const
+{
+    StreamingSettings result;
+    result.mode = StreamingMode::automatic;
+
+    // LITHIUM_STREAMING (auto, always or never) overrides the saved mode, for
+    // the tests and for trying things out.
+    const auto envMode = juce::SystemStats::getEnvironmentVariable ("LITHIUM_STREAMING", {});
+    const auto mode = envMode.isNotEmpty() ? envMode : file->getValue (streamingKey.toString());
+
+    for (const auto& [m, name] : modeNames)
+        if (mode == name)
+            result.mode = m;
+
+    const auto preload = file->getIntValue (preloadKey.toString(), defaultPreloadFrames);
+    result.preloadFrames = std::find (preloadChoices.begin(), preloadChoices.end(), preload) != preloadChoices.end()
+                             ? preload : defaultPreloadFrames;
+
+    const auto env = juce::SystemStats::getEnvironmentVariable ("LITHIUM_CACHE_FOLDER", {});
+    result.cacheFolder = env.isNotEmpty() && juce::File::isAbsolutePath (env) ? juce::File (env) : getDefaultCacheFolder();
+    return result;
+}
+
+void Settings::setStreamingMode (StreamingMode mode)
+{
+    for (const auto& [m, name] : modeNames)
+        if (m == mode)
+            file->setValue (streamingKey.toString(), name);
+
+    file->saveIfNeeded();
+}
+
+void Settings::setPreloadFrames (int frames)
+{
+    file->setValue (preloadKey.toString(), frames);
+    file->saveIfNeeded();
+}
+
+juce::File Settings::getDefaultCacheFolder()
+{
+    // A cache folder, not the data folder: the OS (and backup tools) know
+    // its contents can be thrown away and rebuilt.
+   #if JUCE_WINDOWS
+    const auto base = juce::File::getSpecialLocation (juce::File::windowsLocalAppData).getChildFile ("Lithium Drums");
+   #elif JUCE_MAC
+    const auto base = juce::File ("~/Library/Caches/Lithium Drums");
+   #else
+    const auto xdg = juce::SystemStats::getEnvironmentVariable ("XDG_CACHE_HOME", {});
+    const auto base = (xdg.isNotEmpty() && juce::File::isAbsolutePath (xdg) ? juce::File (xdg) : juce::File ("~/.cache"))
+                        .getChildFile ("Lithium Drums");
+   #endif
+
+    return base.getChildFile ("Stream Cache");
 }
 
 juce::File Settings::getDefaultKitsFolder()
