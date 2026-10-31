@@ -1,0 +1,83 @@
+{
+  "comment": "Import mapping for DrumGizmo's MuldjordKit 3.0. Left/right in piece names are as seen by the drummer (as in the kit's README); stereo mics and pans are from the audience's side, to match the kit stage.",
+  "matches": ["MuldjordKit3", "MuldjordKit"],
+  "variants": {
+    "MuldjordKit3.xml": { "name": "MuldjordKit", "midimap": "Midimap.xml" }
+  },
+  "author": "Lars Muldjord",
+  "levelDb": -9,
+  "levelComment": "-9 dB on every mic: summed at unity, hard snare hits peak around +6.6 dBFS.",
+  "sourceUrl": "https://drumgizmo.org/wiki/doku.php?id=kits:muldjordkit",
+  "license": {
+    "name": "CC BY 4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "files": ["README.TXT"]
+  },
+  "credits": "Drum samples provided by DrumGizmo.org. MuldjordKit by Lars Muldjord (muldjord.com), recorded in 2009.",
+  "description": "A metal and rock kit with two kicks, three rack toms and a floor tom, two crashes, two rides and a china.",
+
+  "ignoreChannels": ["Trigger"],
+
+  "mics": [
+    { "id": "kick_left",    "name": "Kick L",     "role": "close",     "channels": ["KdrumL"],       "pan": 0.1 },
+    { "id": "kick_right",   "name": "Kick R",     "role": "close",     "channels": ["KdrumR"],       "pan": -0.1 },
+    { "id": "snare_top",    "name": "Snare Top",  "role": "close",     "channels": ["Snare_top"],    "pan": 0.15 },
+    { "id": "snare_bottom", "name": "Snare Btm",  "role": "close",     "channels": ["Snare_bottom"], "pan": 0.15,
+      "invertPolarity": true, "comment": "The kit's README: the snare top and bottom mics are out of phase." },
+    { "id": "hihat",        "name": "Hi-Hat",     "role": "close",     "channels": ["Hihat"],        "pan": 0.45 },
+    { "id": "tom1",         "name": "Tom 1",      "role": "close",     "channels": ["Tom1"],         "pan": 0.35 },
+    { "id": "tom2",         "name": "Tom 2",      "role": "close",     "channels": ["Tom2"],         "pan": 0.15 },
+    { "id": "tom3",         "name": "Tom 3",      "role": "close",     "channels": ["Tom3"],         "pan": -0.05 },
+    { "id": "tom4",         "name": "Floor Tom",  "role": "close",     "channels": ["Tom4"],         "pan": -0.4 },
+    { "id": "ride_left",    "name": "Ride L",     "role": "close",     "channels": ["RideL"],        "pan": 0.55 },
+    { "id": "ride_right",   "name": "Ride R",     "role": "close",     "channels": ["RideR"],        "pan": -0.55 },
+    { "id": "overheads",    "name": "Overheads",  "role": "overheads", "channels": ["OHR", "OHL"] },
+    { "id": "room",         "name": "Ambience",   "role": "room",      "channels": ["AmbR", "AmbL"] }
+  ],
+
+  "pieces": [
+    { "id": "kick_left",  "name": "Kick L",  "role": "kick", "articulations": [
+      { "instrument": "KdrumL", "id": "hit", "name": "Hit" }
+    ]},
+    { "id": "kick_right", "name": "Kick R",  "role": "kick", "articulations": [
+      { "instrument": "KdrumR", "id": "hit", "name": "Hit" }
+    ]},
+    { "id": "snare", "name": "Snare", "role": "snare", "articulations": [
+      { "instrument": "Snare",     "id": "center", "name": "Center" },
+      { "instrument": "SnareRest", "id": "rest",   "name": "Rest" }
+    ]},
+    { "id": "hihat", "name": "Hi-Hat", "role": "hihat", "articulations": [
+      { "instrument": "HihatClosed", "id": "closed", "name": "Closed", "chokes": ["hihat_open"] },
+      { "instrument": "HihatOpen",   "id": "open",   "name": "Open",   "chokeGroup": "hihat_open" }
+    ]},
+    { "id": "tom1", "name": "Tom 1", "role": "tom", "articulations": [
+      { "instrument": "Tom1", "id": "center", "name": "Center" }
+    ]},
+    { "id": "tom2", "name": "Tom 2", "role": "tom", "articulations": [
+      { "instrument": "Tom2", "id": "center", "name": "Center" }
+    ]},
+    { "id": "tom3", "name": "Tom 3", "role": "tom", "articulations": [
+      { "instrument": "Tom3", "id": "center", "name": "Center" }
+    ]},
+    { "id": "floor", "name": "Floor Tom", "role": "floor_tom", "articulations": [
+      { "instrument": "Tom4", "id": "center", "name": "Center" }
+    ]},
+    { "id": "crash_left", "name": "Crash L", "role": "crash", "articulations": [
+      { "instrument": "CrashL", "id": "hit", "name": "Hit" }
+    ]},
+    { "id": "crash_right", "name": "Crash R", "role": "crash", "articulations": [
+      { "instrument": "CrashR", "id": "hit", "name": "Hit" }
+    ]},
+    { "id": "ride_left", "name": "Ride L", "role": "ride", "articulations": [
+      { "instrument": "RideL",     "id": "bow",  "name": "Bow" },
+      { "instrument": "RideLBell", "id": "bell", "name": "Bell" }
+    ]},
+    { "id": "ride_right", "name": "Ride R", "role": "ride", "articulations": [
+      { "instrument": "RideR",     "id": "bow",  "name": "Bow" },
+      { "instrument": "RideRBell", "id": "bell", "name": "Bell" }
+    ]},
+    { "id": "china", "name": "China", "role": "china", "articulations": [
+      { "instrument": "China", "id": "hit", "name": "Hit" }
+    ]}
+  ]
+}

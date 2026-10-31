@@ -1,0 +1,26 @@
+{
+  "name": "General MIDI",
+  "notes": [
+    { "note": 35, "role": "kick",      "nth": 0, "articulation": "hit" },
+    { "note": 36, "role": "kick",      "nth": 0, "articulation": "hit" },
+    { "note": 37, "role": "snare",     "nth": 0, "articulation": "sidestick" },
+    { "note": 38, "role": "snare",     "nth": 0, "articulation": "center" },
+    { "note": 40, "role": "snare",     "nth": 0, "articulation": "rimshot" },
+    { "note": 41, "role": "floor_tom", "nth": 1, "articulation": "center" },
+    { "note": 42, "role": "hihat",     "nth": 0, "articulation": "closed" },
+    { "note": 43, "role": "floor_tom", "nth": 0, "articulation": "center" },
+    { "note": 44, "role": "hihat",     "nth": 0, "articulation": "pedal" },
+    { "note": 45, "role": "tom",       "nth": 2, "articulation": "center" },
+    { "note": 46, "role": "hihat",     "nth": 0, "articulation": "open" },
+    { "note": 47, "role": "tom",       "nth": 1, "articulation": "center" },
+    { "note": 48, "role": "tom",       "nth": 1, "articulation": "center" },
+    { "note": 49, "role": "crash",     "nth": 0, "articulation": "hit" },
+    { "note": 50, "role": "tom",       "nth": 0, "articulation": "center" },
+    { "note": 51, "role": "ride",      "nth": 0, "articulation": "bow" },
+    { "note": 52, "role": "china",     "nth": 0, "articulation": "hit" },
+    { "note": 53, "role": "ride",      "nth": 0, "articulation": "bell" },
+    { "note": 55, "role": "crash",     "nth": 1, "articulation": "hit" },
+    { "note": 57, "role": "crash",     "nth": 1, "articulation": "hit" },
+    { "note": 59, "role": "ride",      "nth": 1, "articulation": "bow" }
+  ]
+}

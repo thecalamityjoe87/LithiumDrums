@@ -1,0 +1,92 @@
+{
+  "comment": "Import mapping for DrumGizmo's DRSKit 2.1. Left/right in piece names are as seen by the drummer (as in the kit's README); stereo mics and pans are from the audience's side, to match the kit stage.",
+  "matches": ["DRSKit2", "DRSKit"],
+  "variants": {
+    "DRSKit_basic.xml":         { "name": "DRSKit",            "midimap": "Midimap_basic.xml" },
+    "DRSKit_full.xml":          { "name": "DRSKit Full",       "midimap": "Midimap_full.xml" },
+    "DRSKit_minimal.xml":       { "name": "DRSKit Minimal",    "midimap": "Midimap_minimal.xml" },
+    "DRSKit_no_whiskers.xml":   { "name": "DRSKit No Brushes", "midimap": "Midimap_no_whiskers.xml" },
+    "DRSKit_whiskers_only.xml": { "name": "DRSKit Brushes",    "midimap": "Midimap_whiskers_only.xml" }
+  },
+  "author": "The DrumGizmo team (Deva and Lars Muldjord) with Jes Eiler of DRSDrums",
+  "levelDb": -6,
+  "levelComment": "-6 dB on every mic: summed at unity, hard hits peak around +3 dBFS.",
+  "sourceUrl": "https://drumgizmo.org/wiki/doku.php?id=kits:drskit",
+  "license": {
+    "name": "CC BY 4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "files": ["README.md"]
+  },
+  "credits": "DRSKit, a DrumGizmo kit (drumgizmo.org) made in collaboration with Jes Eiler of DRSDrums (drsdrums.dk). Kit and mic setup, sampling and editing by Deva and Lars Muldjord.",
+  "description": "A handcrafted DRSDrums kit with Paiste cymbals, usable for everything from jazz to rock.",
+
+  "mics": [
+    { "id": "kick_back",    "name": "Kick Back",   "role": "close",     "channels": ["Kdrum_back"] },
+    { "id": "kick_front",   "name": "Kick Front",  "role": "close",     "channels": ["Kdrum_front"] },
+    { "id": "snare_top",    "name": "Snare Top",   "role": "close",     "channels": ["Snare_top"],    "pan": 0.15 },
+    { "id": "snare_bottom", "name": "Snare Btm",   "role": "close",     "channels": ["Snare_bottom"], "pan": 0.15 },
+    { "id": "hihat",        "name": "Hi-Hat",      "role": "close",     "channels": ["Hihat"],        "pan": 0.45 },
+    { "id": "tom1",         "name": "Tom 1",       "role": "close",     "channels": ["Tom1"],         "pan": 0.15 },
+    { "id": "tom2",         "name": "Floor Tom 1", "role": "close",     "channels": ["Tom2"],         "pan": -0.3 },
+    { "id": "tom3",         "name": "Floor Tom 2", "role": "close",     "channels": ["Tom3"],         "pan": -0.5 },
+    { "id": "ride",         "name": "Ride",        "role": "close",     "channels": ["Ride"],         "pan": -0.45 },
+    { "id": "overheads",    "name": "Overheads",   "role": "overheads", "channels": ["OHR", "OHL"] },
+    { "id": "room",         "name": "Ambience",    "role": "room",      "channels": ["AmbR", "AmbL"] }
+  ],
+
+  "pieces": [
+    { "id": "kick", "name": "Kick", "role": "kick", "articulations": [
+      { "instrument": "Kdrum_with_contact",    "id": "hit",        "name": "With contact" },
+      { "instrument": "Kdrum_without_contact", "id": "no_contact", "name": "Without contact" }
+    ]},
+    { "id": "snare", "name": "Snare", "role": "snare", "articulations": [
+      { "instrument": "Snare",                "id": "center",       "name": "Center" },
+      { "instrument": "Snare_rim",            "id": "rim",          "name": "Rim" },
+      { "instrument": "Snare_rest",           "id": "rest",         "name": "Rest" },
+      { "instrument": "Snare_whisker",        "id": "brush",        "name": "Brush" },
+      { "instrument": "Snare_circle_whisker", "id": "brush_circle", "name": "Brush circle" }
+    ]},
+    { "id": "hihat", "name": "Hi-Hat", "role": "hihat", "articulations": [
+      { "instrument": "Hihat_closed",         "id": "closed",       "name": "Closed",          "chokes": ["hihat_open"] },
+      { "instrument": "Hihat_closed_shank",   "id": "closed_shank", "name": "Closed shank",    "chokes": ["hihat_open"] },
+      { "instrument": "Hihat_closed_whisker", "id": "closed_brush", "name": "Closed brush",    "chokes": ["hihat_open"] },
+      { "instrument": "Hihat_foot",           "id": "pedal",        "name": "Pedal",           "chokes": ["hihat_open"] },
+      { "instrument": "Hihat_semi_open",      "id": "half_open",    "name": "Half open",       "chokeGroup": "hihat_open" },
+      { "instrument": "Hihat_open",           "id": "open",         "name": "Open",            "chokeGroup": "hihat_open" },
+      { "instrument": "Hihat_open_tip",       "id": "open_tip",     "name": "Open tip",        "chokeGroup": "hihat_open" },
+      { "instrument": "Hihat_open_whisker",   "id": "open_brush",   "name": "Open brush",      "chokeGroup": "hihat_open" }
+    ]},
+    { "id": "tom1", "name": "Tom", "role": "tom", "articulations": [
+      { "instrument": "Tom1",         "id": "center", "name": "Center" },
+      { "instrument": "Tom1_whisker", "id": "brush",  "name": "Brush" }
+    ]},
+    { "id": "floor1", "name": "Floor Tom 1", "role": "floor_tom", "articulations": [
+      { "instrument": "Tom2",         "id": "center", "name": "Center" },
+      { "instrument": "Tom2_whisker", "id": "brush",  "name": "Brush" }
+    ]},
+    { "id": "floor2", "name": "Floor Tom 2", "role": "floor_tom", "articulations": [
+      { "instrument": "Tom3",         "id": "center", "name": "Center" },
+      { "instrument": "Tom3_whisker", "id": "brush",  "name": "Brush" }
+    ]},
+    { "id": "crash_left", "name": "Crash Left", "role": "crash", "articulations": [
+      { "instrument": "Crash_left_shank",   "id": "hit",   "name": "Shank" },
+      { "instrument": "Crash_left_tip",     "id": "tip",   "name": "Tip" },
+      { "instrument": "Crash_left_whisker", "id": "brush", "name": "Brush" }
+    ]},
+    { "id": "crash_right", "name": "Crash Right", "role": "crash", "articulations": [
+      { "instrument": "Crash_right_shank",   "id": "hit",   "name": "Shank" },
+      { "instrument": "Crash_right_tip",     "id": "tip",   "name": "Tip" },
+      { "instrument": "Crash_right_whisker", "id": "brush", "name": "Brush" }
+    ]},
+    { "id": "ride", "name": "Ride", "role": "ride", "articulations": [
+      { "instrument": "Ride_tip",            "id": "bow",        "name": "Bow" },
+      { "instrument": "Ride_shank",          "id": "shank",      "name": "Shank" },
+      { "instrument": "Ride_tip_bell",       "id": "bell",       "name": "Bell" },
+      { "instrument": "Ride_shank_bell",     "id": "bell_shank", "name": "Bell shank" },
+      { "instrument": "Ride_rest",           "id": "rest",       "name": "Rest" },
+      { "instrument": "Ride_tip_chain",      "id": "bow_chain",  "name": "Bow, chain" },
+      { "instrument": "Ride_tip_bell_chain", "id": "bell_chain", "name": "Bell, chain" },
+      { "instrument": "Ride_whisker",        "id": "brush",      "name": "Brush" }
+    ]}
+  ]
+}
