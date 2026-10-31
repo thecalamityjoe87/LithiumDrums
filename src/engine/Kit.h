@@ -27,6 +27,12 @@ struct MicChannel
     int busChannel = 0;          // first channel of this mic in the engine's mic bus
     float defaultGain = 1.0f;    // the kit's default fader (linear)
     float defaultPan = 0.0f;     // the kit's default pan, -1..1
+
+    // Close mics feed the channel of the drum being hit; overhead and room
+    // mics are channels of their own. A kit with no close mics at all (one
+    // stereo pair, say) sends every mic to the drum channels instead, so
+    // each drum still has a channel to work on.
+    bool direct = true;
 };
 
 struct Zone
@@ -170,12 +176,27 @@ struct KitCredits
     juce::String basedOn;        // presets: the name of the kit they're made from
 };
 
+struct KitZoneInfo
+{
+    int velocityLow = 1, velocityHigh = 127;
+    int numRoundRobins = 1;
+};
+
+struct KitArticulationInfo
+{
+    juce::String id, name;
+    std::vector<KitZoneInfo> zones;   // sorted by velocity
+    juce::Array<int> notes;           // the MIDI notes that play it
+};
+
 struct KitPieceInfo
 {
     juce::String id, name;
     PieceRole role = PieceRole::other;
-    juce::StringArray articulations;
+    std::vector<KitArticulationInfo> articulations;
     int defaultChokeNote = -1;
+    int firstArticulation = 0;        // index of the first one in the kit's (flattened) articulations
+    bool hasDirectSignal = true;      // false if no mic that feeds the drum channels recorded it
 };
 
 struct KitMicInfo
@@ -184,6 +205,7 @@ struct KitMicInfo
     int numChannels = 1;
     MicRole role = MicRole::close;
     float defaultDb = 0.0f, defaultPan = 0.0f;
+    bool direct = true;               // see MicChannel::direct
 };
 
 struct KitInfo

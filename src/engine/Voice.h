@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Kit.h"
+#include "dsp/Svf.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -11,33 +12,53 @@ namespace lithium
 {
 
 /** Everything needed to start one voice: one hit (one round-robin of one
-    velocity zone) played through all of its mics. */
+    velocity zone) played through all of its mics, and how to shape it. */
 struct VoiceTrigger
 {
     int articulation = -1;
     int hit = -1;
     float gain = 1.0f;           // velocity, zone and crossfade gain combined
-    double pitchRatio = 1.0;     // source frames consumed per output frame
+    double pitchRatio = 1.0;     // source frames consumed per output frame, before the pitch envelope
+    float pitchEnvSemitones = 0.0f;   // the pitch envelope's starting offset
+    float pitchEnvDecay = 0.0f;       // per-sample multiplier that takes the offset back to 0
+    int attackSamples = 0;
+    int holdSamples = 0;
 };
 
 /** Per-block values shared by all voices. */
 struct VoiceRenderContext
 {
-    // Per piece: mix gain for each mic role (volume x mute/solo x send).
+    // Per piece: gain for each mic role on the overhead and room channels.
     std::array<std::array<float, numMicRoles>, maxPieces> roleGains;
+    // Per piece and mic: left and right gains into the piece's own channel,
+    // for the mics that feed it (close mics). Includes the mic's trim and pan.
+    std::array<std::array<std::array<float, 2>, maxMics>, maxPieces> directGains;
     // Per piece: per-sample multiplier for the decay envelope (1 = off).
     std::array<float, maxPieces> decayCoefficient;
-    int decayHoldSamples = 0;
-    // Engine-owned scratch, at least maxSourceFrames long per channel.
+    // Per piece: the tone filters (pass-through when off).
+    std::array<dsp::SvfCoefficients, maxPieces> toneHighPass, toneLowPass;
+    // Engine-owned scratch: source frames for the resampler (maxSourceFrames
+    // per channel), one stream's output before it's mixed, and the envelope.
     std::array<float*, maxChannelsPerMic> scratch {};
+    std::array<float*, maxChannelsPerMic> streamOut {};
     float* envelope = nullptr;
+};
+
+/** The two buses voices render into: the overhead and room mic channels
+    (one bus channel per mic channel, laid out as in Kit::mics), and the
+    stereo channel of each piece (channels 2p and 2p + 1). */
+struct VoiceBuses
+{
+    juce::AudioBuffer<float>& mics;
+    juce::AudioBuffer<float>& pieces;
 };
 
 /** One sounding drum hit.
 
     A voice plays every mic recording of its hit together, from one shared
     playback position. That keeps the mics sample-aligned (phase-coherent),
-    which matters as soon as two mics of the same drum are mixed.
+    which matters as soon as two mics of the same drum are mixed. Close mics
+    go into the drum's own channel; overhead and room mics into theirs.
 
     Voices live in a fixed pool owned by DrumEngine and are reused, never
     allocated. All methods run on the audio thread. */
@@ -48,11 +69,14 @@ public:
     // consumes exactly the same number of source frames per block.
     static constexpr int maxPitchRatio = 8;
 
+    // While the pitch envelope moves, the playback rate is updated this often.
+    static constexpr int pitchEnvelopeStep = 32;
+
     void start (Kit&, int piece, std::uint32_t chokeGroupMask, const VoiceTrigger&, std::uint64_t serial) noexcept;
 
-    /** Adds this voice's output into the mic bus. */
-    void render (Kit&, juce::AudioBuffer<float>& micBus, int startSample, int numSamples,
-                 const VoiceRenderContext&) noexcept;
+    /** Adds this voice's output into the buses. numSamples is at most the
+        engine's slice size. */
+    void render (Kit&, VoiceBuses, int startSample, int numSamples, const VoiceRenderContext&) noexcept;
 
     /** Starts a short fade to silence, used for chokes and voice stealing. */
     void fadeOut (int numSamples) noexcept;
@@ -76,16 +100,21 @@ private:
     struct MicStream
     {
         SampleCursor cursor;
+        int mic = 0;
         int numChannels = 0;
         int busChannel = 0;
         MicRole role = MicRole::close;
+        bool direct = true;
         std::int64_t numFrames = 0;
         // The four-sample window the Hermite interpolator works on, per channel:
         // the frames at x-1, x0, x1, x2 around the current position.
         std::array<std::array<float, 4>, maxChannelsPerMic> window {};
+        std::array<float, 2> lastGain {};                                 // left and right, as last rendered
+        std::array<std::array<dsp::SvfState, maxChannelsPerMic>, 2> tone {};   // [high-pass, low-pass][channel]
     };
 
     void closeStreams (Kit&) noexcept;
+    std::array<float, 2> targetGains (const MicStream&, const VoiceRenderContext&) const noexcept;
 
     std::array<MicStream, maxMics> streams;
     int numStreams = 0;
@@ -96,17 +125,20 @@ private:
     std::uint32_t chokeGroups = 0;
     std::uint64_t serial = 0;
 
-    std::uint64_t increment = 0;          // pitch ratio in 32.32 fixed point
+    double baseRatio = 1.0;
+    std::uint64_t increment = 0;          // pitch ratio in 32.32 fixed point, without the pitch envelope
     std::uint32_t fraction = 0;           // position between window[1] and window[2]
     std::int64_t nextFrame = 0;           // next source frame to read (same for every stream)
     std::int64_t longestStream = 0;
+    float pitchOffset = 0.0f, pitchDecay = 0.0f;
 
     float gain = 1.0f;
     float decayEnvelope = 1.0f;
-    int samplesPlayed = 0;
+    int age = 0;                          // samples played (stops counting once past the hold)
+    int attackSamples = 0, holdSamples = 0;
     float fadeGain = 1.0f;
     float fadeStep = 0.0f;
-    std::array<float, numMicRoles> lastRoleGains {};
+    bool gainsSet = false;                // whether the streams' lastGain are valid yet
 };
 
 } // namespace lithium

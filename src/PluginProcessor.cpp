@@ -21,14 +21,14 @@ namespace
 
 juce::AudioProcessor::BusesProperties LithiumDrumsProcessor::createBuses()
 {
-    // A stereo main out, plus one stereo direct out per mic slot (up to
-    // Mixer::numDirectOuts) for multi-output setups. The direct outs are
-    // disabled until the host enables them, and a mic only uses its direct
-    // out when its Output parameter says so; otherwise it stays in the main mix.
+    // A stereo main out, plus stereo aux outs for multi-output setups. The
+    // aux outs are disabled until the host enables them. Any mic (and the
+    // reverb return) can be routed to any aux out with its Output parameter;
+    // several can share one, e.g. all the tom mics on "Aux 4".
     auto buses = BusesProperties().withOutput ("Main", juce::AudioChannelSet::stereo(), true);
 
-    for (int i = 0; i < Mixer::numDirectOuts; ++i)
-        buses = buses.withOutput ("Mic " + juce::String (i + 1), juce::AudioChannelSet::stereo(), false);
+    for (int i = 0; i < numAuxOuts; ++i)
+        buses = buses.withOutput ("Aux " + juce::String (i + 1), juce::AudioChannelSet::stereo(), false);
 
     return buses;
 }
@@ -142,14 +142,14 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     auto mainBus = getBusBuffer (buffer, false, 0);
     const std::array<float*, 2> mainOut { mainBus.getWritePointer (0), mainBus.getWritePointer (1) };
 
-    Mixer::DirectOutputs directOuts {};
+    Mixer::AuxOutputs auxOuts {};
 
-    for (int i = 0; i < Mixer::numDirectOuts && i + 1 < getBusCount (false); ++i)
+    for (int i = 0; i < numAuxOuts && i + 1 < getBusCount (false); ++i)
     {
         auto bus = getBusBuffer (buffer, false, i + 1);
 
         if (bus.getNumChannels() == 2)
-            directOuts[(size_t) i] = { bus.getWritePointer (0), bus.getWritePointer (1) };
+            auxOuts[(size_t) i] = { bus.getWritePointer (0), bus.getWritePointer (1) };
     }
 
     // Clicks on the UI play at the start of the block.
@@ -158,7 +158,13 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     while (auditions.pop (request))
     {
         if (acceptNotes && juce::isPositiveAndBelow (request.piece, (int) kit->pieces.size()))
-            engine.trigger (*kit, kit->pieces[(size_t) request.piece].firstArticulation, request.velocity, engineParams);
+        {
+            // The request was made against the kit the UI knew about; if that
+            // has changed since, the clamp keeps the index valid.
+            const auto& piece = kit->pieces[(size_t) request.piece];
+            const auto articulation = juce::jlimit (0, piece.numArticulations - 1, request.articulation);
+            engine.trigger (*kit, piece.firstArticulation + articulation, request.velocity, engineParams);
+        }
     }
 
     // Render up to each MIDI event, then apply it, so hits land on the exact sample.
@@ -167,7 +173,7 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (const auto metadata : midi)
     {
         const auto eventTime = juce::jlimit (0, numSamples, metadata.samplePosition);
-        render (kit, position, eventTime, mainOut, directOuts);
+        render (kit, position, eventTime, mainOut, auxOuts);
         position = eventTime;
 
         const auto message = metadata.getMessage();
@@ -185,11 +191,11 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             engine.polyAftertouch (*kit, message.getNoteNumber(), message.getAfterTouchValue());
     }
 
-    render (kit, position, numSamples, mainOut, directOuts);
+    render (kit, position, numSamples, mainOut, auxOuts);
 }
 
 void LithiumDrumsProcessor::render (Kit* kit, int from, int to, std::array<float*, 2> mainOut,
-                                    const Mixer::DirectOutputs& directOuts) noexcept
+                                    const Mixer::AuxOutputs& auxOuts) noexcept
 {
     if (kit == nullptr)
         return;   // the buffer is already clear
@@ -200,24 +206,24 @@ void LithiumDrumsProcessor::render (Kit* kit, int from, int to, std::array<float
     {
         const auto n = std::min (to - from, mixer.getMaxBlockSize());
 
-        mixer.clearMicBus (n);
-        engine.render (*kit, mixer.getMicBus(), 0, n, engineParams);
+        mixer.clearBuses (n);
+        engine.render (*kit, mixer.getBuses(), 0, n, engineParams);
 
-        Mixer::DirectOutputs offsetDirect {};
+        Mixer::AuxOutputs offsetAux {};
 
-        for (size_t i = 0; i < directOuts.size(); ++i)
-            if (directOuts[i][0] != nullptr)
-                offsetDirect[i] = { directOuts[i][0] + from, directOuts[i][1] + from };
+        for (size_t i = 0; i < auxOuts.size(); ++i)
+            if (auxOuts[i][0] != nullptr)
+                offsetAux[i] = { auxOuts[i][0] + from, auxOuts[i][1] + from };
 
-        mixer.process (*kit, n, engineParams, { mainOut[0] + from, mainOut[1] + from }, offsetDirect);
+        mixer.process (*kit, n, engineParams, { mainOut[0] + from, mainOut[1] + from }, offsetAux);
         from += n;
     }
 }
 
 //==============================================================================
-void LithiumDrumsProcessor::audition (int piece, int velocity)
+void LithiumDrumsProcessor::audition (int piece, int velocity, int articulation)
 {
-    auditions.push ({ piece, velocity });   // if the queue is full the click is dropped, which is harmless
+    auditions.push ({ piece, articulation, velocity });   // if the queue is full the click is dropped, which is harmless
 }
 
 MicMask LithiumDrumsProcessor::currentlyUnmutedMics() const

@@ -23,6 +23,11 @@ namespace
 
     // Voices end once their envelope falls below -80 dB.
     constexpr float silenceThreshold = 1.0e-4f;
+
+    std::int64_t toFixed (double ratio) noexcept
+    {
+        return std::llround (std::clamp (ratio, 1.0 / 256.0, (double) Voice::maxPitchRatio) * (double) one);
+    }
 }
 
 void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTrigger& trigger,
@@ -36,16 +41,20 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
     chokeGroups = chokeGroupMask;
     serial = newSerial;
 
-    const auto ratio = std::clamp (trigger.pitchRatio, 1.0 / 256.0, (double) maxPitchRatio);
-    increment = (std::uint64_t) std::llround (ratio * (double) one);
+    baseRatio = trigger.pitchRatio;
+    increment = (std::uint64_t) toFixed (baseRatio);
     fraction = 0;
+    pitchOffset = trigger.pitchEnvSemitones;
+    pitchDecay = trigger.pitchEnvDecay;
 
     gain = trigger.gain;
     decayEnvelope = 1.0f;
-    samplesPlayed = 0;
+    age = 0;
+    attackSamples = std::max (0, trigger.attackSamples);
+    holdSamples = std::max (0, trigger.holdSamples);
     fadeGain = 1.0f;
     fadeStep = 0.0f;
-    lastRoleGains.fill (-1.0f);     // "not set yet": the first render jumps straight to the target
+    gainsSet = false;    // the first render jumps straight to the target gains
 
     numStreams = 0;
     longestStream = 0;
@@ -59,10 +68,13 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
 
         const auto& mic = kit.mics[(size_t) m];
         auto& s = streams[(size_t) numStreams++];
+        s.mic = m;
         s.numChannels = std::min ({ kit.samples->getNumChannels (id), mic.numChannels, maxChannelsPerMic });
         s.busChannel = mic.busChannel;
         s.role = mic.role;
+        s.direct = mic.direct;
         s.numFrames = kit.samples->getNumFrames (id);
+        s.tone = {};
         longestStream = std::max (longestStream, s.numFrames);
 
         kit.samples->open (id, s.cursor);
@@ -81,89 +93,182 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
     active = numStreams > 0;
 }
 
-void Voice::render (Kit& kit, juce::AudioBuffer<float>& micBus, int startSample, int numSamples,
-                    const VoiceRenderContext& ctx) noexcept
+std::array<float, 2> Voice::targetGains (const MicStream& s, const VoiceRenderContext& ctx) const noexcept
+{
+    if (s.direct)
+        return ctx.directGains[(size_t) piece][(size_t) s.mic];
+
+    const auto g = ctx.roleGains[(size_t) piece][(size_t) s.role];
+    return { g, g };
+}
+
+void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples, const VoiceRenderContext& ctx) noexcept
 {
     if (! active || numSamples <= 0)
         return;
 
     const auto p = (size_t) piece;
 
-    // 1. The amplitude envelope for this block: velocity/layer gain x decay x fade.
+    // 1. The amplitude envelope for the whole slice: velocity/zone gain x
+    //    attack x decay (after the hold) x fade.
     const auto decayCoefficient = ctx.decayCoefficient[p];
     auto* env = ctx.envelope;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        if (samplesPlayed >= ctx.decayHoldSamples)
+        const auto attack = age < attackSamples ? (float) (age + 1) / (float) attackSamples : 1.0f;
+
+        if (age >= holdSamples)
             decayEnvelope *= decayCoefficient;
-        else
-            ++samplesPlayed;
+
+        if (age < std::max (attackSamples, holdSamples))
+            ++age;
 
         if (fadeStep > 0.0f)
             fadeGain = std::max (0.0f, fadeGain - fadeStep);
 
-        env[i] = gain * decayEnvelope * fadeGain;
+        env[i] = gain * attack * decayEnvelope * fadeGain;
     }
 
-    // 2. Mixer gains per mic role, ramped across the block so fader moves don't click.
-    const auto& targetRoleGains = ctx.roleGains[p];
-
-    if (lastRoleGains[0] < 0.0f)
-        lastRoleGains = targetRoleGains;
-
-    // 3. Resample every mic stream. All streams share the same position, so
-    //    each one consumes exactly `framesNeeded` new source frames.
-    const auto end = (std::uint64_t) fraction + (std::uint64_t) numSamples * increment;
-    const auto framesNeeded = (int) (end >> 32);
-
-    for (int si = 0; si < numStreams; ++si)
+    if (! gainsSet)
     {
-        auto& s = streams[(size_t) si];
+        for (int si = 0; si < numStreams; ++si)
+            streams[(size_t) si].lastGain = targetGains (streams[(size_t) si], ctx);
 
-        if (nextFrame >= s.numFrames + 4)
-            continue;     // this mic's recording has fully played out; its window is all zeros
+        gainsSet = true;
+    }
 
-        kit.samples->read (s.cursor, ctx.scratch.data(), framesNeeded);
+    const auto& highPass = ctx.toneHighPass[p];
+    const auto& lowPass = ctx.toneLowPass[p];
+    const auto highPassOn = ! highPass.isIdentity(), lowPassOn = ! lowPass.isIdentity();
 
-        const auto role = (size_t) s.role;
-        const auto g0 = lastRoleGains[role];
-        const auto gStep = (targetRoleGains[role] - g0) / (float) numSamples;
+    // 2. Resample every stream, in chunks. All streams share one position,
+    //    so each consumes exactly the same number of source frames. While the
+    //    pitch envelope moves, the rate changes linearly within each short
+    //    chunk; otherwise the whole slice is one chunk at a fixed rate.
+    const auto pitchMoving = std::abs (pitchOffset) > 0.001f;
+    const auto chunkLength = pitchMoving ? pitchEnvelopeStep : numSamples;
 
-        for (int ch = 0; ch < s.numChannels; ++ch)
+    for (int offset = 0; offset < numSamples; offset += chunkLength)
+    {
+        const auto n = std::min (chunkLength, numSamples - offset);
+        auto inc0 = (std::int64_t) increment;
+        std::int64_t step = 0;
+
+        if (std::abs (pitchOffset) > 0.001f)
         {
-            auto* out = micBus.getWritePointer (s.busChannel + ch, startSample);
-            const auto* src = ctx.scratch[(size_t) ch];
-            auto& w = s.window[(size_t) ch];
-            auto xm1 = w[0], x0 = w[1], x1 = w[2], x2 = w[3];
-            auto pos = (std::uint64_t) fraction;
-            auto g = g0;
-            int k = 0;
+            const auto endOffset = pitchOffset * std::pow (pitchDecay, (float) n);
+            inc0 = toFixed (baseRatio * std::exp2 (pitchOffset / 12.0));
+            const auto inc1 = toFixed (baseRatio * std::exp2 (endOffset / 12.0));
+            step = (inc1 - inc0) / n;
+            pitchOffset = std::abs (endOffset) > 0.001f ? endOffset : 0.0f;
+        }
 
-            for (int i = 0; i < numSamples; ++i)
+        // Where the position ends up: the sum of n increments growing by `step`.
+        const auto end = (std::int64_t) fraction + (std::int64_t) n * inc0 + step * (std::int64_t) n * (n - 1) / 2;
+        const auto framesNeeded = (int) (end >> 32);
+
+        for (int si = 0; si < numStreams; ++si)
+        {
+            auto& s = streams[(size_t) si];
+
+            if (nextFrame >= s.numFrames + 4)
+                continue;     // this mic's recording has fully played out; its window is all zeros
+
+            kit.samples->read (s.cursor, ctx.scratch.data(), framesNeeded);
+
+            for (int ch = 0; ch < s.numChannels; ++ch)
             {
-                out[i] += hermite (xm1, x0, x1, x2, (float) (std::uint32_t) pos * fractionScale) * env[i] * g;
-                g += gStep;
-                pos += increment;
+                auto* out = ctx.streamOut[(size_t) ch];
+                const auto* src = ctx.scratch[(size_t) ch];
+                auto& w = s.window[(size_t) ch];
+                auto xm1 = w[0], x0 = w[1], x1 = w[2], x2 = w[3];
+                auto pos = (std::uint64_t) fraction;
+                auto inc = inc0;
+                int k = 0;
 
-                while (pos >= one)
+                for (int i = 0; i < n; ++i)
                 {
-                    pos -= one;
-                    xm1 = x0;
-                    x0 = x1;
-                    x1 = x2;
-                    x2 = src[k++];
+                    out[i] = hermite (xm1, x0, x1, x2, (float) (std::uint32_t) pos * fractionScale) * env[offset + i];
+                    pos += (std::uint64_t) inc;
+                    inc += step;
+
+                    while (pos >= one)
+                    {
+                        pos -= one;
+                        xm1 = x0;
+                        x0 = x1;
+                        x1 = x2;
+                        x2 = src[k++];
+                    }
+                }
+
+                jassert (k == framesNeeded);
+                w = { xm1, x0, x1, x2 };
+
+                // The piece's tone filters, per stream (each mic of the hit).
+                // Copies of the state, so it stays in registers (see ChannelEq).
+                for (const auto [on, c, which] : { std::tuple { highPassOn, &highPass, 0 }, { lowPassOn, &lowPass, 1 } })
+                {
+                    if (! on)
+                        continue;
+
+                    auto state = s.tone[(size_t) which][(size_t) ch];
+
+                    for (int i = 0; i < n; ++i)
+                        out[i] = state.process (*c, out[i]);
+
+                    s.tone[(size_t) which][(size_t) ch] = state;
                 }
             }
 
-            jassert (k == framesNeeded);
-            w = { xm1, x0, x1, x2 };
+            // 3. Mix into the buses, ramping each stream's gain across the
+            //    whole slice so fader moves don't click.
+            const auto target = targetGains (s, ctx);
+            const auto stepL = (target[0] - s.lastGain[0]) / (float) numSamples;
+            const auto stepR = (target[1] - s.lastGain[1]) / (float) numSamples;
+            auto gl = s.lastGain[0] + stepL * (float) offset;
+            auto gr = s.lastGain[1] + stepR * (float) offset;
+            const auto* left = ctx.streamOut[0];
+            const auto* right = ctx.streamOut[(size_t) s.numChannels - 1];
+
+            if (s.direct)
+            {
+                // Into the piece's stereo channel; a mono mic feeds both sides.
+                auto* outL = buses.pieces.getWritePointer ((int) p * 2, startSample + offset);
+                auto* outR = buses.pieces.getWritePointer ((int) p * 2 + 1, startSample + offset);
+
+                for (int i = 0; i < n; ++i)
+                {
+                    gl += stepL;
+                    gr += stepR;
+                    outL[i] += left[i] * gl;
+                    outR[i] += right[i] * gr;
+                }
+            }
+            else
+            {
+                for (int ch = 0; ch < s.numChannels; ++ch)
+                {
+                    auto* out = buses.mics.getWritePointer (s.busChannel + ch, startSample + offset);
+                    const auto* x = ctx.streamOut[(size_t) ch];
+                    auto g = gl;
+
+                    for (int i = 0; i < n; ++i)
+                    {
+                        g += stepL;
+                        out[i] += x[i] * g;
+                    }
+                }
+            }
         }
+
+        fraction = (std::uint32_t) (end & (std::int64_t) (one - 1));
+        nextFrame += framesNeeded;
     }
 
-    lastRoleGains = targetRoleGains;
-    fraction = (std::uint32_t) (end & (one - 1));
-    nextFrame += framesNeeded;
+    for (int si = 0; si < numStreams; ++si)
+        streams[(size_t) si].lastGain = targetGains (streams[(size_t) si], ctx);
 
     // 4. Finished? Faded out, decayed to silence, or every recording played out.
     const auto envelopeNow = decayEnvelope * fadeGain;

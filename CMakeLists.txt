@@ -71,12 +71,22 @@ target_sources(LithiumDrums PRIVATE
     src/engine/Voice.cpp
     src/engine/DrumEngine.cpp
     src/engine/Mixer.cpp
+    src/engine/dsp/ChannelEq.cpp
+    src/engine/dsp/Compressor.cpp
+    src/engine/dsp/ChannelChain.cpp
+    src/engine/dsp/RoomReverb.cpp
     src/ui/LithiumLookAndFeel.cpp
     src/ui/MainView.cpp
     src/ui/HeaderBar.cpp
     src/ui/KitPage.cpp
     src/ui/KitStage.cpp
     src/ui/PieceStrip.cpp
+    src/ui/Controls.cpp
+    src/ui/EqGraph.cpp
+    src/ui/ChannelModules.cpp
+    src/ui/ZoneMap.cpp
+    src/ui/EditPage.cpp
+    src/ui/MixerPage.cpp
     src/ui/KitBrowser.cpp
     src/ui/InfoPanels.cpp)
 
@@ -218,7 +228,7 @@ target_link_libraries(LithiumRoomGen PRIVATE
 if(LITHIUM_BUILD_TESTS)
     # The tests link the plugin's shared-code library (the processor, engine
     # and UI, compiled once) rather than recompiling the sources.
-    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp)
+    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp)
     target_include_directories(LithiumDrumsTests PRIVATE src)
     target_compile_definitions(LithiumDrumsTests PRIVATE
         LITHIUM_TEST_KIT_DIR="${LITHIUM_TEST_KIT_DIR}"

@@ -8,8 +8,8 @@ namespace lithium
 MainView::MainView (LithiumDrumsProcessor& p)
     : header (p),
       kitPage (p),
-      editPage ("Edit", "Articulations, velocity layers, tuning, decay and mic sends for each piece."),
-      mixerPage ("Mixer", "Channel EQ and compression, reverb sends and multi-output routing."),
+      editPage (p),
+      mixerPage (p),
       groovesPage ("Grooves", "Browse MIDI grooves, preview them in tempo and drag them into your host."),
       fxPage ("FX", "Master bus effects."),
       aboutPanel (p),

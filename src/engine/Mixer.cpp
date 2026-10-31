@@ -1,5 +1,7 @@
 #include "Mixer.h"
 
+#include "dsp/Pan.h"
+
 #include <cmath>
 
 namespace lithium
@@ -9,21 +11,9 @@ namespace
 {
     constexpr double smoothingSeconds = 0.02;
 
-    // Mono mics: constant-power pan, scaled so the centre is at unity gain.
-    // Stereo mics: a balance control, which keeps the stereo image intact.
-    std::pair<float, float> panGains (float pan, int numChannels) noexcept
+    bool silentAndSettled (const juce::SmoothedValue<float>& v) noexcept
     {
-        pan = juce::jlimit (-1.0f, 1.0f, pan);
-
-        if (numChannels == 1)
-        {
-            const auto angle = (pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
-            return { std::cos (angle) * juce::MathConstants<float>::sqrt2,
-                     std::sin (angle) * juce::MathConstants<float>::sqrt2 };
-        }
-
-        return { pan > 0.0f ? 1.0f - pan : 1.0f,
-                 pan < 0.0f ? 1.0f + pan : 1.0f };
+        return ! v.isSmoothing() && juce::exactlyEqual (v.getCurrentValue(), 0.0f);
     }
 }
 
@@ -31,69 +21,170 @@ void Mixer::prepare (double sampleRate, int maxBlockSize)
 {
     micBus.setSize (maxMicBusChannels, maxBlockSize);
     micBus.clear();
+    pieceBus.setSize (maxPieces * 2, maxBlockSize);
+    pieceBus.clear();
+    reverbSend.setSize (2, maxBlockSize);
+    reverbReturn.setSize (2, maxBlockSize);
 
-    for (auto& s : strips)
+    auto prepareStrip = [sampleRate] (Strip& s)
     {
-        s.inserts.prepare (sampleRate, maxBlockSize);
+        s.chain.prepare (sampleRate);
         s.gainLeft.reset (sampleRate, smoothingSeconds);
         s.gainRight.reset (sampleRate, smoothingSeconds);
+        s.send.reset (sampleRate, smoothingSeconds);
+    };
+
+    for (auto& s : pieceStrips)
+        prepareStrip (s);
+
+    for (auto& s : micStrips)
+        prepareStrip (s);
+
+    reverb.prepare (sampleRate);
+    masterGain.reset (sampleRate, smoothingSeconds);
+    returnGain.reset (sampleRate, smoothingSeconds);
+}
+
+std::array<float*, 2> Mixer::route (int output, std::array<float*, 2> mainOut, const AuxOutputs& auxOuts) const noexcept
+{
+    if (juce::isPositiveAndNotGreaterThan (output, numAuxOuts) && output != mainOutput)
+        if (const auto& aux = auxOuts[(size_t) output - 1]; aux[0] != nullptr && aux[1] != nullptr)
+            return aux;
+
+    return mainOut;
+}
+
+float Mixer::processChannel (Strip& strip, std::array<float*, 2> in, int numChannels, int numSamples,
+                             const ChannelParams& params, float gainLeft, float gainRight, float sendGain,
+                             std::array<float*, 2> mainOut, const AuxOutputs& auxOuts) noexcept
+{
+    strip.gainLeft.setTargetValue (gainLeft);
+    strip.gainRight.setTargetValue (gainRight);
+    strip.send.setTargetValue (sendGain);
+
+    // A silent channel (muted, or faded right down) skips its processing.
+    if (silentAndSettled (strip.gainLeft) && silentAndSettled (strip.gainRight) && silentAndSettled (strip.send))
+        return 0.0f;
+
+    strip.chain.process (in.data(), numChannels, numSamples, params.chain);
+
+    // Routed to an aux out, a channel skips the master fader, like a direct out on a desk.
+    const auto out = route (params.output, mainOut, auxOuts);
+    const auto toMain = out == mainOut;
+
+    // Master gain is applied per sample here (rather than once at the end)
+    // so the main and aux outputs can share one loop.
+    auto master = masterGain;   // a copy: each channel walks the same master ramp
+    float peak = 0.0f;
+
+    for (int n = 0; n < numSamples; ++n)
+    {
+        const auto left = in[0][n] * strip.gainLeft.getNextValue();
+        const auto right = in[1][n] * strip.gainRight.getNextValue();
+        const auto s = strip.send.getNextValue();
+        const auto m = toMain ? master.getNextValue() : 1.0f;
+        out[0][n] += left * m;
+        out[1][n] += right * m;
+        send[0][n] += left * s;
+        send[1][n] += right * s;
+        peak = std::max (peak, std::max (std::abs (left), std::abs (right)));
     }
 
-    masterGain.reset (sampleRate, smoothingSeconds);
+    return peak;
 }
 
 void Mixer::process (const Kit& kit, int numSamples, const EngineParams& params, std::array<float*, 2> mainOut,
-                     const DirectOutputs& directOuts) noexcept
+                     const AuxOutputs& auxOuts) noexcept
 {
     jassert (numSamples <= micBus.getNumSamples());
 
-    bool anySolo = false;
-
-    for (int i = 0; i < kit.numMics; ++i)
-        anySolo = anySolo || params.mics[(size_t) i].solo;
-
     masterGain.setTargetValue (params.masterGain);
+    reverbSend.clear (0, numSamples);
+    send = { reverbSend.getWritePointer (0), reverbSend.getWritePointer (1) };
 
-    for (int micIndex = 0; micIndex < kit.numMics; ++micIndex)
+    // The drums' channels. Mute and solo of a drum already silenced its hits
+    // in the voices, so here it's just the channel's fader, pan and send.
+    for (int p = 0; p < (int) kit.pieces.size(); ++p)
     {
-        const auto i = (size_t) micIndex;
-        const auto& mic = kit.mics[i];
-        const auto& mp = params.mics[i];
-        auto& strip = strips[i];
+        const auto& pp = params.pieces[(size_t) p];
+        const auto [l, r] = dsp::panGains (pp.pan, 2);
+        std::array<float*, 2> in { pieceBus.getWritePointer (p * 2), pieceBus.getWritePointer (p * 2 + 1) };
+        auto& strip = pieceStrips[(size_t) p];
 
-        // The parameters trim the kit's own default fader and pan.
-        const auto audible = ! mp.mute && (! anySolo || mp.solo);
-        const auto [panL, panR] = panGains (mic.defaultPan + mp.pan, mic.numChannels);
-        const auto level = audible ? mic.defaultGain * mp.volume : 0.0f;
-        strip.gainLeft.setTargetValue (level * panL);
-        strip.gainRight.setTargetValue (level * panR);
+        // The send is post-fader, but not panned: the stereo send keeps the drum's own image.
+        const auto peak = processChannel (strip, in, 2, numSamples, pp.channel, pp.faderGain * l, pp.faderGain * r,
+                                          pp.faderGain * pp.channel.reverbSend, mainOut, auxOuts);
 
-        std::array<float*, 2> in { micBus.getWritePointer (mic.busChannel),
-                                   micBus.getWritePointer (mic.busChannel + mic.numChannels - 1) };
-
-        strip.inserts.process (in.data(), mic.numChannels, numSamples);
-
-        // Direct-routed mics skip the master fader, like a direct out on a desk.
-        const auto hasDirect = micIndex < numDirectOuts && directOuts[i][0] != nullptr && directOuts[i][1] != nullptr;
-        const auto useDirect = mp.output == MicOutput::direct && hasDirect;
-        const auto direct = hasDirect ? directOuts[i] : mainOut;
-        const auto out = useDirect ? direct : mainOut;
-
-        // Master gain is applied per sample here (rather than once at the end)
-        // so the main and direct outputs can share one loop.
-        auto master = masterGain;   // copy: each strip walks the same master ramp
-
-        for (int n = 0; n < numSamples; ++n)
+        if (meters != nullptr)
         {
-            const auto gl = strip.gainLeft.getNextValue();
-            const auto gr = strip.gainRight.getNextValue();
-            const auto m = useDirect ? 1.0f : master.getNextValue();
-            out[0][n] += in[0][n] * gl * m;
-            out[1][n] += in[1][n] * gr * m;
+            MixerFeedback::raise (meters->piecePeak[(size_t) p], peak);
+            MixerFeedback::raise (meters->pieceReductionDb[(size_t) p], strip.chain.takeMaxGainReductionDb());
         }
     }
 
+    // The overhead and room mics' channels. (Close mics have none: they feed the drums' channels.)
+    const auto anySolo = params.anyMicSoloed (kit.numMics);
+
+    for (int m = 0; m < kit.numMics; ++m)
+    {
+        const auto& mic = kit.mics[(size_t) m];
+
+        if (mic.direct)
+            continue;
+
+        const auto& mp = params.mics[(size_t) m];
+        const auto audible = ! mp.mute && (! anySolo || mp.solo);
+
+        // The parameters trim the kit's own default fader and pan.
+        const auto [l, r] = dsp::panGains (mic.defaultPan + mp.pan, mic.numChannels);
+        const auto level = audible ? mic.defaultGain * mp.volume : 0.0f;
+        std::array<float*, 2> in { micBus.getWritePointer (mic.busChannel),
+                                   micBus.getWritePointer (mic.busChannel + mic.numChannels - 1) };
+        auto& strip = micStrips[(size_t) m];
+
+        const auto peak = processChannel (strip, in, mic.numChannels, numSamples, mp.channel, level * l, level * r,
+                                          std::abs (level) * mp.channel.reverbSend, mainOut, auxOuts);
+
+        if (meters != nullptr)
+        {
+            MixerFeedback::raise (meters->micPeak[(size_t) m], peak);
+            MixerFeedback::raise (meters->micReductionDb[(size_t) m], strip.chain.takeMaxGainReductionDb());
+        }
+    }
+
+    // The reverb return.
+    std::array<float*, 2> wet { reverbReturn.getWritePointer (0), reverbReturn.getWritePointer (1) };
+    reverb.process (send[0], send[1], wet[0], wet[1], numSamples, params.reverb.room);
+    returnGain.setTargetValue (params.reverb.mute ? 0.0f : params.reverb.returnGain);
+
+    {
+        const auto out = route (params.reverb.output, mainOut, auxOuts);
+        const auto toMain = out == mainOut;
+        auto master = masterGain;
+        float peak = 0.0f;
+
+        for (int n = 0; n < numSamples; ++n)
+        {
+            const auto g = returnGain.getNextValue() * (toMain ? master.getNextValue() : 1.0f);
+            out[0][n] += wet[0][n] * g;
+            out[1][n] += wet[1][n] * g;
+            peak = std::max (peak, std::max (std::abs (wet[0][n] * g), std::abs (wet[1][n] * g)));
+        }
+
+        if (meters != nullptr)
+            MixerFeedback::raise (meters->reverbPeak, peak);
+    }
+
     masterGain.skip (numSamples);
+
+    if (meters != nullptr)
+    {
+        for (size_t ch = 0; ch < 2; ++ch)
+        {
+            const auto range = juce::FloatVectorOperations::findMinAndMax (mainOut[ch], numSamples);
+            MixerFeedback::raise (meters->masterPeak[ch], std::max (range.getEnd(), -range.getStart()));
+        }
+    }
 }
 
 } // namespace lithium

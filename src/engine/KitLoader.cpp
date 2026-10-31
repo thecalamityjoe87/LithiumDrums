@@ -341,6 +341,16 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         info.mics.push_back ({ m.id, m.name, m.channels, m.role, m.volumeDb, m.pan });
     }
 
+    const auto hasCloseMics = std::any_of (manifest.mics.begin(), manifest.mics.end(),
+                                           [] (const auto& m) { return m.role == MicRole::close; });
+
+    for (int i = 0; i < kit->numMics; ++i)
+    {
+        auto& mic = kit->mics[(size_t) i];
+        mic.direct = mic.role == MicRole::close || ! hasCloseMics;
+        info.mics[(size_t) i].direct = mic.direct;
+    }
+
     // Flatten pieces, articulations and zones into the kit's index-based
     // tables, and note where every hit's audio comes from.
     struct PendingSource
@@ -364,11 +374,13 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         pd.defaultTune = pm.tuneSemitones;
         pd.defaultDecay = pm.decay;
 
-        KitPieceInfo pieceInfo { pm.id, pm.name, pm.role, {}, -1 };
+        KitPieceInfo pieceInfo { pm.id, pm.name, pm.role, {}, -1, pd.firstArticulation };
 
         for (const auto& am : pm.articulations)
         {
-            pieceInfo.articulations.add (am.name);
+            auto& artInfo = pieceInfo.articulations.emplace_back();
+            artInfo.id = am.id;
+            artInfo.name = am.name;
 
             Articulation a {};
             a.piece = (int) pi;
@@ -389,6 +401,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
                 z.velocityRangeDb = zm.velocityRangeDb;
                 z.firstHit = numHits;
                 z.numHits = (int) zm.roundRobins.size();
+                artInfo.zones.push_back ({ z.velocityLow, z.velocityHigh, z.numHits });
 
                 for (const auto& hit : zm.roundRobins)
                 {
@@ -711,7 +724,35 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     for (size_t p = 0; p < kit->pieces.size(); ++p)
         info.pieces[p].defaultChokeNote = kit->pieces[p].defaultChokeNote;
 
+    // Which notes play each articulation, for the Edit page.
+    for (int note = 0; note < 128; ++note)
+    {
+        if (const auto a = kit->noteMap[(size_t) note].articulation; a >= 0)
+        {
+            const auto& pd = kit->pieces[(size_t) kit->articulations[(size_t) a].piece];
+            info.pieces[(size_t) kit->articulations[(size_t) a].piece].articulations[(size_t) (a - pd.firstArticulation)].notes.add (note);
+        }
+    }
+
     kit->initialiseRoundRobins();
+
+    // Which drums have anything on the mics that feed the drum channels.
+    for (size_t p = 0; p < kit->pieces.size(); ++p)
+    {
+        const auto& pd = kit->pieces[p];
+        bool found = false;
+
+        for (int a = pd.firstArticulation; a < pd.firstArticulation + pd.numArticulations && ! found; ++a)
+        {
+            const auto& art = kit->articulations[(size_t) a];
+
+            for (int z = art.firstZone; z < art.firstZone + art.numZones && ! found; ++z)
+                for (int m = 0; m < kit->numMics && ! found; ++m)
+                    found = kit->mics[(size_t) m].direct && kit->getSample (kit->zones[(size_t) z].firstHit, m) != invalidSampleId;
+        }
+
+        info.pieces[p].hasDirectSignal = found;
+    }
 
     std::vector<PieceRole> roles;
 

@@ -44,13 +44,18 @@ public:
     void drawLinearSlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            juce::Slider::SliderStyle, juce::Slider&) override;
-    int getSliderThumbRadius (juce::Slider&) override        { return 6; }
+    int getSliderThumbRadius (juce::Slider&) override;
+
+    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height, float sliderPosProportional,
+                           float rotaryStartAngle, float rotaryEndAngle, juce::Slider&) override;
 
     void drawTooltip (juce::Graphics&, const juce::String& text, int width, int height) override;
     juce::Rectangle<int> getTooltipBounds (const juce::String& text, juce::Point<int> screenPos,
                                            juce::Rectangle<int> parentArea) override;
 
 private:
+    void drawFader (juce::Graphics&, juce::Rectangle<int>, float sliderPos, juce::Slider&);
+
     juce::SharedResourcePointer<EmbeddedFonts> fonts;
 };
 

@@ -132,6 +132,7 @@ LithiumLookAndFeel::LithiumLookAndFeel()
     setColour (juce::Slider::trackColourId, accent);
     setColour (juce::Slider::backgroundColourId, raisedHigh);
     setColour (juce::Slider::thumbColourId, text);
+    setColour (juce::Slider::rotarySliderFillColourId, accent);
 
     setColour (juce::TooltipWindow::backgroundColourId, raisedHigh);
     setColour (juce::TooltipWindow::textColourId, text);
@@ -202,8 +203,8 @@ void LithiumLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     g.setColour (box.hasKeyboardFocus (true) ? accent : (hover ? borderStrong : box.findColour (juce::ComboBox::outlineColourId)));
     g.drawRoundedRectangle (bounds, theme::cornerRadius, 1.0f);
 
-    // Chevron
-    const auto cx = (float) width - 14.0f;
+    // Chevron (closer to the edge in narrow boxes, such as a mixer strip's output)
+    const auto cx = (float) width - (width < 70 ? 9.0f : 14.0f);
     const auto cy = (float) height * 0.5f;
     juce::Path chevron;
     chevron.startNewSubPath (cx - 4.0f, cy - 2.0f);
@@ -221,8 +222,9 @@ juce::Font LithiumLookAndFeel::getComboBoxFont (juce::ComboBox&)
 
 void LithiumLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
-    label.setBounds (4, 1, box.getWidth() - 26, box.getHeight() - 2);
-    label.setFont (getComboBoxFont (box));
+    const auto narrow = box.getWidth() < 70;
+    label.setBounds (narrow ? 2 : 4, 1, box.getWidth() - (narrow ? 15 : 26), box.getHeight() - 2);
+    label.setFont (narrow ? theme::body (11.5f, theme::Weight::medium) : getComboBoxFont (box));
 }
 
 juce::Font LithiumLookAndFeel::getPopupMenuFont()
@@ -242,6 +244,12 @@ void LithiumLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
                                            float sliderPos, float, float, juce::Slider::SliderStyle style,
                                            juce::Slider& slider)
 {
+    if (style == juce::Slider::LinearVertical)
+    {
+        drawFader (g, { x, y, width, height }, sliderPos, slider);
+        return;
+    }
+
     if (style != juce::Slider::LinearHorizontal)
     {
         LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos, 0, 0, style, slider);
@@ -270,6 +278,90 @@ void LithiumLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
     const auto thumb = juce::Rectangle<float> (6.0f, 14.0f).withCentre ({ sliderPos, bounds.getCentreY() });
     g.setColour (slider.findColour (juce::Slider::thumbColourId).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
     g.fillRoundedRectangle (thumb, 2.0f);
+}
+
+int LithiumLookAndFeel::getSliderThumbRadius (juce::Slider& slider)
+{
+    // The fader cap is taller than the horizontal slider's thumb; JUCE keeps
+    // this much room at each end of the track.
+    return slider.getSliderStyle() == juce::Slider::LinearVertical ? 8 : 6;
+}
+
+void LithiumLookAndFeel::drawFader (juce::Graphics& g, juce::Rectangle<int> area, float sliderPos, juce::Slider& slider)
+{
+    using namespace theme::colours;
+
+    const auto bounds = area.toFloat();
+    const auto track = bounds.withSizeKeepingCentre (4.0f, bounds.getHeight());
+    const auto enabled = slider.isEnabled();
+
+    g.setColour (slider.findColour (juce::Slider::backgroundColourId));
+    g.fillRoundedRectangle (track, 2.0f);
+
+    auto fillColour = slider.findColour (juce::Slider::trackColourId);
+    g.setColour (enabled ? fillColour.withMultipliedAlpha (0.8f) : fillColour.withMultipliedAlpha (0.3f));
+    g.fillRoundedRectangle (track.withTop (sliderPos), 2.0f);
+
+    if (const auto unity = slider.getProperties()["unityValue"]; ! unity.isVoid())
+    {
+        const auto uy = (float) slider.getPositionOfValue ((double) unity);
+        g.setColour (borderStrong);
+        g.fillRect (juce::Rectangle<float> (track.getX() - 6.0f, uy - 0.5f, track.getWidth() + 12.0f, 1.0f));
+    }
+
+    // The cap: a small raised block with a line across its middle.
+    const auto cap = juce::Rectangle<float> (std::min (26.0f, bounds.getWidth()), 14.0f).withCentre ({ bounds.getCentreX(), sliderPos });
+    g.setColour (raisedHigh.brighter (0.25f).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
+    g.fillRoundedRectangle (cap, 3.0f);
+    g.setColour (borderStrong.brighter (0.3f));
+    g.drawRoundedRectangle (cap.reduced (0.5f), 3.0f, 1.0f);
+    g.setColour (text);
+    g.fillRect (cap.withSizeKeepingCentre (cap.getWidth() - 8.0f, 1.5f));
+}
+
+void LithiumLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float position,
+                                           float startAngle, float endAngle, juce::Slider& slider)
+{
+    using namespace theme::colours;
+
+    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat();
+    const auto size = std::min (bounds.getWidth(), bounds.getHeight());
+    const auto centre = bounds.getCentre();
+    const auto radius = size * 0.5f - 2.0f;
+    const auto thickness = std::max (2.0f, size * 0.08f);
+    const auto enabled = slider.isEnabled();
+    const auto angle = startAngle + position * (endAngle - startAngle);
+
+    // Bipolar knobs (gain, pan) draw their arc from the centre, the rest from the start.
+    const auto bipolar = (bool) slider.getProperties()["bipolar"];
+    const auto fromAngle = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
+
+    auto arc = [&] (float a0, float a1)
+    {
+        juce::Path p;
+        p.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, a0, a1, true);
+        return p;
+    };
+
+    const juce::PathStrokeType stroke (thickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    g.setColour (raisedHigh.brighter (0.1f));
+    g.strokePath (arc (startAngle, endAngle), stroke);
+
+    const auto colour = slider.findColour (juce::Slider::rotarySliderFillColourId);
+    g.setColour (enabled ? colour : colour.withMultipliedAlpha (0.35f));
+    g.strokePath (arc (std::min (fromAngle, angle), std::max (fromAngle, angle)), stroke);
+
+    // The knob body and its pointer.
+    const auto body = radius - thickness - 2.0f;
+    g.setColour (slider.isMouseOverOrDragging() && enabled ? raisedHigh.brighter (0.12f) : raisedHigh);
+    g.fillEllipse (juce::Rectangle<float> (body * 2.0f, body * 2.0f).withCentre (centre));
+    g.setColour (border);
+    g.drawEllipse (juce::Rectangle<float> (body * 2.0f, body * 2.0f).withCentre (centre), 1.0f);
+
+    const auto tip = centre.getPointOnCircumference (body - 1.5f, angle);
+    const auto root = centre.getPointOnCircumference (body * 0.35f, angle);
+    g.setColour (enabled ? text : textMuted);
+    g.drawLine ({ root, tip }, std::max (1.5f, size * 0.05f));
 }
 
 //==============================================================================

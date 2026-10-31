@@ -1,5 +1,7 @@
 #include "DrumEngine.h"
 
+#include "dsp/Pan.h"
+
 #include <cmath>
 #include <limits>
 
@@ -11,7 +13,7 @@ namespace
     constexpr double hiHatChokeSeconds = 0.03;     // closing the hats
     constexpr double cymbalChokeSeconds = 0.07;    // grabbing a cymbal
     constexpr double stealFadeSeconds = 0.005;     // stolen voices are quiet already
-    constexpr double decayHoldSeconds = 0.012;     // the decay control never touches the attack
+    constexpr float maxDynamicsDb = 30.0f;         // the most the Dynamics control adds to or takes from a soft hit
 
     // Width of the crossfade around a zone boundary, as a fraction of the
     // narrower of the two zones.
@@ -29,11 +31,12 @@ void DrumEngine::prepare (double newSampleRate)
 
     // The resampler may consume up to maxPitchRatio source frames per output frame.
     scratch.setSize (maxChannelsPerMic, maxSliceSize * Voice::maxPitchRatio + 8);
+    streamOut.setSize (maxChannelsPerMic, maxSliceSize);
     envelope.assign ((size_t) maxSliceSize, 0.0f);
 
     context.scratch = { scratch.getWritePointer (0), scratch.getWritePointer (1) };
+    context.streamOut = { streamOut.getWritePointer (0), streamOut.getWritePointer (1) };
     context.envelope = envelope.data();
-    context.decayHoldSamples = secondsToSamples (decayHoldSeconds);
 }
 
 int DrumEngine::secondsToSamples (double seconds) const noexcept
@@ -70,7 +73,14 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
     const auto& art = kit.articulations[(size_t) articulationIndex];
     velocity = juce::jlimit (1, 127, velocity);
 
-    feedback.pieceHits[(size_t) art.piece].fetch_add (1, std::memory_order_relaxed);
+    // Tells the UI what played. With a velocity crossfade, that's the louder of the two zones.
+    auto report = [&] (int zoneIndex, int roundRobin)
+    {
+        const auto p = (size_t) art.piece;
+        feedback.lastHit[p].store (LastHit { articulationIndex, zoneIndex - art.firstZone, std::max (0, roundRobin), velocity }.pack(),
+                                   std::memory_order_relaxed);
+        feedback.pieceHits[p].fetch_add (1, std::memory_order_release);
+    };
 
     if (art.chokesMask != 0)
         for (auto& v : voices)
@@ -85,12 +95,18 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
     // Within one zone, velocity still scales the level a little (by the zone's
     // velocityRangeDb), so the response is continuous instead of stepping at
     // zone boundaries.
-    auto velocityGain = [velocity] (const Zone& z)
+    //
+    // Dynamics then widens (or narrows) the whole range: a soft hit is
+    // turned down (or up) by up to maxDynamicsDb, in proportion to how soft it is.
+    const auto dynamicsDb = piece.dynamics * maxDynamicsDb * juce::jlimit (-1.0f, 0.0f, std::log10 ((float) velocity / 127.0f) / 2.1f);
+    const auto dynamicsGain = juce::Decibels::decibelsToGain (dynamicsDb);
+
+    auto velocityGain = [velocity, dynamicsGain] (const Zone& z)
     {
         const auto t = z.velocityHigh > z.velocityLow
                          ? juce::jlimit (0.0f, 1.0f, (float) (velocity - z.velocityLow) / (float) (z.velocityHigh - z.velocityLow))
                          : 1.0f;
-        return z.gain * juce::Decibels::decibelsToGain (-z.velocityRangeDb * (1.0f - t));
+        return z.gain * dynamicsGain * juce::Decibels::decibelsToGain (-z.velocityRangeDb * (1.0f - t));
     };
 
     const auto zoneIndex = findZone (kit, art, velocity);
@@ -113,8 +129,14 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
                 return false;
 
             const auto angle = (float) t * juce::MathConstants<float>::halfPi;
-            startVoice (kit, art, articulationIndex, lowerIndex, velocityGain (lower) * std::cos (angle), pitchRatio);
-            startVoice (kit, art, articulationIndex, lowerIndex + 1, velocityGain (upper) * std::sin (angle), pitchRatio);
+            const auto lowerHit = startVoice (kit, art, articulationIndex, lowerIndex, velocityGain (lower) * std::cos (angle), pitchRatio, piece);
+            const auto upperHit = startVoice (kit, art, articulationIndex, lowerIndex + 1, velocityGain (upper) * std::sin (angle), pitchRatio, piece);
+
+            if (t < 0.5)
+                report (lowerIndex, lowerHit);
+            else
+                report (lowerIndex + 1, upperHit);
+
             return true;
         };
 
@@ -127,7 +149,7 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
             return;
     }
 
-    startVoice (kit, art, articulationIndex, zoneIndex, velocityGain (zone), pitchRatio);
+    report (zoneIndex, startVoice (kit, art, articulationIndex, zoneIndex, velocityGain (zone), pitchRatio, piece));
 }
 
 int DrumEngine::findZone (const Kit& kit, const Articulation& art, int velocity) const noexcept
@@ -155,23 +177,33 @@ int DrumEngine::findZone (const Kit& kit, const Articulation& art, int velocity)
     return best;
 }
 
-void DrumEngine::startVoice (Kit& kit, const Articulation& art, int articulationIndex, int zoneIndex,
-                             float gain, double pitchRatio) noexcept
+int DrumEngine::startVoice (Kit& kit, const Articulation& art, int articulationIndex, int zoneIndex,
+                            float gain, double pitchRatio, const PieceParams& shaping) noexcept
 {
     auto* voice = allocateVoice (art.piece);
 
     if (voice == nullptr)
-        return;
+        return -1;
 
     VoiceTrigger t;
     t.articulation = articulationIndex;
     t.hit = kit.nextRoundRobin (zoneIndex, random);
     t.gain = gain;
     t.pitchRatio = pitchRatio;
+    t.attackSamples = (int) std::lround (shaping.attackMs * 0.001 * sampleRate);
+    t.holdSamples = (int) std::lround (shaping.holdMs * 0.001 * sampleRate);
+
+    // The pitch envelope falls to 5% of its start (three time constants) over its time.
+    if (std::abs (shaping.pitchEnvSemitones) > 0.001f)
+    {
+        t.pitchEnvSemitones = shaping.pitchEnvSemitones;
+        t.pitchEnvDecay = (float) std::exp (-3.0 / (std::max (1.0, (double) shaping.pitchEnvMs) * 0.001 * sampleRate));
+    }
 
     // A voice found by allocateVoice() is never active, so start() has
     // nothing to close and doesn't need the old kit.
     voice->start (kit, art.piece, art.chokeGroupMask, t, nextSerial++);
+    return t.hit - kit.zones[(size_t) zoneIndex].firstHit;
 }
 
 Voice* DrumEngine::allocateVoice (int piece) noexcept
@@ -237,6 +269,22 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
 {
     const auto numPieces = (int) kit.pieces.size();
     const auto anySolo = params.anyPieceSoloed (numPieces);
+    const auto anyMicSolo = params.anyMicSoloed (kit.numMics);
+
+    // The close mics' trims and pans, once per mic rather than per piece.
+    std::array<std::array<float, 2>, maxMics> micGains {};
+
+    for (int m = 0; m < kit.numMics; ++m)
+    {
+        const auto& mic = kit.mics[(size_t) m];
+        const auto& mp = params.mics[(size_t) m];
+
+        if (! mic.direct || mp.mute || (anyMicSolo && ! mp.solo))
+            continue;
+
+        const auto [l, r] = dsp::panGains (mic.defaultPan + mp.pan, mic.numChannels);
+        micGains[(size_t) m] = { mic.defaultGain * mp.volume * l, mic.defaultGain * mp.volume * r };
+    }
 
     for (size_t i = 0; i < (size_t) numPieces; ++i)
     {
@@ -249,8 +297,14 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
         for (size_t r = 0; r < (size_t) numMicRoles; ++r)
             context.roleGains[i][r] = level * pp.sends[r];
 
+        for (int m = 0; m < kit.numMics; ++m)
+        {
+            const auto send = level * pp.sends[(size_t) kit.mics[(size_t) m].role];
+            context.directGains[i][(size_t) m] = { send * micGains[(size_t) m][0], send * micGains[(size_t) m][1] };
+        }
+
         // Decay 1.0 leaves the sample untouched. Below that, an exponential
-        // decay starts after a short hold, with a time constant from 30 ms
+        // decay starts after the hold, with a time constant from 30 ms
         // (decay 0) up to 4 s (just below 1).
         if (decay >= 0.999f)
         {
@@ -261,10 +315,18 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
             const auto tau = 0.03 * std::pow (4.0 / 0.03, (double) decay);
             context.decayCoefficient[i] = (float) std::exp (-1.0 / (tau * sampleRate));
         }
+
+        // The tone filters: pass-through (and skipped) at their ends.
+        context.toneHighPass[i] = pp.toneHighPassHz > PieceParams::toneOffHz + 0.5f
+                                    ? dsp::designSvf (dsp::SvfType::highPass, pp.toneHighPassHz, 0.0, 0.7071, sampleRate)
+                                    : dsp::SvfCoefficients {};
+        context.toneLowPass[i] = pp.toneLowPassHz < PieceParams::toneOpenHz - 1.0f
+                                   ? dsp::designSvf (dsp::SvfType::lowPass, pp.toneLowPassHz, 0.0, 0.7071, sampleRate)
+                                   : dsp::SvfCoefficients {};
     }
 }
 
-void DrumEngine::render (Kit& kit, juce::AudioBuffer<float>& micBus, int startSample, int numSamples,
+void DrumEngine::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
                          const EngineParams& params) noexcept
 {
     updateRenderContext (kit, params);
@@ -275,7 +337,7 @@ void DrumEngine::render (Kit& kit, juce::AudioBuffer<float>& micBus, int startSa
 
         for (auto& v : voices)
             if (v.isActive())
-                v.render (kit, micBus, startSample + offset, slice, context);
+                v.render (kit, buses, startSample + offset, slice, context);
     }
 
     feedback.activeVoices.store (getNumActiveVoices(), std::memory_order_relaxed);

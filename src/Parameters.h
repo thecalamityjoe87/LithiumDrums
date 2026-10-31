@@ -29,6 +29,53 @@ juce::String micParamId (int slot, std::string_view name);     // e.g. "mic5_pan
 inline constexpr auto masterVolume = "master_volume";
 inline constexpr auto velocityCrossfade = "velocity_crossfade";
 
+// The reverb bus.
+inline constexpr auto reverbReturn = "reverb_return";
+inline constexpr auto reverbMute = "reverb_mute";
+inline constexpr auto reverbOutput = "reverb_output";
+inline constexpr auto reverbSize = "reverb_size";
+inline constexpr auto reverbDecay = "reverb_decay";
+inline constexpr auto reverbPreDelay = "reverb_predelay";
+inline constexpr auto reverbDamping = "reverb_damping";
+inline constexpr auto reverbLowCut = "reverb_lowcut";
+inline constexpr auto reverbWidth = "reverb_width";
+
+// Shaping a piece's hits: append to pieceParamId().
+inline constexpr std::string_view dynamics = "dynamics", pitchEnv = "pitch_env", pitchEnvTime = "pitch_env_time";
+inline constexpr std::string_view toneHighPass = "tone_hp", toneLowPass = "tone_lp";
+inline constexpr std::string_view attack = "attack", hold = "hold";
+
+// A mixer channel (a piece's, or an overhead or room mic's): append to
+// ChannelId::param(). A piece's channel fader is "fader" (its "volume" is the
+// whole drum); a mic's is its "volume".
+inline constexpr std::string_view output = "output", reverbSend = "reverb_send";
+inline constexpr std::string_view eqOn = "eq_on", eqHighPass = "eq_hpf";
+inline constexpr std::string_view eqLowFreq = "eq_low_freq", eqLowGain = "eq_low_gain";
+inline constexpr std::string_view eqMid1Freq = "eq_mid1_freq", eqMid1Gain = "eq_mid1_gain", eqMid1Q = "eq_mid1_q";
+inline constexpr std::string_view eqMid2Freq = "eq_mid2_freq", eqMid2Gain = "eq_mid2_gain", eqMid2Q = "eq_mid2_q";
+inline constexpr std::string_view eqHighFreq = "eq_high_freq", eqHighGain = "eq_high_gain";
+inline constexpr std::string_view compOn = "comp_on", compThreshold = "comp_threshold", compRatio = "comp_ratio";
+inline constexpr std::string_view compAttack = "comp_attack", compRelease = "comp_release";
+inline constexpr std::string_view compMakeup = "comp_makeup", compMix = "comp_mix";
+inline constexpr std::string_view satOn = "sat_on", satDrive = "sat_drive", satMix = "sat_mix";
+inline constexpr std::string_view transientOn = "trans_on", transientAttack = "trans_attack", transientSustain = "trans_sustain";
+
+/** Which mixer channel a set of channel parameters belongs to. */
+struct ChannelId
+{
+    bool isPiece = false;
+    int slot = -1;
+
+    bool isValid() const noexcept                       { return slot >= 0; }
+    juce::String param (std::string_view name) const    { return isPiece ? pieceParamId (slot, name) : micParamId (slot, name); }
+    juce::String fader() const                          { return param (isPiece ? "fader" : "volume"); }
+
+    bool operator== (const ChannelId&) const = default;
+};
+
+/** The names of the output choices: "Main", then "Aux 1" to "Aux 16". */
+juce::StringArray outputNames();
+
 inline constexpr float minVolumeDb = -60.0f;   // the bottom of the fader means silence
 
 /** The display names of the loaded kit's pieces and mics, which the slot
@@ -49,10 +96,15 @@ private:
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const SlotNames&);
 
-/** Puts a kit's pieces and mics back to their neutral settings: 0 dB,
-    centred, unmuted, natural decay, full sends, and the kit's default choke
-    notes. Message thread. */
+/** Puts every piece and mic parameter back to its default (0 dB, centred,
+    unmuted, no shaping, flat channels, no reverb, the main output), with
+    the kit's own choke notes. The reverb bus and master keep their
+    settings. Message thread. */
 void resetForKit (juce::AudioProcessorValueTreeState&, const KitInfo&);
+
+/** Puts one part of a channel back to its defaults. Message thread. */
+void resetEq (juce::AudioProcessorValueTreeState&, ChannelId);
+void resetCompressor (juce::AudioProcessorValueTreeState&, ChannelId);
 
 /** Reads every parameter the audio thread needs into an EngineParams.
 
@@ -70,30 +122,44 @@ public:
     std::array<bool, maxMics> readMicMutes() const noexcept;
 
 private:
+    using Ref = std::atomic<float>*;
+
+    struct ChannelRefs
+    {
+        Ref output, reverbSend;
+        Ref eqOn, hpf, lowFreq, lowGain, mid1Freq, mid1Gain, mid1Q, mid2Freq, mid2Gain, mid2Q, highFreq, highGain;
+        Ref compOn, threshold, ratio, attack, release, makeup, mix;
+        Ref satOn, satDrive, satMix, transientOn, transientAttack, transientSustain;
+    };
+
     struct PieceRefs
     {
-        std::atomic<float>* volume;
-        std::atomic<float>* tune;
-        std::atomic<float>* decay;
-        std::atomic<float>* mute;
-        std::atomic<float>* solo;
-        std::array<std::atomic<float>*, numMicRoles> sends;
-        std::atomic<float>* chokeNote;
+        Ref volume, tune, decay, mute, solo, chokeNote;
+        std::array<Ref, numMicRoles> sends;
+        Ref dynamics, pitchEnv, pitchEnvTime, toneHighPass, toneLowPass, attack, hold;
+        Ref fader, pan;
+        ChannelRefs channel;
     };
 
     struct MicRefs
     {
-        std::atomic<float>* volume;
-        std::atomic<float>* pan;
-        std::atomic<float>* mute;
-        std::atomic<float>* solo;
-        std::atomic<float>* output;
+        Ref volume, pan, mute, solo;
+        ChannelRefs channel;
     };
+
+    struct ReverbRefs
+    {
+        Ref returnLevel, mute, output, size, decay, preDelay, damping, lowCut, width;
+    };
+
+    static ChannelRefs findChannel (juce::AudioProcessorValueTreeState&, ChannelId);
+    static void readChannel (const ChannelRefs&, ChannelParams&) noexcept;
 
     std::array<PieceRefs, maxPieces> pieces {};
     std::array<MicRefs, maxMics> mics {};
-    std::atomic<float>* master = nullptr;
-    std::atomic<float>* crossfade = nullptr;
+    ReverbRefs reverb {};
+    Ref master = nullptr;
+    Ref crossfade = nullptr;
 };
 
 } // namespace lithium::params

@@ -79,20 +79,34 @@ namespace
     /** Drives a DrumEngine directly, without the processor around it. */
     struct EngineRig
     {
-        explicit EngineRig (double rate = sampleRate) : kit (*shared().kit)
+        explicit EngineRig (double rate = sampleRate, bool perMic = true) : kit (*shared().kit)
         {
+            // Most engine tests look at each mic on its own, so by default the
+            // rig sends every mic to its own bus channel, rather than the close
+            // mics into the drums' channels (see "Close mics feed their drum's channel").
+            for (int m = 0; m < kit.numMics; ++m)
+                direct[(size_t) m] = perMic ? std::exchange (kit.mics[(size_t) m].direct, false) : kit.mics[(size_t) m].direct;
+
             engine.prepare (rate);
             params.resetForKit (kit);
             params.velocityCrossfade = false;
         }
 
-        ~EngineRig()     { engine.stopAll (kit); }
+        ~EngineRig()
+        {
+            engine.stopAll (kit);
+
+            for (int m = 0; m < kit.numMics; ++m)
+                kit.mics[(size_t) m].direct = direct[(size_t) m];
+        }
 
         void render (int numSamples)
         {
             bus.setSize (maxMicBusChannels, numSamples, false, false, true);
+            pieceBus.setSize (maxPieces * 2, numSamples, false, false, true);
             bus.clear();
-            engine.render (kit, bus, 0, numSamples, params);
+            pieceBus.clear();
+            engine.render (kit, { bus, pieceBus }, 0, numSamples, params);
         }
 
         void note (int n, int velocity = 100)     { engine.noteOn (kit, n, velocity, params); }
@@ -118,7 +132,8 @@ namespace
         EngineFeedback feedback;
         DrumEngine engine { feedback };
         EngineParams params;
-        juce::AudioBuffer<float> bus;
+        juce::AudioBuffer<float> bus, pieceBus;
+        std::array<bool, maxMics> direct {};
     };
 
     bool writeWav (const juce::File& file, const juce::AudioBuffer<float>& audio, int bits)
@@ -681,6 +696,143 @@ public:
             expectWithinAbsoluteError ((double) at96 / at44, 96000.0 / 44100.0, 0.1);
         }
 
+        beginTest ("Close mics feed their drum's channel; overheads and room keep their own");
+        {
+            EngineRig rig (sampleRate, false);   // the real routing
+            const auto snare = shared().piece ("snare");
+            const auto snareTop = shared().mic ("snareTop");
+            const auto overheads = shared().mic ("overheads");
+            auto channelPeak = [&] (int piece)
+            {
+                return std::max (rig.pieceBus.getMagnitude (piece * 2, 0, rig.pieceBus.getNumSamples()),
+                                 rig.pieceBus.getMagnitude (piece * 2 + 1, 0, rig.pieceBus.getNumSamples()));
+            };
+
+            rig.note (38, 110);
+            rig.render (2048);
+            expect (channelPeak (snare) > 0.01f, "nothing in the snare's channel");
+            expectEquals (rig.peakOf ("snareTop"), 0.0f);
+            expect (rig.peakOf ("overheads") > 0.001f, "nothing on the overheads");
+            expectEquals (channelPeak (shared().piece ("kick")), 0.0f);
+            rig.engine.stopAll (rig.kit);
+
+            // Muting every close mic empties the drum's channel, but not the overheads.
+            for (int m = 0; m < rig.kit.numMics; ++m)
+                rig.params.mics[(size_t) m].mute = rig.kit.mics[(size_t) m].direct;
+
+            rig.note (38, 110);
+            rig.render (2048);
+            expectEquals (channelPeak (snare), 0.0f);
+            expect (rig.peakOf ("overheads") > 0.001f);
+            rig.engine.stopAll (rig.kit);
+
+            // A close mic's pan places it in the drum's channel.
+            for (auto& m : rig.params.mics)
+                m.mute = false;
+
+            for (int m = 0; m < rig.kit.numMics; ++m)
+                rig.params.mics[(size_t) m].solo = m == snareTop;
+
+            rig.params.mics[(size_t) snareTop].pan = -1.0f - rig.kit.mics[(size_t) snareTop].defaultPan;   // hard left
+            rig.note (38, 110);
+            rig.render (2048);
+            expect (rig.pieceBus.getMagnitude (snare * 2, 0, 2048) > 0.01f);
+            expectLessThan (rig.pieceBus.getMagnitude (snare * 2 + 1, 0, 2048), 1.0e-4f);
+            juce::ignoreUnused (overheads);
+        }
+
+        beginTest ("Shaping: attack, pitch bend, tone and dynamics");
+        {
+            EngineRig rig;
+            auto& snare = rig.piece ("snare");
+
+            auto firstMs = [&] (float attackMs)
+            {
+                snare.attackMs = attackMs;
+                rig.note (38, 110);
+                rig.render (441);   // 10 ms
+                const auto p = rig.peakOf ("snareTop");
+                rig.engine.stopAll (rig.kit);
+                return p;
+            };
+
+            expectLessThan (firstMs (40.0f), firstMs (0.0f) * 0.5f);
+            snare.attackMs = 0.0f;
+
+            // An upward bend plays the sample faster at first, so it ends sooner.
+            auto length = [&] (float bend)
+            {
+                snare.pitchEnvSemitones = bend;
+                snare.pitchEnvMs = 1000.0f;
+                rig.note (38, 110);
+                return rig.renderUntilSilent();
+            };
+
+            const auto straight = length (0.0f), bent = length (12.0f);
+            expect (bent < straight, juce::String (bent) + " vs " + juce::String (straight));
+            snare.pitchEnvSemitones = 0.0f;
+
+            // A low tone cut takes the highs out: less sample-to-sample movement.
+            auto roughness = [&] (float lowPassHz)
+            {
+                snare.toneLowPassHz = lowPassHz;
+                rig.note (38, 110);
+                rig.render (4096);
+                const auto* x = rig.bus.getReadPointer (rig.kit.mics[(size_t) shared().mic ("snareTop")].busChannel);
+                double sum = 0.0;
+
+                for (int i = 1; i < 4096; ++i)
+                    sum += std::abs (x[i] - x[i - 1]);
+
+                rig.engine.stopAll (rig.kit);
+                return sum;
+            };
+
+            expectLessThan (roughness (600.0f), roughness (PieceParams::toneOpenHz) * 0.6);
+            snare.toneLowPassHz = PieceParams::toneOpenHz;
+
+            // More dynamics: soft hits get softer; loud ones stay put.
+            auto level = [&] (float dynamics, int velocity)
+            {
+                snare.dynamics = dynamics;
+                rig.note (38, velocity);
+                rig.render (2048);
+                const auto p = rig.peakOf ("snareTop");
+                rig.engine.stopAll (rig.kit);
+                return p;
+            };
+
+            expectLessThan (level (1.0f, 20), level (0.0f, 20) * 0.5f);
+            // (Within a few percent: the two hits are different round-robins.)
+            const auto loud = level (0.0f, 127);
+            expectWithinAbsoluteError (level (1.0f, 127), loud, loud * 0.03f);
+            snare.dynamics = 0.0f;
+        }
+
+        beginTest ("The engine reports which zone and round-robin each hit played");
+        {
+            EngineRig rig;
+            const auto snare = shared().piece ("snare");
+            const auto& art = shared().info.pieces[(size_t) snare].articulations[0];
+            const auto before = rig.feedback.pieceHits[(size_t) snare].load();
+
+            for (const auto velocity : { 5, 64, 127 })
+            {
+                rig.engine.trigger (rig.kit, shared().info.pieces[(size_t) snare].firstArticulation, velocity, rig.params);
+                const auto hit = LastHit::unpack (rig.feedback.lastHit[(size_t) snare].load());
+                expect (hit.has_value());
+                expectEquals (hit->velocity, velocity);
+                expectEquals (hit->articulation, shared().info.pieces[(size_t) snare].firstArticulation);
+
+                const auto& zone = art.zones[(size_t) hit->zone];
+                expect (velocity >= zone.velocityLow && velocity <= zone.velocityHigh);
+                expect (juce::isPositiveAndBelow (hit->roundRobin, zone.numRoundRobins));
+            }
+
+            expectEquals ((int) (rig.feedback.pieceHits[(size_t) snare].load() - before), 3);
+            expect (art.notes.contains (38), "the snare's first articulation should be on note 38");
+        }
+
         beginTest ("The mixer applies the kit's default level, pan and polarity");
         {
             EngineRig rig;
@@ -689,7 +841,7 @@ public:
 
             Kit kit;   // a one-mic kit, to look at the mixer on its own
             kit.numMics = 1;
-            kit.mics[0] = { 1, MicRole::close, 0, -0.5f, 1.0f };   // half level, inverted, hard right
+            kit.mics[0] = { 1, MicRole::room, 0, -0.5f, 1.0f, false };   // a room mic at half level, inverted, hard right
 
             juce::AudioBuffer<float> out (2, 4096);
             EngineParams params;
@@ -998,7 +1150,7 @@ public:
                 EngineParams params;
                 params.resetForKit (*kit);
                 params.velocityCrossfade = false;
-                juce::AudioBuffer<float> bus (maxMicBusChannels, 512);
+                juce::AudioBuffer<float> bus (maxMicBusChannels, 512), pieceBus (maxPieces * 2, 512);
 
                 auto lengthOf = [&] (int piece)
                 {
@@ -1008,7 +1160,8 @@ public:
                     for (; engine.getNumActiveVoices() > 0 && n < 44100 * 10; n += 512)
                     {
                         bus.clear();
-                        engine.render (*kit, bus, 0, 512, params);
+                        pieceBus.clear();
+                        engine.render (*kit, { bus, pieceBus }, 0, 512, params);
                     }
 
                     return n;
@@ -1021,8 +1174,9 @@ public:
                 kit->pieces[1].defaultGain = 0.0f;
                 engine.trigger (*kit, kit->pieces[1].firstArticulation, 100, params);
                 bus.clear();
-                engine.render (*kit, bus, 0, 512, params);
-                expectEquals (bus.getMagnitude (0, 512), 0.0f);
+                pieceBus.clear();
+                engine.render (*kit, { bus, pieceBus }, 0, 512, params);
+                expectEquals (bus.getMagnitude (0, 512) + pieceBus.getMagnitude (0, 512), 0.0f);
                 engine.stopAll (*kit);
             }
         }
@@ -1753,7 +1907,7 @@ public:
             expect (! streaming.getKitInfo()->streaming, "the kit should be back in RAM");
         }
 
-        beginTest ("Mics routed to a direct out leave the main mix");
+        beginTest ("Mics and the reverb return can be routed to aux outs");
         {
             auto layout = processor.getBusesLayout();
 
@@ -1763,32 +1917,177 @@ public:
             expect (processor.setBusesLayout (layout));
             processor.prepareToPlay (sampleRate, 512);
 
+            // The snare's channel on Aux 3, its reverb send on, and the reverb on
+            // Aux 5. Only the snare top mic is soloed, so nothing reaches the
+            // overhead and room channels on the main out.
             const auto snareTop = s.mic ("snareTop");
+            const auto snare = s.piece ("snare");
             setParam (processor, params::micParamId (snareTop, "solo"), 1.0f);
-            setParam (processor, params::micParamId (snareTop, "output"), 1.0f);
+            setParam (processor, params::pieceParamId (snare, "output"), 3.0f);
+            setParam (processor, params::pieceParamId (snare, params::reverbSend), 0.0f);
+            setParam (processor, params::reverbOutput, 5.0f);
 
             juce::AudioBuffer<float> buffer (processor.getTotalNumOutputChannels(), 512);
             juce::MidiBuffer midi;
 
-            // Let the mixer's 20 ms gain smoothing settle on the new solo first.
-            for (int i = 0; i < 3; ++i)
+            // Silence what's still ringing from earlier tests (a cymbal's bleed
+            // into the snare top mic would play through the cymbal's channel),
+            // and let the 20 ms gain smoothing settle on the new solo.
+            midi.addEvent (juce::MidiMessage::allSoundOff (10), 0);
+
+            for (int i = 0; i < 4; ++i)
+            {
                 processor.processBlock (buffer, midi);
+                midi.clear();
+            }
 
             midi.addEvent (juce::MidiMessage::noteOn (10, 38, (juce::uint8) 120), 0);
             processor.processBlock (buffer, midi);
 
-            const auto snareChannel = processor.getChannelIndexInProcessBlockBuffer (false, 1 + snareTop, 0);
-            expectEquals (buffer.getMagnitude (0, 0, 512), 0.0f);
-            expect (buffer.getMagnitude (snareChannel, 0, 512) > 0.0f);
+            auto busPeak = [&] (int bus)
+            {
+                const auto ch = processor.getChannelIndexInProcessBlockBuffer (false, bus, 0);
+                return std::max (buffer.getMagnitude (ch, 0, 512), buffer.getMagnitude (ch + 1, 0, 512));
+            };
+
+            expectEquals (busPeak (0), 0.0f);
+            expect (busPeak (3) > 0.0f, "nothing on Aux 3");
+            expect (busPeak (5) > 0.0f, "no reverb on Aux 5");
+            expectEquals (busPeak (1), 0.0f);
+
+            // A disabled aux out falls back to the main mix.
+            layout = processor.getBusesLayout();
+            layout.outputBuses.getReference (3) = juce::AudioChannelSet::disabled();
+            expect (processor.setBusesLayout (layout));
+            processor.prepareToPlay (sampleRate, 512);
+            processor.processBlock (buffer, midi);
+            expect (busPeak (0) > 0.0f, "a mic routed to a disabled aux out should play in the main mix");
 
             setParam (processor, params::micParamId (snareTop, "solo"), 0.0f);
-            setParam (processor, params::micParamId (snareTop, "output"), 0.0f);
+            setParam (processor, params::pieceParamId (snare, "output"), 0.0f);
+            setParam (processor, params::pieceParamId (snare, params::reverbSend), params::minVolumeDb);
+            setParam (processor, params::reverbOutput, 0.0f);
             layout = processor.getBusesLayout();
 
             for (int i = 1; i < layout.outputBuses.size(); ++i)
                 layout.outputBuses.getReference (i) = juce::AudioChannelSet::disabled();
 
             expect (processor.setBusesLayout (layout));
+        }
+
+        beginTest ("processBlock doesn't allocate with every channel's effects, the shaping and the reverb running");
+        {
+            auto busyChannel = [&] (params::ChannelId c)
+            {
+                setParam (processor, c.param (params::eqHighPass), 80.0f);
+                setParam (processor, c.param (params::eqMid1Gain), 4.0f);
+                setParam (processor, c.param (params::eqHighGain), -3.0f);
+                setParam (processor, c.param (params::compOn), 1.0f);
+                setParam (processor, c.param (params::compMix), 60.0f);
+                setParam (processor, c.param (params::satOn), 1.0f);
+                setParam (processor, c.param (params::transientOn), 1.0f);
+                setParam (processor, c.param (params::transientAttack), 50.0f);
+                setParam (processor, c.param (params::reverbSend), -12.0f);
+            };
+
+            for (int p = 0; p < (int) s.info.pieces.size(); ++p)
+            {
+                busyChannel ({ true, p });
+                setParam (processor, params::pieceParamId (p, params::pitchEnv), 5.0f);
+                setParam (processor, params::pieceParamId (p, params::toneLowPass), 4000.0f);
+                setParam (processor, params::pieceParamId (p, params::attack), 2.0f);
+            }
+
+            for (int m = 0; m < (int) s.info.mics.size(); ++m)
+                busyChannel ({ false, m });
+
+            constexpr int blockSize = 256;
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            std::vector<juce::MidiBuffer> blocks (400);
+
+            for (size_t i = 0; i < blocks.size(); ++i)
+                for (const auto note : { 36, 38, 42, 46, 49 })
+                    if ((i + (size_t) note) % 6 == 0)
+                        blocks[i].addEvent (juce::MidiMessage::noteOn (10, note, (juce::uint8) 100), (int) (i % blockSize));
+
+            processor.prepareToPlay (sampleRate, blockSize);
+            int allocations = 0;
+            float loudest = 0.0f;
+
+            {
+                test::ScopedAllocationCounter counter;
+
+                for (auto& midi : blocks)
+                {
+                    processor.processBlock (buffer, midi);
+                    loudest = std::max (loudest, buffer.getMagnitude (0, 0, blockSize));
+                }
+
+                allocations = counter.count();
+            }
+
+            expectEquals (allocations, 0);
+            expect (std::isfinite (loudest) && loudest > 0.0f && loudest < 4.0f, "output level " + juce::String (loudest));
+            expect (processor.getMixerFeedback().pieceReductionDb[(size_t) s.piece ("snare")].load() > 0.0f,
+                    "the snare channel's compressor should be working");
+
+            params::resetForKit (processor.getParameters(), s.info);
+        }
+
+        beginTest ("Parameter defaults are the engine's neutral settings");
+        {
+            params::resetForKit (processor.getParameters(), s.info);
+            EngineParams fromParameters, neutral;
+            params::Snapshot (processor.getParameters()).read (fromParameters);
+            neutral.resetForKit (*s.kit);
+
+            auto compareChannels = [this] (const ChannelParams& a, const ChannelParams& b)
+            {
+                expect (a.output == b.output);
+                expectWithinAbsoluteError (a.reverbSend, b.reverbSend, 1.0e-6f);
+                const auto &x = a.chain, &y = b.chain;
+                expect (x.eq.enabled == y.eq.enabled && x.comp.enabled == y.comp.enabled
+                        && x.saturation.enabled == y.saturation.enabled && x.transient.enabled == y.transient.enabled);
+
+                for (auto [u, v] : { std::pair { x.eq.hpfHz, y.eq.hpfHz }, { x.eq.lowHz, y.eq.lowHz }, { x.eq.lowDb, y.eq.lowDb },
+                                     { x.eq.mid1Hz, y.eq.mid1Hz }, { x.eq.mid1Db, y.eq.mid1Db }, { x.eq.mid1Q, y.eq.mid1Q },
+                                     { x.eq.mid2Hz, y.eq.mid2Hz }, { x.eq.mid2Db, y.eq.mid2Db }, { x.eq.mid2Q, y.eq.mid2Q },
+                                     { x.eq.highHz, y.eq.highHz }, { x.eq.highDb, y.eq.highDb },
+                                     { x.comp.thresholdDb, y.comp.thresholdDb }, { x.comp.ratio, y.comp.ratio },
+                                     { x.comp.attackMs, y.comp.attackMs }, { x.comp.releaseMs, y.comp.releaseMs },
+                                     { x.comp.makeupDb, y.comp.makeupDb }, { x.comp.mix, y.comp.mix },
+                                     { x.saturation.driveDb, y.saturation.driveDb }, { x.saturation.mix, y.saturation.mix },
+                                     { x.transient.attack, y.transient.attack }, { x.transient.sustain, y.transient.sustain } })
+                    expectWithinAbsoluteError (u, v, 0.01f * std::max (1.0f, std::abs (v)));
+            };
+
+            for (size_t m = 0; m < (size_t) maxMics; ++m)
+            {
+                const auto& a = fromParameters.mics[m];
+                const auto& b = neutral.mics[m];
+                expect (a.mute == b.mute && a.solo == b.solo);
+                expectWithinAbsoluteError (a.volume, b.volume, 1.0e-6f);
+                compareChannels (a.channel, b.channel);
+            }
+
+            for (size_t p = 0; p < (size_t) maxPieces; ++p)
+            {
+                const auto& a = fromParameters.pieces[p];
+                const auto& b = neutral.pieces[p];
+                compareChannels (a.channel, b.channel);
+
+                for (auto [u, v] : { std::pair { a.volume, b.volume }, { a.faderGain, b.faderGain }, { a.pan, b.pan },
+                                     { a.dynamics, b.dynamics }, { a.tuneSemitones, b.tuneSemitones },
+                                     { a.pitchEnvSemitones, b.pitchEnvSemitones }, { a.pitchEnvMs, b.pitchEnvMs },
+                                     { a.toneHighPassHz, b.toneHighPassHz }, { a.toneLowPassHz, b.toneLowPassHz },
+                                     { a.attackMs, b.attackMs }, { a.holdMs, b.holdMs }, { a.decay, b.decay } })
+                    expectWithinAbsoluteError (u, v, 0.01f * std::max (1.0f, std::abs (v)));
+            }
+
+            const ReverbSettings room;
+            expectWithinAbsoluteError (fromParameters.reverb.room.decaySeconds, room.decaySeconds, 0.01f);
+            expectWithinAbsoluteError (fromParameters.reverb.room.size, room.size, 0.001f);
+            expectWithinAbsoluteError (fromParameters.reverb.returnGain, 1.0f, 1.0e-4f);
         }
 
         beginTest ("Resetting for a kit puts everything back to neutral");
@@ -1868,6 +2167,10 @@ public:
             setParam (processor, params::pieceParamId (s.piece ("snare"), "volume"), -6.0f);
             setParam (processor, params::micParamId (s.mic ("room"), "pan"), 30.0f);
             setParam (processor, params::pieceParamId (s.piece ("ride"), "tune"), 2.5f);
+            setParam (processor, params::micParamId (s.mic ("room"), params::eqMid1Gain), -4.5f);
+            setParam (processor, params::micParamId (s.mic ("room"), params::compOn), 1.0f);
+            setParam (processor, params::micParamId (s.mic ("room"), "output"), 7.0f);
+            setParam (processor, params::reverbDecay, 3.0f);
             processor.getSelection().select (s.piece ("ride"));
 
             juce::MemoryBlock state;
@@ -1885,6 +2188,10 @@ public:
             expectWithinAbsoluteError (value (restored, params::pieceParamId (s.piece ("snare"), "volume")), -6.0f, 0.05f);
             expectWithinAbsoluteError (value (restored, params::micParamId (s.mic ("room"), "pan")), 30.0f, 0.5f);
             expectWithinAbsoluteError (value (restored, params::pieceParamId (s.piece ("ride"), "tune")), 2.5f, 0.01f);
+            expectWithinAbsoluteError (value (restored, params::micParamId (s.mic ("room"), params::eqMid1Gain)), -4.5f, 0.05f);
+            expectEquals (value (restored, params::micParamId (s.mic ("room"), params::compOn)), 1.0f);
+            expectEquals (value (restored, params::micParamId (s.mic ("room"), "output")), 7.0f);
+            expectWithinAbsoluteError (value (restored, params::reverbDecay), 3.0f, 0.01f);
             expect (restored.getKitFolder() == testKitFolder);
             expectEquals (restored.getSelection().getSelected(), s.piece ("ride"));
         }
@@ -1936,7 +2243,7 @@ public:
         const std::vector<PieceRole> roles { R::kick, R::snare, R::hihat, R::tom, R::floorTom, R::floorTom, R::crash, R::crash, R::ride };
 
         for (size_t i = 0; i < roles.size(); ++i)
-            info->pieces.push_back ({ "p" + juce::String ((int) i), "Piece", roles[i], { "Hit" }, -1 });
+            info->pieces.push_back ({ "p" + juce::String ((int) i), "Piece", roles[i], { KitArticulationInfo { "hit", "Hit", {}, {} } }, -1 });
 
         info->slotPiece = assignStageSlots (roles);
         stage.setKitInfo (info);

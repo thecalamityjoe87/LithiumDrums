@@ -1,9 +1,11 @@
 #pragma once
 
+#include "EditPage.h"
 #include "HeaderBar.h"
 #include "InfoPanels.h"
 #include "KitBrowser.h"
 #include "KitPage.h"
+#include "MixerPage.h"
 
 namespace lithium
 {
@@ -23,7 +25,9 @@ private:
 
     HeaderBar header;
     KitPage kitPage;
-    ComingSoonPage editPage, mixerPage, groovesPage, fxPage;
+    EditPage editPage;
+    MixerPage mixerPage;
+    ComingSoonPage groovesPage, fxPage;
     AboutPanel aboutPanel;
     SettingsPanel settingsPanel;
     KitBrowser browser;

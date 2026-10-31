@@ -26,8 +26,8 @@ namespace lithium
         deletes what the audio thread retires.
       - Everything else (UI, state, kit requests) is the message thread.
     The only ways the audio thread talks to anyone are lock-free: parameter
-    atomics, the KitHandoff, the audition queue, EngineFeedback and one
-    atomic counter for kit-switch resets. */
+    atomics, the KitHandoff, the audition queue, EngineFeedback,
+    MixerFeedback and one atomic counter for kit-switch resets. */
 class LithiumDrumsProcessor final : public juce::AudioProcessor,
                                     public juce::ChangeBroadcaster,
                                     private juce::AsyncUpdater,
@@ -69,6 +69,13 @@ public:
     juce::AudioProcessorValueTreeState& getParameters() noexcept     { return parameters; }
     SelectionModel& getSelection() noexcept                          { return selection; }
     const EngineFeedback& getFeedback() const noexcept               { return feedback; }
+    MixerFeedback& getMixerFeedback() noexcept                       { return mixerFeedback; }
+
+    /** The mixer channel shown in the Mixer page's inspector (a drum's, or an
+        overhead or room mic's), or the reverb. Kept here so they survive
+        closing the editor. Message thread. */
+    params::ChannelId selectedMixerChannel { true, 0 };
+    bool reverbSelected = false;
     double getCpuLoadPercent() const                                 { return loadMeasurer.getLoadAsPercentage(); }
 
     /** Loads a kit. With resetMixer (choosing a kit from the menu), the
@@ -110,8 +117,8 @@ public:
         now (in any instance in this process). Returns the number deleted. */
     int clearStreamCache();
 
-    /** Plays a piece's first articulation, as if hit from MIDI. */
-    void audition (int piece, int velocity);
+    /** Plays one of a piece's articulations (0 = its first), as if hit from MIDI. */
+    void audition (int piece, int velocity, int articulation = 0);
 
     static constexpr int auditionVelocity = 90;
 
@@ -122,13 +129,14 @@ private:
     void applySelection();
     void timerCallback() override;
     void swapInWaitingKit() noexcept;
-    void render (Kit*, int from, int to, std::array<float*, 2> mainOut, const Mixer::DirectOutputs&) noexcept;
+    void render (Kit*, int from, int to, std::array<float*, 2> mainOut, const Mixer::AuxOutputs&) noexcept;
     MicMask currentlyUnmutedMics() const;
     static BusesProperties createBuses();
 
     struct AuditionRequest
     {
         int piece;
+        int articulation;            // within the piece
         int velocity;
     };
 
@@ -143,8 +151,9 @@ private:
     // Audio-thread state.
     EngineParams engineParams;
     EngineFeedback feedback;
+    MixerFeedback mixerFeedback;
     DrumEngine engine { feedback };
-    Mixer mixer;
+    Mixer mixer { &mixerFeedback };
     bool kitSwapPending = false;
     juce::AudioProcessLoadMeasurer loadMeasurer;
 

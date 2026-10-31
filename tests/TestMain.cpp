@@ -2,11 +2,13 @@
 //
 //   LithiumDrumsTests                 run all tests
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
+//                                     [--mixer-channel piece:<n> | mic:<n> | reverb]
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
-//   LithiumDrumsTests --measure-kit <kit folder> [--stream] [--preload <frames>] [--stress <seconds>] [--cold]
+//   LithiumDrumsTests --measure-kit <kit folder> [--stream] [--preload <frames>] [--stress <seconds> [--full-mix]] [--cold]
 //                                     load a real kit, report its RAM use and play every mapped note.
 //                                     --stream streams it from the stream cache (building the cache if needed),
 //                                     --stress then plays a dense groove in real time and counts dropouts,
+//                                     --full-mix runs it with EQ, compression and a reverb send on every mic,
 //                                     --cold first drops the cache file from the OS page cache (Linux)
 
 #include "AllocationCounter.h"
@@ -64,9 +66,14 @@ void operator delete[] (void* p, std::size_t) noexcept    { std::free (p); }
 class SnapshotWriter final : private juce::Timer
 {
 public:
-    SnapshotWriter (juce::File f, float s, juce::String select, const juce::File& kit, juce::String click)
+    SnapshotWriter (juce::File f, float s, juce::String select, const juce::File& kit, juce::String click, const juce::String& mixerChannel)
         : file (std::move (f)), scale (s), selectId (std::move (select)), clickName (std::move (click))
     {
+        processor.reverbSelected = mixerChannel.isEmpty() ? false : mixerChannel == "reverb";
+
+        if (mixerChannel.startsWith ("piece:") || mixerChannel.startsWith ("mic:"))
+            processor.selectedMixerChannel = { mixerChannel.startsWith ("piece:"), mixerChannel.fromFirstOccurrenceOf (":", false, false).getIntValue() };
+
         if (kit != juce::File())
             processor.loadKit (kit, true);
 
@@ -91,8 +98,10 @@ private:
             editor->setSize (juce::roundToInt (1280 * scale), juce::roundToInt (800 * scale));
             readyTick = ticks;
 
-            if (auto* button = findButton (*editor, clickName))
-                button->triggerClick();
+            // Several buttons may be given, comma-separated, and are clicked in order.
+            for (const auto& name : juce::StringArray::fromTokens (clickName, ",", {}))
+                if (auto* button = findButton (*editor, name))
+                    button->triggerClick();
 
         }
         else if (editor != nullptr && ticks > readyTick + 4)
@@ -147,7 +156,8 @@ static int writeSnapshot (const juce::StringArray& args)
                                              : juce::File();
     const auto click = args.contains ("--click") ? args[args.indexOf ("--click") + 1] : juce::String();
 
-    SnapshotWriter writer (file, scale, select, kit, click);
+    const auto mixerChannel = args.contains ("--mixer-channel") ? args[args.indexOf ("--mixer-channel") + 1] : juce::String();
+    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel);
     juce::MessageManager::getInstance()->runDispatchLoop();
     return writer.result;
 }
@@ -166,7 +176,7 @@ static long residentKb()
     streaming did. Every hit is at least velocity 90, there's a crash or china
     on every beat and a tom fill every other bar, so dozens of long cymbal
     tails stream at once. */
-static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::StreamStats& stats, double seconds)
+static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::StreamStats& stats, double seconds, bool fullMix)
 {
     using namespace lithium;
 
@@ -181,7 +191,7 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
             const auto& pd = kit.pieces[p];
 
             for (int a = 0; named != nullptr && a < pd.numArticulations; ++a)
-                if (info.pieces[p].articulations[a].containsIgnoreCase (named))
+                if (info.pieces[p].articulations[(size_t) a].name.containsIgnoreCase (named))
                     return pd.firstArticulation + a;
 
             return pd.firstArticulation;
@@ -204,6 +214,39 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
     params.resetForKit (kit);
     engine.prepare (kit.sampleRate);
 
+    if (fullMix)
+    {
+        // A busy mix: every channel (drums, overheads, room) high-passed,
+        // EQ'd, transient-shaped, compressed, saturated and sent to the
+        // reverb, and every hit pitch-bent and filtered.
+        auto busy = [] (ChannelParams& c)
+        {
+            auto& eq = c.chain.eq;
+            eq.hpfHz = 60.0f;
+            eq.lowDb = 2.0f;
+            eq.mid1Db = -3.0f;
+            eq.mid2Db = 2.5f;
+            eq.highDb = 1.5f;
+            c.chain.comp.enabled = true;
+            c.chain.comp.thresholdDb = -24.0f;
+            c.chain.comp.mix = 0.7f;
+            c.chain.transient.enabled = true;
+            c.chain.transient.attack = 0.4f;
+            c.chain.saturation.enabled = true;
+            c.reverbSend = 0.25f;
+        };
+
+        for (size_t p = 0; p < kit.pieces.size(); ++p)
+        {
+            busy (params.pieces[p].channel);
+            params.pieces[p].pitchEnvSemitones = 3.0f;
+            params.pieces[p].toneLowPassHz = 9000.0f;
+        }
+
+        for (int m = 0; m < kit.numMics; ++m)
+            busy (params.mics[(size_t) m].channel);
+    }
+
     constexpr int blockSize = 256;
     mixer.prepare (kit.sampleRate, blockSize);
     juce::AudioBuffer<float> out (2, blockSize);
@@ -217,13 +260,17 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
     const auto dropoutsBefore = stats.dropouts.load(), framesBefore = stats.dropoutFrames.load();
     const auto bytesBefore = stats.bytesRead.load();
     int peakVoices = 0, peakStreams = 0, nextStep = 0, lateBlocks = 0;
-    double renderSeconds = 0.0;
+    double renderSeconds = 0.0, mixSeconds = 0.0;
 
     auto hit = [&] (int art, int low = 90)
     {
         if (art >= 0)
             engine.trigger (kit, art, random.nextInt ({ low, 128 }), params);
     };
+
+    // As in processBlock: denormals flushed to zero, so decaying filter and
+    // reverb tails don't fall into the CPU's slow path.
+    const juce::ScopedNoDenormals noDenormals;
 
     for (int b = 0; b < totalBlocks; ++b)
     {
@@ -254,9 +301,11 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
             ++nextStep;
         }
 
-        mixer.clearMicBus (blockSize);
-        engine.render (kit, mixer.getMicBus(), 0, blockSize, params);
+        mixer.clearBuses (blockSize);
+        engine.render (kit, mixer.getBuses(), 0, blockSize, params);
+        const auto tMix = std::chrono::steady_clock::now();
         mixer.process (kit, blockSize, params, { out.getWritePointer (0), out.getWritePointer (1) }, {});
+        mixSeconds += std::chrono::duration<double> (std::chrono::steady_clock::now() - tMix).count();
 
         peakVoices = std::max (peakVoices, engine.getNumActiveVoices());
         peakStreams = std::max (peakStreams, stats.activeStreams.load());
@@ -280,7 +329,8 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
     std::cout << "  stress, " << juce::String (seconds, 0) << " s real time: peak " << peakVoices << " voices, "
               << peakStreams << " streams; read " << juce::String (mbRead, 0) << " MB ("
               << juce::String (mbRead / seconds, 1) << " MB/s); engine load "
-              << juce::String (100.0 * renderSeconds / seconds, 1) << "%; "
+              << juce::String (100.0 * renderSeconds / seconds, 1) << "% (mixer " << juce::String (100.0 * mixSeconds / seconds, 1)
+              << "%" << (fullMix ? ", full mix" : "") << "); "
               << (juce::int64) dropouts << " dropouts (" << (juce::int64) (stats.dropoutFrames.load() - framesBefore)
               << " frames), " << lateBlocks << " late blocks, " << (juce::int64) stats.readErrors.load() << " read errors" << std::endl;
 
@@ -336,6 +386,11 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
         std::cout << "  warning: " << w << std::endl;
 
     // Play every mapped note at three velocities through the engine and mixer.
+    // For this report every mic gets a bus channel of its own (rather than
+    // the close mics feeding the drums' channels), so each can be checked.
+    for (int m = 0; m < kit->numMics; ++m)
+        kit->mics[(size_t) m].direct = false;
+
     EngineFeedback feedback;
     DrumEngine engine (feedback);
     Mixer mixer;
@@ -354,8 +409,8 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
         for (int b = 0; b < blocks; ++b)
         {
             out.clear();
-            mixer.clearMicBus (512);
-            engine.render (*kit, mixer.getMicBus(), 0, 512, params);
+            mixer.clearBuses (512);
+            engine.render (*kit, mixer.getBuses(), 0, 512, params);
 
             for (int ch = 0; ch < kit->numBusChannels; ++ch)
                 micPeaks[(size_t) ch] = std::max (micPeaks[(size_t) ch], mixer.getMicBus().getMagnitude (ch, 0, 512));
@@ -392,7 +447,7 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
 
         const auto& art = kit->articulations[(size_t) target];
         std::cout << "  note " << note << " -> " << info.pieces[(size_t) art.piece].name << " / "
-                  << info.pieces[(size_t) art.piece].articulations[target - kit->pieces[(size_t) art.piece].firstArticulation]
+                  << info.pieces[(size_t) art.piece].articulations[(size_t) (target - kit->pieces[(size_t) art.piece].firstArticulation)].name
                   << ": peak dB at velocity 20/70/127:" << levels << std::endl;
     }
 
@@ -468,7 +523,7 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
         }
        #endif
 
-        result |= stressKit (*kit, info, *options.streamStats, seconds);
+        result |= stressKit (*kit, info, *options.streamStats, seconds, args.contains ("--full-mix"));
     }
 
     return result;

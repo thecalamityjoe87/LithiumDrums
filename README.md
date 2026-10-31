@@ -2,7 +2,7 @@
 
 Lithium Drums is a sampled acoustic drum kit plugin. It plays real multi-mic drum recordings, with velocity zones, round-robins, and close, overhead and room mics, through a built-in mixer. It runs as a VST3, CLAP, AU (macOS) or standalone app.
 
-It's early: this is Milestone 3. It plays real recorded kits from five open-licensed libraries, converted with the importer described below: ten kits, plus thirteen kit presets that reuse their recordings with other pieces, tuning or mics. Large kits stream from disk, so DRSKit takes about 360 MB of RAM instead of 3 GB. The kit format, presets, content packs and both importers are described in [docs/kit-format.md](docs/kit-format.md), and streaming in [docs/streaming.md](docs/streaming.md).
+It's early: this is Milestone 4. It plays real recorded kits from five open-licensed libraries, converted with the importer described below: ten kits, plus thirteen kit presets that reuse their recordings with other pieces, tuning or mics. Large kits stream from disk, so DRSKit takes about 360 MB of RAM instead of 3 GB. The Edit tab shapes each drum (velocity response, tuning and pitch bend, tone, its volume envelope and how much each mic hears it) and runs its own channel of effects: EQ, transient shaper, compressor and saturation. The Mixer tab has a channel per drum, plus the overhead and room mics, a reverb and the master. The kit format, presets, content packs and both importers are described in [docs/kit-format.md](docs/kit-format.md), streaming in [docs/streaming.md](docs/streaming.md), and shaping and mixing in [docs/mixer.md](docs/mixer.md).
 
 ## Building
 
@@ -55,6 +55,8 @@ To use the plugin in a DAW, point the DAW at the build folder, or copy (or symli
 
 Each kit plays from its own MIDI map (the library's own), and cymbals are choked by notes from 85 up. Muting a mic for a couple of seconds unloads it from memory.
 
+For mixing in the DAW, the plugin has sixteen stereo aux outs besides the main out. Enable them in the host, then pick an output for each channel (or the reverb) at the bottom of its strip in the Mixer tab; several can share one, such as all the toms on Aux 4.
+
 Kits over 512 MB stream from disk. The first time one streams, its audio is decoded into a stream cache (`~/.cache/Lithium Drums/Stream Cache` on Linux, `~/Library/Caches/...` on macOS, `%LOCALAPPDATA%\Lithium Drums\Stream Cache` on Windows), which takes a few seconds and about as much disk space as the kit takes in RAM. The header says "Caching" while that happens. After that, the kit loads in a fraction of a second. Settings has the streaming mode, the preload size and a button to clear the cache, and the DISK readout in the header shows how fast the kit is streaming.
 
 ## Tests
@@ -64,6 +66,7 @@ build/release/LithiumDrumsTests                    # engine, loader, streaming, 
 build/release/LithiumHostSmokeTest_artefacts/Release/LithiumHostSmokeTest   # loads the VST3 like a host
 build/release/LithiumDrumsTests --measure-kit "<kit folder>"   # plays a real kit and reports its memory use
 build/release/LithiumDrumsTests --measure-kit "<kit folder>" --stream --stress 30 --cold   # streams it, under load, from a cold cache
+build/release/LithiumDrumsTests --measure-kit "<kit folder>" --stress 30 --full-mix       # with every effect and all the shaping switched on
 ```
 
 The tests use a small synthesized kit that the build generates, so they don't need the real kits.
