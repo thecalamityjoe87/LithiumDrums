@@ -1,8 +1,10 @@
 {
   "comment": "Import mapping for DrumGizmo's MuldjordKit 3.0. Left/right in piece names are as seen by the drummer (as in the kit's README); stereo mics and pans are from the audience's side, to match the kit stage.",
   "matches": ["MuldjordKit3", "MuldjordKit"],
+  "pack": { "id": "drumgizmo-muldjordkit", "name": "MuldjordKit" },
   "variants": {
-    "MuldjordKit3.xml": { "name": "MuldjordKit", "midimap": "Midimap.xml" }
+    "MuldjordKit3.xml": { "name": "MuldjordKit", "id": "muldjordkit", "midimap": "Midimap.xml",
+                          "tags": ["acoustic", "rock", "metal", "multi-mic"] }
   },
   "author": "Lars Muldjord",
   "levelDb": -9,
@@ -79,5 +81,42 @@
     { "id": "china", "name": "China", "role": "china", "articulations": [
       { "instrument": "China", "id": "hit", "name": "Hit" }
     ]}
+  ],
+  "presets": [
+    { "id": "muldjordkit-four-piece", "name": "MuldjordKit Four-Piece", "base": "muldjordkit",
+      "description": "A plain rock kit from MuldjordKit: one kick, one rack tom, the floor tom, a crash and a ride.",
+      "tags": ["acoustic", "rock", "multi-mic"],
+      "pieces": [
+        { "piece": "kick_left", "name": "Kick" },
+        { "piece": "snare" },
+        { "piece": "hihat" },
+        { "piece": "tom2", "name": "Tom" },
+        { "piece": "floor" },
+        { "piece": "crash_left", "name": "Crash" },
+        { "piece": "ride_left", "name": "Ride" }
+      ],
+      "mics": { "kick_right": { "enabled": false }, "ride_right": { "enabled": false } } },
+    { "id": "muldjordkit-dry", "name": "MuldjordKit Dry", "base": "muldjordkit",
+      "description": "Close mics and overheads only, with the toms damped: tight and upfront, and lighter on memory.",
+      "tags": ["acoustic", "rock", "metal", "dry"],
+      "pieces": [
+        { "piece": "kick_left" }, { "piece": "kick_right" }, { "piece": "snare" }, { "piece": "hihat" },
+        { "piece": "tom1", "decay": 60 }, { "piece": "tom2", "decay": 60 }, { "piece": "tom3", "decay": 60 },
+        { "piece": "floor", "decay": 65 },
+        { "piece": "crash_left" }, { "piece": "crash_right" }, { "piece": "ride_left" }, { "piece": "ride_right" },
+        { "piece": "china" }
+      ],
+      "mics": { "room": { "enabled": false }, "overheads": { "volumeDb": -6 } } },
+    { "id": "muldjordkit-low", "name": "MuldjordKit Low", "base": "muldjordkit",
+      "description": "Drums tuned down three semitones and cymbals one, for heavy, slow songs.",
+      "tags": ["acoustic", "metal", "multi-mic"],
+      "pieces": [
+        { "piece": "kick_left", "tune": -3 }, { "piece": "kick_right", "tune": -3 }, { "piece": "snare", "tune": -3 },
+        { "piece": "hihat", "tune": -1 },
+        { "piece": "tom1", "tune": -3 }, { "piece": "tom2", "tune": -3 }, { "piece": "tom3", "tune": -3 },
+        { "piece": "floor", "tune": -3 },
+        { "piece": "crash_left", "tune": -1 }, { "piece": "crash_right", "tune": -1 },
+        { "piece": "ride_left", "tune": -1 }, { "piece": "ride_right", "tune": -1 }, { "piece": "china", "tune": -1 }
+      ] }
   ]
 }

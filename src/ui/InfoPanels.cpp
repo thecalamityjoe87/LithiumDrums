@@ -65,13 +65,21 @@ bool OverlayPanel::keyPressed (const juce::KeyPress& key)
 }
 
 //==============================================================================
-/** One kit's credits: name, author, credits text, licence and links. */
+/** The credits of one content pack (or of a kit outside any pack): what's in
+    it, who made it, the credits text, and its licence and source links. */
 class AboutPanel::KitCard final : public juce::Component
 {
 public:
-    static constexpr int height = 156;
+    static constexpr int height = 178;
 
-    explicit KitCard (const kitlibrary::Entry& entry) : credits (entry.credits)
+    struct Content
+    {
+        juce::String title, contents, author, credits, licenseName, licenseUrl, sourceUrl;
+        juce::File licenseFile;
+        bool shareAlike = false;
+    };
+
+    explicit KitCard (Content c) : content (std::move (c))
     {
         auto setUpLink = [this] (juce::HyperlinkButton& link, const juce::String& text, const juce::String& url)
         {
@@ -84,14 +92,14 @@ public:
             addChildComponent (link);
         };
 
-        setUpLink (sourceLink, "Source", credits.sourceUrl);
-        setUpLink (licenseLink, credits.licenseName.isNotEmpty() ? credits.licenseName : juce::String ("Licence"),
-                   credits.licenseUrl);
+        setUpLink (sourceLink, "Source", content.sourceUrl);
+        setUpLink (licenseLink, content.licenseName.isNotEmpty() ? content.licenseName : juce::String ("Licence"),
+                   content.licenseUrl);
 
         licenseFileButton.setButtonText ("Licence file");
-        licenseFileButton.setTooltip (credits.licenseFile.getFullPathName());
-        licenseFileButton.onClick = [file = credits.licenseFile] { file.startAsProcess(); };
-        licenseFileButton.setVisible (credits.licenseFile.existsAsFile());
+        licenseFileButton.setTooltip (content.licenseFile.getFullPathName());
+        licenseFileButton.onClick = [file = content.licenseFile] { file.startAsProcess(); };
+        licenseFileButton.setVisible (content.licenseFile.existsAsFile());
         addChildComponent (licenseFileButton);
     }
 
@@ -108,31 +116,36 @@ public:
 
         g.setColour (colours::text);
         g.setFont (body (17.0f, Weight::semibold));
-        g.drawText (credits.name, area.removeFromTop (24), juce::Justification::centredLeft, true);
+        g.drawText (content.title, area.removeFromTop (24), juce::Justification::centredLeft, true);
 
         g.setColour (colours::textMuted);
         g.setFont (body (13.5f));
-        g.drawText ("by " + (credits.author.isNotEmpty() ? credits.author : juce::String ("unknown author")),
+        g.drawText ("by " + (content.author.isNotEmpty() ? content.author : juce::String ("unknown author")),
                     area.removeFromTop (20), juce::Justification::centredLeft, true);
+
+        if (content.contents.isNotEmpty())
+        {
+            g.setFont (body (12.5f));
+            g.drawFittedText (content.contents, area.removeFromTop (20), juce::Justification::centredLeft, 1, 0.8f);
+        }
 
         area.removeFromTop (6);
         g.setColour (colours::text.withAlpha (0.85f));
         g.setFont (body (13.0f));
-        g.drawFittedText (credits.credits.isNotEmpty() ? credits.credits : credits.description,
-                          area.removeFromTop (54), juce::Justification::topLeft, 3, 1.0f);
+        g.drawFittedText (content.credits, area.removeFromTop (54), juce::Justification::topLeft, 3, 1.0f);
     }
 
     void resized() override
     {
         auto row = getLocalBounds().reduced (16, 12).removeFromBottom (24);
-        licenseLink.setBounds (row.removeFromLeft (110));
+        licenseLink.setBounds (row.removeFromLeft (120));
         row.removeFromLeft (8);
         sourceLink.setBounds (row.removeFromLeft (80));
         licenseFileButton.setBounds (row.removeFromRight (110));
     }
 
 private:
-    const KitCredits credits;
+    const Content content;
     juce::HyperlinkButton sourceLink, licenseLink;
     juce::TextButton licenseFileButton;
 };
@@ -174,10 +187,44 @@ void AboutPanel::refresh()
 
     cards.push_back (std::make_unique<Intro>());
 
-    const auto kits = kitlibrary::findKits (processor.getKitsFolder());
+    const auto library = kitlibrary::scan (processor.getKitsFolder());
+    const auto& kits = library.kits;
+
+    // One card per content pack, naming its kits and presets; kits outside
+    // a pack get a card each.
+    for (size_t p = 0; p < library.packs.size(); ++p)
+    {
+        const auto& pack = library.packs[p];
+        juce::StringArray kitNames, presetNames;
+
+        for (const auto& k : kits)
+            if (k.pack == (int) p)
+                (k.summary.isPreset ? presetNames : kitNames).add (k.credits().name);
+
+        if (kitNames.isEmpty() && presetNames.isEmpty())
+            continue;
+
+        juce::String contents = (kitNames.size() == 1 ? "Kit: " : "Kits: ") + kitNames.joinIntoString (", ");
+
+        if (! presetNames.isEmpty())
+            contents << ".  " << (presetNames.size() == 1 ? "Preset: " : "Presets: ") << presetNames.joinIntoString (", ");
+
+        cards.push_back (std::make_unique<KitCard> (KitCard::Content {
+            pack.name, contents, pack.author, pack.credits.isNotEmpty() ? pack.credits : pack.description,
+            pack.licenseName, pack.licenseUrl, pack.sourceUrl, pack.licenseFile, pack.shareAlike }));
+    }
 
     for (const auto& k : kits)
-        cards.push_back (std::make_unique<KitCard> (k));
+    {
+        if (k.pack >= 0)
+            continue;
+
+        const auto& c = k.credits();
+        cards.push_back (std::make_unique<KitCard> (KitCard::Content {
+            c.name, c.basedOn.isNotEmpty() ? "Preset of " + c.basedOn : juce::String(), c.author,
+            c.credits.isNotEmpty() ? c.credits : c.description, c.licenseName, c.licenseUrl, c.sourceUrl,
+            c.licenseFile, c.shareAlike }));
+    }
 
     if (kits.empty())
     {
@@ -282,8 +329,9 @@ void SettingsPanel::paint (juce::Graphics& g)
     drawTrackedText (g, "KITS FOLDER", label (12.0f), 0.1f, area.removeFromTop (18).toFloat(), juce::Justification::centredLeft);
 
     g.setFont (body (13.0f));
-    g.drawFittedText ("Lithium Drums lists the kits in this folder, one subfolder per kit. Import DrumGizmo kits "
-                      "into it with the LithiumImport tool (see the README). Every instance uses the same folder.",
+    g.drawFittedText ("Lithium Drums lists the kits in this folder: content packs, and loose kit folders. Import "
+                      "DrumGizmo kits and SFZ instruments into it with the LithiumImport tool (see the README). "
+                      "Every instance uses the same folder.",
                       area.withTrimmedTop (92).withHeight (40), juce::Justification::topLeft, 2, 1.0f);
 }
 

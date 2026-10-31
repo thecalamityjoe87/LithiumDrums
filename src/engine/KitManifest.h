@@ -12,8 +12,13 @@
 // zones, round-robins and file paths, but no audio. The format is documented
 // in docs/kit-format.md.
 //
-// Parsing happens on the loader thread. The result is plain data: it is turned
-// into a playable Kit (with decoded audio) by KitLoader.
+// A kit preset's kit.json only names a base kit and the changes it makes; it
+// parses into the same structure, with the base kit's hits and the preset's
+// choices applied, so nothing after parsing needs to know about presets.
+//
+// Parsing happens on the loader thread (or the message thread, for kit lists).
+// The result is plain data: it is turned into a playable Kit (with decoded
+// audio) by KitLoader.
 
 namespace lithium
 {
@@ -25,8 +30,9 @@ inline constexpr int maxRoundRobins = 1024;
 struct MicSource
 {
     int mic = 0;                           // index into KitManifest::mics
-    juce::String file;                     // relative to the kit folder
+    juce::String file;                     // relative to the kit's audio folder
     std::array<int, 2> fileChannels {};    // 1-based channels in the file; [1] is 0 for mono mics
+    std::int64_t start = 0;                // frames skipped at the start of the file
 };
 
 struct HitManifest
@@ -55,6 +61,9 @@ struct PieceManifest
     juce::String id, name;
     PieceRole role = PieceRole::other;
     int chokeNote = -1;                    // -1 = none given (cymbals then get one automatically)
+    float tuneSemitones = 0.0f;            // the kit's own tuning, under the Tune parameter
+    float volumeDb = 0.0f;                 // the kit's own level, under the Volume parameter
+    float decay = 1.0f;                    // 0..1, the kit's own decay, scaling the Decay parameter
     std::vector<ArticulationManifest> articulations;
 };
 
@@ -69,7 +78,11 @@ struct MicManifest
 
 struct KitManifest
 {
-    juce::File folder;
+    juce::File folder;                     // the kit (or preset) folder
+    juce::File audioFolder;                // where the audio paths point: the kit folder, or a preset's base kit
+    juce::String id;
+    bool isPreset = false;
+    juce::StringArray tags;
     KitCredits credits;
     double sampleRate = 0.0;
     std::vector<MicManifest> mics;
@@ -77,18 +90,46 @@ struct KitManifest
     std::vector<MidiMapEntry> midiMap;     // empty = use General MIDI
     juce::StringArray warnings;            // non-fatal problems found while parsing
 
-    /** Reads and validates folder/kit.json. On failure, the Result says why. */
+    /** Reads and validates folder/kit.json. On failure, the Result says why.
+        A preset's base kit is looked up by id next to the preset first, then
+        anywhere in the kits folder (see findKitById). */
     static juce::Result parse (const juce::File& folder, KitManifest& result);
 
     /** Same, from an in-memory string (used by the tests). */
     static juce::Result parse (const juce::String& json, const juce::File& folder, KitManifest& result);
 
-    int findMic (const juce::String& id) const;
-    int findPiece (const juce::String& id) const;
+    int findMic (const juce::String& micId) const;
+    int findPiece (const juce::String& pieceId) const;
 };
 
-/** Reads just the credits from a kit folder's kit.json, for kit lists and the
-    About dialog. Returns false if the folder doesn't hold a readable kit. */
+/** What kit menus and the kit browser show, read without loading any audio. */
+struct KitSummary
+{
+    KitCredits credits;
+    juce::String id;
+    bool isPreset = false;
+    juce::StringArray tags;
+    int numPieces = 0, numMics = 0;
+    std::int64_t ramBytes = 0;             // from the importer's "stats"; 0 = not known
+};
+
+/** Reads a kit folder's summary. Returns false if the folder doesn't hold a
+    readable kit (or a preset whose base kit is missing). */
+bool readKitSummary (const juce::File& folder, KitSummary& result);
+
+/** Reads just the credits from a kit folder's kit.json. */
 bool readKitCredits (const juce::File& folder, KitCredits& result);
+
+/** The id a kit folder's kit.json declares, or one made from its folder
+    name if it declares none. Empty if the folder holds no kit. */
+juce::String readKitId (const juce::File& folder);
+
+/** Finds an installed kit by id, looking first in the folder that holds
+    `near` (a kit's own content pack), then everywhere in the kits folder
+    above it: kits directly inside it and kits inside its content packs. */
+juce::File findKitById (const juce::String& id, const juce::File& near);
+
+/** The id used for a kit whose kit.json doesn't declare one. */
+juce::String defaultKitId (const juce::File& folder);
 
 } // namespace lithium

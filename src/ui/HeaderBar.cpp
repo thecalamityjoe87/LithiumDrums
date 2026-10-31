@@ -159,6 +159,10 @@ HeaderBar::HeaderBar (LithiumDrumsProcessor& p)
     kitBox.onChange = [this] { kitBoxChanged(); };
     addAndMakeVisible (kitBox);
 
+    browseButton.setTooltip ("Browse every installed kit and preset");
+    browseButton.onClick = [this] { if (onShowBrowser) onShowBrowser(); };
+    addAndMakeVisible (browseButton);
+
     aboutButton->onClick = [this] { if (onShowAbout) onShowAbout(); };
     settingsButton->onClick = [this] { if (onShowSettings) onShowSettings(); };
     addAndMakeVisible (*aboutButton);
@@ -185,16 +189,30 @@ void HeaderBar::setTab (Tab t)
 void HeaderBar::refreshKitBox()
 {
     const auto current = processor.getKitFolder();
-    kits = kitlibrary::findKits (processor.getKitsFolder());
+    library = kitlibrary::scan (processor.getKitsFolder());
+    const auto& kits = library.kits;
 
     kitBox.clear (juce::dontSendNotification);
 
+    // Grouped by content pack, each pack's kits before its presets.
+    int lastPack = std::numeric_limits<int>::min();
+
     for (size_t i = 0; i < kits.size(); ++i)
-        kitBox.addItem (kits[i].credits.name, (int) i + 1);
+    {
+        if (kits[i].pack != lastPack)
+        {
+            const auto* pack = library.packOf (kits[i]);
+            kitBox.addSectionHeading (pack != nullptr ? pack->name : juce::String ("Other kits"));
+            lastPack = kits[i].pack;
+        }
+
+        kitBox.addItem (kits[i].credits().name, (int) i + 1);
+    }
 
     if (! kits.empty())
         kitBox.addSeparator();
 
+    kitBox.addItem ("Browse kits...", browseItemId);
     kitBox.addItem ("Refresh kit list", refreshItemId);
     kitBox.addItem ("Kits folder...", settingsItemId);
 
@@ -203,7 +221,7 @@ void HeaderBar::refreshKitBox()
 
     for (size_t i = 0; i < kits.size(); ++i)
         if (kits[i].folder == current)
-            currentName = kits[i].credits.name;
+            currentName = kits[i].credits().name;
 
     if (processor.isKitLoading())
     {
@@ -237,17 +255,20 @@ void HeaderBar::kitBoxChanged()
 {
     const auto id = kitBox.getSelectedId();
 
-    if (id == refreshItemId || id == settingsItemId)
+    if (id == refreshItemId || id == settingsItemId || id == browseItemId)
     {
         refreshKitBox();   // put the current kit's name back
 
         if (id == settingsItemId && onShowSettings)
             onShowSettings();
+
+        if (id == browseItemId && onShowBrowser)
+            onShowBrowser();
     }
-    else if (id >= 1 && id <= (int) kits.size())
+    else if (id >= 1 && id <= (int) library.kits.size())
     {
         // Choosing a kit from the menu starts it with neutral settings.
-        processor.loadKit (kits[(size_t) id - 1].folder, true);
+        processor.loadKit (library.kits[(size_t) id - 1].folder, true);
     }
 }
 
@@ -361,6 +382,7 @@ void HeaderBar::resized()
 
     const auto boxWidth = 220;
     kitBox.setBounds (juce::Rectangle<int> (boxWidth, 32).withCentre (getLocalBounds().getCentre()));
+    browseButton.setBounds (kitBox.getBounds().withX (kitBox.getRight() + 8).withWidth (72));
 
     auto icons = getLocalBounds().withTrimmedRight (20).removeFromRight (2 * iconSize + 8);
     settingsButton->setBounds (icons.removeFromRight (iconSize).withSizeKeepingCentre (iconSize, iconSize));

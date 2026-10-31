@@ -13,15 +13,18 @@ MainView::MainView (LithiumDrumsProcessor& p)
       groovesPage ("Grooves", "Browse MIDI grooves, preview them in tempo and drag them into your host."),
       fxPage ("FX", "Master bus effects."),
       aboutPanel (p),
-      settingsPanel (p)
+      settingsPanel (p),
+      browser (p)
 {
     header.onTabChanged = [this] (Tab t) { showTab (t); };
     header.onShowAbout = [this] { showPanel (&aboutPanel); };
     header.onShowSettings = [this] { showPanel (&settingsPanel); };
+    header.onShowBrowser = [this] { showPanel (&browser); };
     kitPage.onEditPiece = [this] { header.setTab (Tab::edit); };
 
     aboutPanel.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onClose = [this] { showPanel (nullptr); };
+    browser.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onKitsFolderChanged = [this] { header.refreshKitBox(); };
 
     addAndMakeVisible (header);
@@ -32,6 +35,7 @@ MainView::MainView (LithiumDrumsProcessor& p)
     addChildComponent (fxPage);
     addChildComponent (aboutPanel);      // added last, so they sit on top
     addChildComponent (settingsPanel);
+    addChildComponent (browser);
 
     showTab (Tab::kit);
 }
@@ -45,9 +49,14 @@ void MainView::showPanel (OverlayPanel* panel)
 
     aboutPanel.setVisible (panel == &aboutPanel);
     settingsPanel.setVisible (panel == &settingsPanel);
+    browser.setVisible (panel == &browser);
 
-    if (panel != nullptr)
-        panel->grabKeyboardFocus();   // for Escape
+    // The browser puts the focus in its search box (once visible); the
+    // others take it themselves, for Escape.
+    if (panel == &browser)
+        browser.refresh();
+    else if (panel != nullptr)
+        panel->grabKeyboardFocus();
 }
 
 void MainView::showTab (Tab t)
@@ -74,6 +83,7 @@ void MainView::resized()
 
     aboutPanel.setBounds (getLocalBounds());
     settingsPanel.setBounds (getLocalBounds());
+    browser.setBounds (getLocalBounds());
 }
 
 } // namespace lithium

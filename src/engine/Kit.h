@@ -50,6 +50,13 @@ struct PieceData
     PieceRole role = PieceRole::other;
     int firstArticulation = 0, numArticulations = 0;
     int defaultChokeNote = -1;
+
+    // The kit's (or kit preset's) own settings for the piece. The piece
+    // parameters work on top of these, so their neutral values mean "as the
+    // kit sets it up".
+    float defaultGain = 1.0f;    // linear
+    float defaultTune = 0.0f;    // semitones
+    float defaultDecay = 1.0f;   // 0..1, multiplies the Decay parameter
 };
 
 struct NoteTarget
@@ -150,11 +157,15 @@ public:
 // What the UI needs to know about a kit. Lives on the message thread, and is
 // kept separate from Kit so the UI never touches audio-thread data.
 
-/** Attribution and licence, as CC BY requires them to be shown. */
+/** Attribution and licence, as CC BY requires them to be shown. For a kit
+    preset these are the credits of the kit whose recordings it plays, with
+    the preset's own name and description. */
 struct KitCredits
 {
     juce::String name, author, sourceUrl, licenseName, licenseUrl, credits, description;
     juce::File licenseFile;      // the licence text copied into the kit folder
+    bool shareAlike = false;     // adaptations must carry the same licence (CC BY-SA)
+    juce::String basedOn;        // presets: the name of the kit they're made from
 };
 
 struct KitPieceInfo
@@ -176,7 +187,9 @@ struct KitMicInfo
 struct KitInfo
 {
     KitCredits credits;
+    juce::String id;             // the kit's id (see docs/kit-format.md), saved with projects
     juce::File folder;
+    bool isPreset = false;
     std::vector<KitPieceInfo> pieces;
     std::vector<KitMicInfo> mics;
     std::array<int, numStageSlots> slotPiece {};   // the piece shown in each stage slot, -1 for none

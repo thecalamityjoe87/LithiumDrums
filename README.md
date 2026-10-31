@@ -2,7 +2,7 @@
 
 Lithium Drums is a sampled acoustic drum kit plugin. It plays real multi-mic drum recordings, with velocity zones, round-robins, and close, overhead and room mics, through a built-in mixer. It runs as a VST3, CLAP, AU (macOS) or standalone app.
 
-It's early: this is Milestone 1. It plays the open-licensed DrumGizmo kits, converted with the importer described below. The kit format and the import are described in [docs/kit-format.md](docs/kit-format.md).
+It's early: this is Milestone 2. It plays real recorded kits from five open-licensed libraries, converted with the importer described below: ten kits, plus thirteen kit presets that reuse their recordings with other pieces, tuning or mics. The kit format, presets, content packs and both importers are described in [docs/kit-format.md](docs/kit-format.md).
 
 ## Building
 
@@ -26,34 +26,39 @@ The script just runs `cmake --preset <name>` and `cmake --build --preset <name>`
 
 ## Getting the kits
 
-The kits aren't in this repository; they're several gigabytes each. Download them from DrumGizmo, both under the Creative Commons Attribution 4.0 licence:
+The kits aren't in this repository. Download the libraries, unzip each into a folder of its own outside the repository, and import it. The DrumGizmo kits are big (2-3 GB each); the others are small.
 
-- DRSKit 2.1: https://drumgizmo.org/kits/DRSKit/DRSKit2_1.zip (2.8 GB, from https://drumgizmo.org/wiki/doku.php?id=kits:drskit)
-- MuldjordKit 3: https://drumgizmo.org/kits/MuldjordKit/MuldjordKit3.zip (2.5 GB, from https://drumgizmo.org/wiki/doku.php?id=kits:muldjordkit)
+| Library | Licence | Download |
+|---|---|---|
+| DRSKit 2.1 (DrumGizmo) | CC BY 4.0 | https://drumgizmo.org/kits/DRSKit/DRSKit2_1.zip |
+| MuldjordKit 3 (DrumGizmo) | CC BY 4.0 | https://drumgizmo.org/kits/MuldjordKit/MuldjordKit3.zip |
+| AVL Drumkits (SFZ), imported as the Basalt Kits | CC BY-SA 3.0 | the five zips at https://www.bandshed.net/sounds/AVLDrumkits_SFZ/, plus the licence PDF from https://www.bandshed.net/avldrumkits/ |
+| Salamander Drumkit | CC BY-SA 3.0 | http://download.linuxaudio.org/musical-instrument-libraries/sfz/salamander_drumkit_v1.tar.7z |
+| Virtuosity Drums 0.925 | CC0 | https://versilian-studios.com/Distro/Virtuosity_Drums_v0.925.zip |
 
-Unzip them anywhere outside this repository and import them:
+Unzip all five AVL zips (and the licence PDF) into one folder. Then point the importer at each library's folder:
 
 ```
 build/release/LithiumImport_artefacts/Release/LithiumImport ~/Downloads/DRSKit
-build/release/LithiumImport_artefacts/Release/LithiumImport ~/Downloads/MuldjordKit3
+build/release/LithiumImport_artefacts/Release/LithiumImport ~/Downloads/AVLDrumkits
 ```
 
-DRSKit becomes five kits (its basic, full, minimal, brushes and no-brushes variants) and MuldjordKit one. They go into your kits folder: `~/.local/share/Lithium Drums/Kits` on Linux, `~/Library/Application Support/Lithium Drums/Kits` on macOS, `%LOCALAPPDATA%\Lithium Drums\Kits` on Windows. You can change it in the plugin's settings (the gear in the top right); the importer uses the same setting, or `--kits-folder`. On the same drive as the downloads, the audio is hard-linked rather than copied, so the imported kits take no extra space. Don't delete the downloads in that case: they hold the shared audio.
+and so on for the others. Each library becomes a content pack in your kits folder: `~/.local/share/Lithium Drums/Kits` on Linux, `~/Library/Application Support/Lithium Drums/Kits` on macOS, `%LOCALAPPDATA%\Lithium Drums\Kits` on Windows. You can change it in the plugin's settings (the gear in the top right); the importer uses the same setting, or `--kits-folder`. On the same drive as the downloads, the audio is hard-linked rather than copied, so the kits take no extra space. Don't delete the downloads in that case: they hold the shared audio.
 
-The kits' authors ask to be credited when you publish music made with them. The plugin's About dialog (the "i" button) shows the credits and licence of every installed kit.
+The kits' authors ask to be credited when you publish music made with them; the About dialog (the "i" button) shows the credits of every installed pack. The Basalt Kits (from the AVL Drumkits) and the Salamander kits are share-alike: music you make with them is yours to license, but the converted kits themselves may only be passed on under the same licence, which is why each library is kept in a pack of its own.
 
 ## Running
 
-Run the standalone app from `build/release/LithiumDrums_artefacts/Release/Standalone/`. It starts with DRSKit.
+Run the standalone app from `build/release/LithiumDrums_artefacts/Release/Standalone/`. It starts with DRSKit. Pick another kit from the menu in the middle of the header, or press Browse to see every kit and preset, search them and read their credits.
 
 To use the plugin in a DAW, point the DAW at the build folder, or copy (or symlink) `VST3/Lithium Drums.vst3` into `~/.vst3` and `CLAP/Lithium Drums.clap` into `~/.clap`. Configuring with `-DLITHIUM_COPY_PLUGINS=ON` makes the build copy them for you.
 
-Each kit plays from its own MIDI map (DrumGizmo's, for the imported kits), and cymbals are choked by notes from 85 up. Choose kits from the menu in the middle of the header. Muting a mic for a couple of seconds unloads it from memory.
+Each kit plays from its own MIDI map (the library's own), and cymbals are choked by notes from 85 up. Muting a mic for a couple of seconds unloads it from memory.
 
 ## Tests
 
 ```
-build/release/LithiumDrumsTests                    # engine, loader, importer, processor and UI hit-testing
+build/release/LithiumDrumsTests                    # engine, loader, presets, both importers, processor and UI hit-testing
 build/release/LithiumHostSmokeTest_artefacts/Release/LithiumHostSmokeTest   # loads the VST3 like a host
 build/release/LithiumDrumsTests --measure-kit "<kit folder>"   # plays a real kit and reports its memory use
 ```
@@ -79,4 +84,4 @@ build/release/LithiumRoomGen_artefacts/Release/LithiumRoomGen assets/kit-renders
 
 ## Licences
 
-The fonts (Barlow, Barlow Condensed, IBM Plex Mono) are under the SIL Open Font License; see `assets/fonts/`. JUCE is dual-licensed under the AGPLv3 and a commercial licence. The DrumGizmo kits are CC BY 4.0, by their authors.
+The fonts (Barlow, Barlow Condensed, IBM Plex Mono) are under the SIL Open Font License; see `assets/fonts/`. JUCE is dual-licensed under the AGPLv3 and a commercial licence. The kits are their authors', under the licences in the table above.

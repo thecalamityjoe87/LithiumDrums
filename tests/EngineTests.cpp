@@ -3,7 +3,9 @@
 #include "engine/DrumEngine.h"
 #include "engine/KitLoader.h"
 #include "engine/KitManifest.h"
+#include "KitLibrary.h"
 #include "importer/DrumGizmoImporter.h"
+#include "importer/SfzImporter.h"
 #include "ui/KitStage.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -917,6 +919,388 @@ private:
 };
 
 //==============================================================================
+class PresetTests final : public juce::UnitTest
+{
+public:
+    PresetTests() : juce::UnitTest ("Kit presets and packs", "Lithium") {}
+
+    void runTest() override
+    {
+        // A preset next to the generated test kit (presets find their base
+        // kit by id, first in their own folder). Removed again at the end.
+        const auto presetFolder = testKitFolder.getSiblingFile ("Preset Test");
+        presetFolder.createDirectory();
+        presetFolder.getChildFile ("kit.json").replaceWithText (R"({
+            "formatVersion": 2, "type": "preset", "id": "preset-test", "name": "Preset Test",
+            "base": "lithiumtestkit", "description": "Three pieces, tuned.",
+            "pieces": [ { "piece": "snare", "articulations": ["rimshot", "center"], "tune": 3, "volumeDb": -6, "decay": 50 },
+                        { "piece": "kick" },
+                        { "piece": "tom1" },
+                        { "piece": "tom1", "id": "tom_up", "name": "Tom Up", "tune": 5 } ],
+            "mics": { "room": { "enabled": false }, "overheads": { "volumeDb": -3 } } })");
+
+        beginTest ("A preset is its base kit with its own pieces, tuning and mics");
+        {
+            KitManifest base, m;
+            expect (KitManifest::parse (testKitFolder, base).wasOk());
+            const auto r = KitManifest::parse (presetFolder, m);
+            expect (r.wasOk(), r.getErrorMessage());
+
+            expect (m.isPreset);
+            expectEquals (m.id, juce::String ("preset-test"));
+            expectEquals (m.credits.name, juce::String ("Preset Test"));
+            expectEquals (m.credits.basedOn, base.credits.name);
+            expectEquals (m.credits.licenseName, base.credits.licenseName);
+            expect (m.audioFolder == testKitFolder);
+
+            expectEquals ((int) m.pieces.size(), 4);
+            expectEquals (m.pieces[0].articulations[0].id, juce::String ("rimshot"));    // the preset's order
+            expectEquals ((int) m.pieces[0].articulations.size(), 2);
+            expectWithinAbsoluteError (m.pieces[0].tuneSemitones, 3.0f, 1.0e-6f);
+            expectWithinAbsoluteError (m.pieces[0].decay, 0.5f, 1.0e-6f);
+            expectEquals (m.pieces[3].id, juce::String ("tom_up"));
+
+            // The room mic is gone, from the mic list and from every hit.
+            expectEquals ((int) m.mics.size(), (int) base.mics.size() - 1);
+            expect (m.findMic ("room") < 0);
+            const auto oh = m.findMic ("overheads");
+            expectWithinAbsoluteError (m.mics[(size_t) oh].volumeDb, -3.0f, 1.0e-6f);
+
+            for (const auto& p : m.pieces)
+                for (const auto& a : p.articulations)
+                    for (const auto& z : a.zones)
+                        for (const auto& h : z.roundRobins)
+                            for (const auto& src : h.sources)
+                                expect (src.mic < (int) m.mics.size() && ! src.file.containsIgnoreCase ("room"));
+        }
+
+        beginTest ("A preset loads only what it uses, and plays its tuning");
+        {
+            KitInfo info;
+            juce::String error;
+            auto kit = KitLoader::loadKit (presetFolder, MidiMap::generalMidi(), info, error);
+            expect (kit != nullptr, error);
+
+            if (kit != nullptr)
+            {
+                expect (info.isPreset);
+                expect (info.folder == presetFolder);
+                expect (info.memoryBytes < shared().info.memoryBytes / 2);
+                expectWithinAbsoluteError (kit->pieces[0].defaultTune, 3.0f, 1.0e-6f);
+                expectWithinAbsoluteError (kit->pieces[0].defaultGain, juce::Decibels::decibelsToGain (-6.0f), 1.0e-4f);
+                expectWithinAbsoluteError (kit->pieces[0].defaultDecay, 0.5f, 1.0e-6f);
+
+                // The same tom, tuned up five semitones, plays about 2^(-5/12) as long.
+                EngineFeedback feedback;
+                DrumEngine engine (feedback);
+                engine.prepare (sampleRate);
+                EngineParams params;
+                params.resetForKit (*kit);
+                params.velocityCrossfade = false;
+                juce::AudioBuffer<float> bus (maxMicBusChannels, 512);
+
+                auto lengthOf = [&] (int piece)
+                {
+                    engine.trigger (*kit, kit->pieces[(size_t) piece].firstArticulation, 100, params);
+                    int n = 0;
+
+                    for (; engine.getNumActiveVoices() > 0 && n < 44100 * 10; n += 512)
+                    {
+                        bus.clear();
+                        engine.render (*kit, bus, 0, 512, params);
+                    }
+
+                    return n;
+                };
+
+                const auto natural = lengthOf (2), tuned = lengthOf (3);
+                expectWithinAbsoluteError ((double) tuned / natural, std::exp2 (-5.0 / 12.0), 0.06);
+
+                // A piece's kit level is applied under its Volume parameter.
+                kit->pieces[1].defaultGain = 0.0f;
+                engine.trigger (*kit, kit->pieces[1].firstArticulation, 100, params);
+                bus.clear();
+                engine.render (*kit, bus, 0, 512, params);
+                expectEquals (bus.getMagnitude (0, 512), 0.0f);
+                engine.stopAll (*kit);
+            }
+        }
+
+        beginTest ("Presets fail clearly without their base kit");
+        {
+            KitManifest m;
+            const auto r = KitManifest::parse (R"({ "formatVersion": 2, "type": "preset", "name": "P", "base": "no-such-kit" })",
+                                               presetFolder, m);
+            expect (r.failed() && r.getErrorMessage().contains ("no-such-kit"), r.getErrorMessage());
+
+            const auto bad = KitManifest::parse (R"({ "formatVersion": 2, "type": "preset", "name": "P", "base": "lithiumtestkit",
+                                                      "pieces": [ { "piece": "cowbell" } ] })", presetFolder, m);
+            expect (bad.failed() && bad.getErrorMessage().contains ("cowbell"), bad.getErrorMessage());
+        }
+
+        presetFolder.deleteRecursively();
+
+        beginTest ("The library finds kits in content packs, and finds moved kits by id");
+        {
+            const auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                  .getChildFile ("lithium-library-test-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+            const auto pack = temp.getChildFile ("Pack");
+            pack.createDirectory();
+            pack.getChildFile ("pack.json").replaceWithText (R"({ "formatVersion": 1, "id": "pack", "name": "A Pack",
+                "license": { "name": "CC BY-SA 3.0", "file": "LICENSE.txt" } })");
+
+            const juce::String kitJson = R"({ "formatVersion": 2, "id": "base-kit", "name": "Base", "sampleRate": 48000,
+                "license": { "name": "CC BY-SA 3.0" }, "stats": { "ramBytes": 1234 },
+                "mics": [ { "id": "m" } ],
+                "pieces": [ { "id": "s", "role": "snare", "articulations": [ { "id": "c", "zones": [
+                    { "velocity": [1, 127], "roundRobins": [ { "files": { "m": "a.wav" } } ] } ] } ] } ] })";
+            pack.getChildFile ("Base").createDirectory();
+            pack.getChildFile ("Base/kit.json").replaceWithText (kitJson);
+            pack.getChildFile ("Pre").createDirectory();
+            pack.getChildFile ("Pre/kit.json").replaceWithText (R"({ "formatVersion": 2, "type": "preset", "name": "Pre", "base": "base-kit" })");
+            temp.getChildFile ("Loose").createDirectory();
+            temp.getChildFile ("Loose/kit.json").replaceWithText (kitJson.replace ("base-kit", "loose").replace ("\"Base\"", "\"Loose\""));
+
+            const auto library = kitlibrary::scan (temp);
+            expectEquals ((int) library.packs.size(), 1);
+            expect (library.packs[0].shareAlike);
+            expectEquals ((int) library.kits.size(), 3);
+            expectEquals (library.kits[0].credits().name, juce::String ("Base"));   // the pack's kits, kit first
+            expect (library.kits[1].summary.isPreset);
+            expectEquals (library.kits[1].credits().basedOn, juce::String ("Base"));
+            expect (library.kits[1].credits().shareAlike);
+            expectEquals (library.kits[2].pack, -1);                               // loose kits last
+            expectEquals ((int) library.kits[0].summary.ramBytes, 1234);
+
+            expect (findKitById ("base-kit", pack.getChildFile ("Pre")) == pack.getChildFile ("Base"));
+            expect (findKitById ("loose", pack.getChildFile ("Pre")) == temp.getChildFile ("Loose"));
+
+            // A project saved when the kit was a loose folder finds it in its pack by id.
+            const auto oldPath = temp.getChildFile ("Base").getFullPathName();
+            expect (kitlibrary::resolveSavedKit (oldPath, "base-kit", temp) == pack.getChildFile ("Base"));
+
+            temp.deleteRecursively();
+        }
+    }
+};
+
+//==============================================================================
+class SfzTests final : public juce::UnitTest
+{
+public:
+    SfzTests() : juce::UnitTest ("SFZ importer", "Lithium") {}
+
+    void runTest() override
+    {
+        beginTest ("The parser resolves headers, #define, #include, note names and paths");
+        {
+            const auto temp = makeTemp();
+            temp.getChildFile ("inc/defs.sfz").create();
+            temp.getChildFile ("inc/defs.sfz").replaceWithText ("#define $KEY 38\n#define $KEYS 40 // comment\n");
+
+            sfz::Instrument inst;
+            const auto r = sfz::parse (R"(
+                #include "inc/defs.sfz"
+                <control> default_path=samples\ set_cc7=100
+                <global> volume=-3
+                <group> key=$KEY
+                <region> sample=my snare.wav lovel=1 hivel=63
+                <region> sample=b.wav lovel=64 volume=1 /* block
+                comment */
+                <group> lokey=c#4 hikey=$KEYS <region> sample=*silence
+            )", temp.getChildFile ("kit.sfz"), inst);
+
+            expect (r.wasOk(), r.getErrorMessage());
+            expectEquals ((int) inst.regions.size(), 3);
+            expectEquals (inst.regions[0].sample, juce::String ("samples/my snare.wav"));
+            expectEquals (inst.regions[0].getNote ("lokey", -1), 38);
+            expectEquals (inst.regions[0].getNumber ("volume", 0.0), -3.0);
+            expectEquals (inst.regions[1].getNumber ("volume", 0.0), 1.0);   // the region's own value wins
+            expect (inst.regions[2].isBuiltInSample());
+            expectEquals (inst.regions[2].getNote ("lokey", -1), 61);
+            expectEquals (inst.regions[2].getNote ("hikey", -1), 40);
+            expectEquals (inst.controllerDefaults[7], 100.0);
+            expectEquals (sfz::noteNumber ("c4"), 60);
+            expectEquals (sfz::noteNumber ("a-1"), 9);
+            expectEquals (sfz::noteNumber ("bb3"), 58);
+
+            temp.deleteRecursively();
+        }
+
+        beginTest ("Velocity curves follow amp_veltrack and amp_velcurve_N");
+        {
+            sfz::Region r;
+            expectWithinAbsoluteError (importer::velocityGain (r, 127), 1.0, 1.0e-9);
+            expectWithinAbsoluteError (importer::velocityGain (r, 64), (64.0 / 127.0) * (64.0 / 127.0), 1.0e-9);
+
+            r.opcodes["amp_veltrack"] = "0";
+            expectWithinAbsoluteError (importer::velocityGain (r, 1), 1.0, 1.0e-9);
+
+            r.opcodes["amp_veltrack"] = "100";
+            r.opcodes["amp_velcurve_63"] = "0.8";
+            expectWithinAbsoluteError (importer::velocityGain (r, 63), 0.8, 1.0e-9);
+            expectWithinAbsoluteError (importer::velocityGain (r, 95), 0.9, 1.0e-9);   // halfway from (63, 0.8) to (127, 1)
+        }
+
+        beginTest ("Imports a multi-mic SFZ kit: zones, round-robins, offsets, chokes and presets");
+        {
+            const auto temp = makeTemp();
+            const auto source = temp.getChildFile ("TinySfz");
+            makeTinySfzKit (source);
+
+            importer::Options options;
+            options.source = source;
+            options.kitsFolder = temp.getChildFile ("Kits");
+            options.mappingFile = source.getChildFile ("mapping.json");
+
+            std::vector<importer::ImportedKit> results;
+            const auto r = importer::importKits (options, results);
+            expect (r.wasOk(), r.getErrorMessage());
+
+            if (r.failed() || results.size() != 2)
+            {
+                temp.deleteRecursively();
+                return;
+            }
+
+            const auto packFolder = options.kitsFolder.getChildFile ("Tiny SFZ Pack");
+            expect (packFolder.getChildFile ("pack.json").existsAsFile());
+            expect (packFolder.getChildFile ("LICENSE.txt").loadFileAsString().contains ("CC0"));
+            expect (results[1].isPreset);
+
+            KitManifest m;
+            const auto parsed = KitManifest::parse (results[0].folder, m);
+            expect (parsed.wasOk(), parsed.getErrorMessage());
+            expectEquals ((int) m.mics.size(), 2);
+
+            const auto& snare = m.pieces[(size_t) m.findPiece ("snare")];
+            const auto& zones = snare.articulations[0].zones;
+            expectEquals ((int) zones.size(), 2);                  // 1-63 and 64-127, from the close mic's layers
+            expectEquals (zones[0].velocityHigh, 63);
+            expectEquals ((int) zones[0].roundRobins.size(), 2);   // seq_position 1 and 2
+            expectWithinAbsoluteError (zones[0].gainDb, -3.0f, 0.01f);
+            expectWithinAbsoluteError (zones[0].velocityRangeDb, 0.0f, 0.01f);   // amp_veltrack=0
+
+            // Each hit plays both mics: the close mic's layer and the overhead's
+            // round-robin, which starts 100 frames into its file. The CC-gated
+            // "epic" region is left out.
+            const auto& hit = zones[0].roundRobins[0];
+            expectEquals ((int) hit.sources.size(), 2);
+            const auto oh = m.findMic ("oh");
+
+            for (const auto& src : hit.sources)
+            {
+                expect (! src.file.contains ("epic"));
+                expectEquals ((int) src.start, src.mic == oh ? 100 : 0);
+            }
+
+            // Chokes from SFZ groups: closed and the pedal (through its silence
+            // region) choke the open hi-hat.
+            const auto& hh = m.pieces[(size_t) m.findPiece ("hihat")].articulations;
+            expectEquals ((int) hh.size(), 3);
+            expect (hh[1].chokeGroup.isNotEmpty() && hh[0].chokes.contains (hh[1].chokeGroup) && hh[2].chokes.contains (hh[1].chokeGroup));
+            expectEquals ((int) m.midiMap.size(), 4);
+
+            // It loads, the overhead sample really starts at frame 100, and the preset drops the close mic.
+            KitInfo info;
+            juce::String error;
+            auto kit = KitLoader::loadKit (results[0].folder, MidiMap::generalMidi(), info, error);
+            expect (kit != nullptr, error);
+
+            if (kit != nullptr)
+            {
+                const auto& art = kit->articulations[(size_t) kit->noteMap[38].articulation];
+                const auto& zone = kit->zones[(size_t) art.firstZone];
+                juce::AudioBuffer<float> got (2, 8);
+                SampleCursor cursor;
+                kit->samples->open (kit->getSample (zone.firstHit, oh), cursor);
+                kit->samples->read (cursor, got.getArrayOfWritePointers(), 8);
+                expectWithinAbsoluteError (got.getSample (0, 0), rampValue (100), 1.0e-4f);
+                expectWithinAbsoluteError (got.getSample (0, 5), rampValue (105), 1.0e-4f);
+            }
+
+            KitInfo presetInfo;
+            auto preset = KitLoader::loadKit (results[1].folder, MidiMap::generalMidi(), presetInfo, error);
+            expect (preset != nullptr, error);
+            expectEquals ((int) presetInfo.mics.size(), 1);
+            expect (presetInfo.memoryBytes < info.memoryBytes);
+
+            temp.deleteRecursively();
+        }
+    }
+
+private:
+    static juce::File makeTemp()
+    {
+        return juce::File::getSpecialLocation (juce::File::tempDirectory)
+                   .getChildFile ("lithium-sfz-test-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+    }
+
+    // A ramp exactly representable in 16 bits, so the offset is easy to check.
+    static float rampValue (int frame)   { return (float) (frame % 2000) / 32768.0f; }
+
+    static void writeRamp (const juce::File& file, int channels)
+    {
+        juce::AudioBuffer<float> audio (channels, 2000);
+
+        for (int ch = 0; ch < channels; ++ch)
+            for (int i = 0; i < 2000; ++i)
+                audio.setSample (ch, i, rampValue (i) * (ch == 0 ? 1.0f : 0.5f));
+
+        writeWav (file, audio, 16);
+    }
+
+    static void makeTinySfzKit (const juce::File& root)
+    {
+        root.createDirectory();
+
+        for (const auto* name : { "close/sn_lo_1.wav", "close/sn_lo_2.wav", "close/sn_hi_1.wav", "close/sn_hi_2.wav",
+                                  "close/sn_epic.wav", "close/hh_closed.wav", "close/hh_open.wav", "close/hh_pedal.wav" })
+            writeRamp (root.getChildFile ("samples/" + juce::String (name)), 1);
+
+        for (const auto* name : { "oh/sn_1.wav", "oh/sn_2.wav" })
+            writeRamp (root.getChildFile ("samples/" + juce::String (name)), 2);
+
+        root.getChildFile ("inc/hats.sfz").create();
+        root.getChildFile ("inc/hats.sfz").replaceWithText (R"(
+            #define $HH_CLOSED 42
+            <group> group=1 key=$HH_CLOSED <region> sample=close/hh_closed.wav
+            <group> off_by=1 key=46 <region> sample=close/hh_open.wav
+            <group> key=44 <region> sample=close/hh_pedal.wav <region> sample=*silence group=1
+        )");
+
+        root.getChildFile ("kit.sfz").replaceWithText (R"(
+            <control> default_path=samples/ set_cc20=127
+            #define $SNARE 38
+            #include "inc/hats.sfz"
+            <global> amp_veltrack=0 volume=-3
+            <group> key=$SNARE seq_length=2
+            <region> sample=close/sn_lo_1.wav lovel=1 hivel=63 seq_position=1 locc20=1
+            <region> sample=close/sn_lo_2.wav lovel=1 hivel=63 seq_position=2 locc20=1
+            <region> sample=close/sn_hi_1.wav lovel=64 hivel=127 seq_position=1 locc20=1
+            <region> sample=close/sn_hi_2.wav lovel=64 hivel=127 seq_position=2 locc20=1
+            <region> sample=oh/sn_1.wav seq_position=1 offset=100
+            <region> sample=oh/sn_2.wav seq_position=2 offset=100
+            <region> sample=close/sn_epic.wav locc21=1
+        )");
+
+        root.getChildFile ("mapping.json").replaceWithText (R"({
+            "format": "sfz",
+            "pack": { "id": "tiny-sfz", "name": "Tiny SFZ Pack" },
+            "author": "The tests", "license": { "name": "CC0 1.0", "url": "https://creativecommons.org/publicdomain/zero/1.0/" },
+            "mics": [ { "id": "close", "name": "Close", "samples": ["*/close/*"] },
+                      { "id": "oh", "name": "Overheads", "role": "overheads", "samples": ["*/oh/*"] } ],
+            "pieces": [
+                { "id": "snare", "name": "Snare", "role": "snare", "articulations": [ { "id": "center", "name": "Center", "key": 38 } ] },
+                { "id": "hihat", "name": "Hi-Hat", "role": "hihat", "articulations": [
+                    { "id": "closed", "key": 42 }, { "id": "open", "key": 46 }, { "id": "pedal", "key": 44 } ] } ],
+            "kits": [ { "file": "kit.sfz", "id": "tiny-sfz", "name": "Tiny SFZ" } ],
+            "presets": [ { "id": "tiny-oh", "name": "Tiny OH", "base": "tiny-sfz", "mics": { "close": { "enabled": false } } } ]
+        })");
+    }
+};
+
+//==============================================================================
 class ProcessorTests final : public juce::UnitTest
 {
 public:
@@ -1089,8 +1473,11 @@ public:
             crash.addEvent (juce::MidiMessage::noteOn (10, 49, (juce::uint8) 127), 0);
             play (crash);
 
-            for (int i = 0; i < 20; ++i)
-                largestStep = std::max (largestStep, play ({}));   // how jumpy the crash itself is
+            // How jumpy the crash itself is. A cymbal's largest sample-to-sample
+            // steps can come a while after the hit, and the crash keeps ringing
+            // while the new kit loads, so the baseline covers its first 350 ms.
+            for (int i = 0; i < 60; ++i)
+                largestStep = std::max (largestStep, play ({}));
 
             processor.loadKit (other, true);
             float switchStep = 0.0f;
@@ -1204,6 +1591,8 @@ static LoaderTests loaderTests;
 static StorageTests storageTests;
 static EngineTests engineTests;
 static ImporterTests importerTests;
+static PresetTests presetTests;
+static SfzTests sfzTests;
 static ProcessorTests processorTests;
 static StageTests stageTests;
 

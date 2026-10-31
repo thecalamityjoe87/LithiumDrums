@@ -8,6 +8,7 @@ namespace lithium
 namespace
 {
     const juce::Identifier stateKitFolder { "kitFolder" };
+    const juce::Identifier stateKitId { "kitId" };
     const juce::Identifier stateSelectedPiece { "selectedPiece" };
 
     constexpr double kitSwapFadeSeconds = 0.01;
@@ -403,6 +404,11 @@ void LithiumDrumsProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto state = parameters.copyState();
     state.setProperty (stateKitFolder, getKitFolder().getFullPathName(), nullptr);
 
+    // The id finds the kit again if its folder moves (a new kits folder, or
+    // a re-import into a content pack).
+    if (const auto info = getKitInfo(); info != nullptr && info->folder == getKitFolder())
+        state.setProperty (stateKitId, info->id, nullptr);
+
     // The selection is saved by piece id, which stays right if the kit's
     // piece order ever changes.
     const auto selected = selection.getSelected();
@@ -423,8 +429,10 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
 
     auto state = juce::ValueTree::fromXml (*xml);
     const auto savedFolder = state[stateKitFolder].toString();
+    const auto savedId = state[stateKitId].toString();
     const auto selected = state[stateSelectedPiece].toString();
     state.removeProperty (stateKitFolder, nullptr);
+    state.removeProperty (stateKitId, nullptr);
     state.removeProperty (stateSelectedPiece, nullptr);
 
     parameters.replaceState (state);
@@ -434,7 +442,7 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
         pendingSelection = selected;
     }
 
-    if (const auto folder = kitlibrary::resolveSavedKit (savedFolder, settings->getKitsFolder()); folder != juce::File())
+    if (const auto folder = kitlibrary::resolveSavedKit (savedFolder, savedId, settings->getKitsFolder()); folder != juce::File())
         loadKit (folder, false);
 
     triggerAsyncUpdate();   // applies the saved selection once the kit is there

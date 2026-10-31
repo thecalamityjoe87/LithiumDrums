@@ -1,0 +1,646 @@
+{
+  "comment": "Import mapping for the AVL Drumkits (SFZ versions), converted as the Basalt Kits pack. The AVL licence asks that a modified version of the library be distributed under a different name, so the pack and its kits are renamed; the credits and licence stay Glen MacArthur's. Each kit is one mono recording per piece, panned in the SFZ, so every piece gets a mic (mixer channel) of its own, panned to match. SFZ pans are from the drummer's seat; they are flipped to the audience's view of the kit stage. The hi-hat and cymbal chokes come from the SFZ's group/off_by settings.",
+  "format": "sfz",
+  "matches": [
+    "Black_Pearl_2023_repack.sfz",
+    "Red_Zeppelin_2023_repack.sfz",
+    "BLONDE_BOP.sfz",
+    "BLONDE_BOP_HR.sfz",
+    "Buskmans_Holiday.sfz"
+  ],
+  "pack": {
+    "id": "basalt-kits",
+    "name": "Basalt Kits"
+  },
+  "author": "Glen MacArthur (AV Linux)",
+  "sourceUrl": "https://www.bandshed.net/avldrumkits/",
+  "license": {
+    "name": "CC BY-SA 3.0",
+    "url": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "shareAlike": true,
+    "files": [
+      "AVL-Drumkits CC-BY-SA License.pdf"
+    ]
+  },
+  "licenseNote": "From the AVL-Drumkits licence: \"The by-sa condition is imperative if you modify the samples themselves or create new sample libraries with this licensed product. However, produced music and other non-sample-library works can be licensed freely. Attribution means keeping all authors information and this readme-file or its content in the release. If you want to create a fork, a modified version, of this sample library you have to release and distribute it under a different name.\"",
+  "credits": "Based on AVL Drumkits, created by Glen MacArthur, 2015 (bandshed.net/avldrumkits). Renamed for this conversion, as the AVL licence asks of modified versions.",
+  "description": "Compact, characterful acoustic kits converted from Glen MacArthur's AVL Drumkits: one mono recording per piece at five velocities.",
+  "mics": "perPiece",
+  "audienceView": true,
+  "pieces": [
+    {
+      "id": "kick",
+      "name": "Kick",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 36
+        }
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 38
+        },
+        {
+          "id": "edge",
+          "name": "Edge",
+          "key": 40
+        },
+        {
+          "id": "sidestick",
+          "name": "Side stick",
+          "key": 37
+        }
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat",
+      "role": "hihat",
+      "articulations": [
+        {
+          "id": "closed",
+          "name": "Closed",
+          "key": 42
+        },
+        {
+          "id": "pedal",
+          "name": "Pedal",
+          "key": 44
+        },
+        {
+          "id": "half_open",
+          "name": "Semi-open",
+          "key": 46
+        },
+        {
+          "id": "swish",
+          "name": "Swish",
+          "key": 48
+        }
+      ]
+    },
+    {
+      "id": "tom",
+      "name": "Tom",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 45
+        },
+        {
+          "id": "edge",
+          "name": "Edge",
+          "key": 47
+        }
+      ]
+    },
+    {
+      "id": "floor",
+      "name": "Floor Tom",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 41
+        },
+        {
+          "id": "edge",
+          "name": "Edge",
+          "key": 43
+        }
+      ]
+    },
+    {
+      "id": "crash1",
+      "name": "Crash 1",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 49
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 50
+        }
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "tip",
+          "name": "Tip",
+          "key": 51
+        },
+        {
+          "id": "shank",
+          "name": "Shank",
+          "key": 59
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 53
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 52
+        }
+      ]
+    },
+    {
+      "id": "crash2",
+      "name": "Crash 2",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 57
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 58
+        }
+      ]
+    },
+    {
+      "id": "splash",
+      "name": "Splash",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 55
+        }
+      ]
+    },
+    {
+      "id": "stick",
+      "name": "Stick Click",
+      "role": "other",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 35
+        }
+      ]
+    },
+    {
+      "id": "clap",
+      "name": "Hand Clap",
+      "role": "other",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 39
+        }
+      ]
+    },
+    {
+      "id": "tambourine",
+      "name": "Tambourine",
+      "role": "other",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 54
+        }
+      ]
+    },
+    {
+      "id": "cowbell",
+      "name": "Cowbell",
+      "role": "other",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 56
+        }
+      ]
+    }
+  ],
+  "kits": [
+    {
+      "file": "Black_Pearl_2023_repack.sfz",
+      "id": "basalt-onyx",
+      "name": "Onyx",
+      "extraPieces": [
+        {
+          "id": "crash3",
+          "name": "Crash 3",
+          "role": "crash",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 60
+            }
+          ]
+        },
+        {
+          "id": "china",
+          "name": "China",
+          "role": "china",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 62
+            }
+          ]
+        },
+        {
+          "id": "maraca",
+          "name": "Maraca",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 61
+            }
+          ]
+        }
+      ],
+      "description": "A 22\" kit with Sabian cymbals, for rock and pop. From AVL's Black Pearl.",
+      "tags": [
+        "acoustic",
+        "rock",
+        "pop"
+      ]
+    },
+    {
+      "file": "Red_Zeppelin_2023_repack.sfz",
+      "id": "basalt-garnet",
+      "name": "Garnet",
+      "extraPieces": [
+        {
+          "id": "crash3",
+          "name": "Crash 3",
+          "role": "crash",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 60
+            }
+          ]
+        },
+        {
+          "id": "china",
+          "name": "China",
+          "role": "china",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 62
+            }
+          ]
+        },
+        {
+          "id": "maraca",
+          "name": "Maraca",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 61
+            }
+          ]
+        }
+      ],
+      "description": "A big kit with a 26\" kick and Zildjian cymbals, for classic rock. From AVL's Red Zeppelin.",
+      "tags": [
+        "acoustic",
+        "rock",
+        "vintage"
+      ]
+    },
+    {
+      "file": "BLONDE_BOP.sfz",
+      "id": "basalt-amber",
+      "name": "Amber",
+      "extraPieces": [
+        {
+          "id": "china",
+          "name": "China",
+          "role": "china",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 60
+            }
+          ]
+        },
+        {
+          "id": "shakers",
+          "name": "Shakers",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 61
+            }
+          ]
+        }
+      ],
+      "description": "A small bop kit with an 18\" kick, for jazz. From AVL's Blonde Bop.",
+      "tags": [
+        "acoustic",
+        "jazz"
+      ]
+    },
+    {
+      "file": "BLONDE_BOP_HR.sfz",
+      "id": "basalt-amber-rods",
+      "name": "Amber Rods",
+      "extraPieces": [
+        {
+          "id": "china",
+          "name": "China",
+          "role": "china",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 60
+            }
+          ]
+        },
+        {
+          "id": "shakers",
+          "name": "Shakers",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 61
+            }
+          ]
+        }
+      ],
+      "description": "Amber played with rods, for a softer, lighter sound. From AVL's Blonde Bop Hot Rods.",
+      "tags": [
+        "acoustic",
+        "jazz",
+        "rods"
+      ]
+    },
+    {
+      "file": "Buskmans_Holiday.sfz",
+      "id": "basalt-cobblestone",
+      "name": "Cobblestone",
+      "pieces": [
+        {
+          "id": "cajon",
+          "name": "Cajon",
+          "role": "kick",
+          "articulations": [
+            {
+              "id": "thump",
+              "name": "Thump",
+              "key": 36
+            }
+          ]
+        },
+        {
+          "id": "cajon_slap",
+          "name": "Cajon Slap",
+          "role": "snare",
+          "articulations": [
+            {
+              "id": "left",
+              "name": "Left hand",
+              "key": 38
+            },
+            {
+              "id": "right",
+              "name": "Right hand",
+              "key": 40
+            }
+          ]
+        },
+        {
+          "id": "tambourine",
+          "name": "Tambourine",
+          "role": "hihat",
+          "articulations": [
+            {
+              "id": "shake",
+              "name": "Shake",
+              "key": 44
+            },
+            {
+              "id": "bump",
+              "name": "Bump",
+              "key": 46
+            }
+          ]
+        },
+        {
+          "id": "conga_small",
+          "name": "Small Conga",
+          "role": "tom",
+          "articulations": [
+            {
+              "id": "left",
+              "name": "Left hand",
+              "key": 45
+            },
+            {
+              "id": "right",
+              "name": "Right hand",
+              "key": 47
+            }
+          ]
+        },
+        {
+          "id": "conga_large",
+          "name": "Large Conga",
+          "role": "floor_tom",
+          "articulations": [
+            {
+              "id": "left",
+              "name": "Left hand",
+              "key": 41
+            },
+            {
+              "id": "right",
+              "name": "Right hand",
+              "key": 43
+            }
+          ]
+        },
+        {
+          "id": "cymbal",
+          "name": "Cymbal",
+          "role": "crash",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 49
+            },
+            {
+              "id": "bell",
+              "name": "Bell",
+              "key": 50
+            }
+          ]
+        },
+        {
+          "id": "stomp",
+          "name": "Foot Stomp",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 52
+            }
+          ]
+        },
+        {
+          "id": "bucket",
+          "name": "Bucket",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 53
+            }
+          ]
+        },
+        {
+          "id": "shaker",
+          "name": "Shaker",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 42
+            }
+          ]
+        },
+        {
+          "id": "claves",
+          "name": "Claves",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 48
+            }
+          ]
+        },
+        {
+          "id": "cowbell",
+          "name": "Cowbell",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 51
+            }
+          ]
+        },
+        {
+          "id": "snaps",
+          "name": "Finger Snaps",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 37
+            }
+          ]
+        },
+        {
+          "id": "claps",
+          "name": "Hand Claps",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 39
+            }
+          ]
+        },
+        {
+          "id": "stick",
+          "name": "Stick Click",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "hit",
+              "name": "Hit",
+              "key": 35
+            }
+          ]
+        },
+        {
+          "id": "bell_tree",
+          "name": "Bell Tree",
+          "role": "other",
+          "articulations": [
+            {
+              "id": "down",
+              "name": "Down",
+              "key": 54
+            },
+            {
+              "id": "up",
+              "name": "Up",
+              "key": 55
+            }
+          ]
+        }
+      ],
+      "description": "Street percussion: cajon, congas, tambourine, shakers, bucket and foot stomp. From AVL's Buskman's Holiday.",
+      "tags": [
+        "percussion",
+        "acoustic",
+        "world"
+      ]
+    }
+  ],
+  "levelDb": -6,
+  "levelComment": "-6 dB on every mic: single hard hits otherwise peak around +2.5 dBFS."
+}

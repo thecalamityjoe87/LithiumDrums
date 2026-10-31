@@ -1,9 +1,7 @@
 #pragma once
 
-#include <juce_core/juce_core.h>
-
-#include <functional>
-#include <vector>
+#include "Importer.h"
+#include "KitWriter.h"
 
 // Converts DrumGizmo kits into Lithium Drums' native kit format.
 //
@@ -12,40 +10,16 @@
 // "power" value, multichannel WAV files, and MIDI maps. See
 // docs/kit-format.md ("Importing DrumGizmo kits") for how each part is
 // converted, in particular how power values become velocity zones.
-//
-// This only depends on juce_core and juce_audio_formats, so the command-line
-// tool, the tests and (later) the plugin can all use it.
 
 namespace lithium::importer
 {
 
-struct Options
-{
-    juce::File source;             // a drumkit XML file, or a folder: every drumkit XML in it is imported
-    juce::File kitsFolder;         // each imported kit goes into its own subfolder of this
-    juce::File mappingFile;        // optional; otherwise a built-in mapping for known kits, or automatic
+/** True if the file is a DrumGizmo drumkit XML, or the folder holds one. */
+bool isDrumGizmoSource (const juce::File&);
 
-    int maxZones = 8;              // velocity zones per articulation, at most
-    int minRoundRobins = 3;        // a zone gets at least this many samples (when there are enough)
-
-    bool overwrite = false;        // replace kits that already exist
-    bool copyAudio = false;        // copy audio even where a hard link would do
-
-    std::function<void (const juce::String&)> log;
-};
-
-struct ImportedKit
-{
-    juce::String name;
-    juce::File folder;
-    int numPieces = 0, numMics = 0, numHits = 0, numFiles = 0;
-    std::int64_t audioBytes = 0;
-    bool linked = false;           // audio hard-linked rather than copied
-    juce::StringArray warnings;
-};
-
-/** Imports every drumkit XML the options point at. Stops at the first error. */
-juce::Result importKits (const Options&, std::vector<ImportedKit>& results);
+/** Imports every drumkit XML the options point at into one content pack.
+    Variants the mapping marks as "presetOf" another become kit presets. */
+juce::Result importDrumGizmo (const Options&, std::vector<ImportedKit>& results);
 
 //==============================================================================
 // The velocity-zone conversion, exposed for tests and documentation.

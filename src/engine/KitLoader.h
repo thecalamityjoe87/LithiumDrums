@@ -25,16 +25,17 @@ struct LoadPlan
         int mic = 0;
         SampleId sample = invalidSampleId;
         std::array<int, 2> fileChannels {};   // 0-based channels in the file (both equal for a mono file on a stereo mic)
+        std::int64_t start = 0;               // first frame of the file that belongs to the sample
     };
 
     struct File
     {
-        juce::String path;                    // relative to the kit folder
+        juce::String path;                    // relative to the audio folder
         int numChannels = 0;
         std::vector<Target> targets;
     };
 
-    juce::File folder;
+    juce::File folder;                        // the audio folder: the kit's own, or a preset's base kit
     std::shared_ptr<const SampleLayout> layout;
     std::vector<File> files;
     int numMics = 0;

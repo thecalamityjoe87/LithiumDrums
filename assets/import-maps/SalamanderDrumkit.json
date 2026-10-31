@@ -1,0 +1,544 @@
+{
+  "comment": "Import mapping for the Salamander Drumkit (ALL.sfz). One stereo overhead pair, recorded from the drummer's seat and flipped here to the audience's view. The SFZ's CC64 semi-open hi-hat levels are read at CC64 = 0 (closed), with the middle level kept as the half-open articulation. The closed hi-hat chokes the open one, which the SFZ itself leaves out.",
+  "format": "sfz",
+  "matches": [
+    "salamander_drumkit_v1",
+    "ALL.sfz"
+  ],
+  "pack": {
+    "id": "salamander-drumkit",
+    "name": "Salamander Drumkit"
+  },
+  "author": "Alexander Holm",
+  "sourceUrl": "https://archive.org/details/SalamanderDrumkit",
+  "license": {
+    "name": "CC BY-SA 3.0",
+    "url": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "shareAlike": true,
+    "files": [
+      "REAMDE"
+    ]
+  },
+  "licenseNote": "From the kit's notice: \"The share-alike condition in the license only applies if you modify the samples themselves or create new sample libraries with them. Produced Music and other non-sample-library works can be licensed at will.\"",
+  "credits": "The Salamander Drumkit by Alexander Holm, built and recorded by him (2012). Free download at archive.org/details/SalamanderDrumkit.",
+  "description": "A home-built birch kit with a rope-tuned snare and many samples per velocity, recorded through one pair of overheads.",
+  "cc": {
+    "64": 0
+  },
+  "audienceView": true,
+  "mics": [
+    {
+      "id": "overheads",
+      "name": "Overheads",
+      "role": "overheads",
+      "channels": 2,
+      "swapStereo": true,
+      "samples": [
+        "*"
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "id": "kick",
+      "name": "Kick",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 35
+        }
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 40
+        },
+        {
+          "id": "stick",
+          "name": "Stick",
+          "key": 41
+        },
+        {
+          "id": "snares_off",
+          "name": "Snares off",
+          "key": 39
+        }
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat",
+      "role": "hihat",
+      "articulations": [
+        {
+          "id": "closed",
+          "name": "Closed",
+          "key": 42,
+          "exclude": [
+            "*SemiOpen*"
+          ],
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "pedal",
+          "name": "Pedal",
+          "key": 44,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "half_open",
+          "name": "Half open",
+          "key": 42,
+          "cc": {
+            "64": 64
+          },
+          "samples": [
+            "*SemiOpen4*"
+          ],
+          "chokeGroup": "hihat_open",
+          "note": 25
+        },
+        {
+          "id": "open",
+          "name": "Open",
+          "key": 46,
+          "chokeGroup": "hihat_open"
+        }
+      ]
+    },
+    {
+      "id": "tom",
+      "name": "Tom",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 45
+        }
+      ]
+    },
+    {
+      "id": "floor",
+      "name": "Floor Tom",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 43
+        }
+      ]
+    },
+    {
+      "id": "crash1",
+      "name": "Crash 1",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 55
+        },
+        {
+          "id": "choke",
+          "name": "Choke",
+          "key": 54
+        }
+      ]
+    },
+    {
+      "id": "ride1",
+      "name": "Ride 1",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 52
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 53
+        }
+      ]
+    },
+    {
+      "id": "china1",
+      "name": "China 1",
+      "role": "china",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 59
+        },
+        {
+          "id": "choke",
+          "name": "Choke",
+          "key": 58
+        }
+      ]
+    },
+    {
+      "id": "kick2",
+      "name": "Kick 2",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 36
+        }
+      ]
+    },
+    {
+      "id": "snare2",
+      "name": "Snare 2",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 38
+        },
+        {
+          "id": "snares_off",
+          "name": "Snares off",
+          "key": 37
+        }
+      ]
+    },
+    {
+      "id": "crash2",
+      "name": "Crash 2",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 57
+        },
+        {
+          "id": "choke",
+          "name": "Choke",
+          "key": 56
+        }
+      ]
+    },
+    {
+      "id": "crash3",
+      "name": "Crash 3",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 62
+        }
+      ]
+    },
+    {
+      "id": "splash",
+      "name": "Splash",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 63
+        }
+      ]
+    },
+    {
+      "id": "ride2",
+      "name": "Ride 2",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 48
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 49
+        },
+        {
+          "id": "crash",
+          "name": "Crash",
+          "key": 50
+        },
+        {
+          "id": "choke",
+          "name": "Choke",
+          "key": 51
+        }
+      ]
+    },
+    {
+      "id": "china2",
+      "name": "China 2",
+      "role": "china",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 60
+        },
+        {
+          "id": "choke",
+          "name": "Choke",
+          "key": 61
+        }
+      ]
+    },
+    {
+      "id": "cowbell",
+      "name": "Cowbell",
+      "role": "other",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 47
+        }
+      ]
+    },
+    {
+      "id": "bellchime",
+      "name": "Bell Chime",
+      "role": "other",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 64
+        }
+      ]
+    }
+  ],
+  "kits": [
+    {
+      "file": "ALL.sfz",
+      "id": "salamander",
+      "name": "Salamander Drumkit",
+      "tags": [
+        "acoustic",
+        "rock",
+        "indie",
+        "stereo"
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "id": "salamander-compact",
+      "name": "Salamander Compact",
+      "base": "salamander",
+      "description": "Just the core kit: one kick and snare, two toms, hi-hat, two crashes, a ride and a china.",
+      "tags": [
+        "acoustic",
+        "rock",
+        "stereo"
+      ],
+      "pieces": [
+        {
+          "piece": "kick"
+        },
+        {
+          "piece": "snare"
+        },
+        {
+          "piece": "hihat"
+        },
+        {
+          "piece": "tom"
+        },
+        {
+          "piece": "floor"
+        },
+        {
+          "piece": "crash1"
+        },
+        {
+          "piece": "crash2"
+        },
+        {
+          "piece": "ride1"
+        },
+        {
+          "piece": "china1"
+        }
+      ]
+    },
+    {
+      "id": "salamander-alt",
+      "name": "Salamander Alt",
+      "base": "salamander",
+      "description": "The second kick and snare as the main ones, toms a semitone lower, and Ride 2 on the stage.",
+      "tags": [
+        "acoustic",
+        "indie",
+        "stereo"
+      ],
+      "pieces": [
+        {
+          "piece": "kick2",
+          "id": "kick",
+          "name": "Kick"
+        },
+        {
+          "piece": "snare2",
+          "id": "snare",
+          "name": "Snare"
+        },
+        {
+          "piece": "hihat"
+        },
+        {
+          "piece": "tom",
+          "tune": -1
+        },
+        {
+          "piece": "floor",
+          "tune": -1
+        },
+        {
+          "piece": "crash2",
+          "id": "crash",
+          "name": "Crash"
+        },
+        {
+          "piece": "ride2",
+          "id": "ride",
+          "name": "Ride"
+        },
+        {
+          "piece": "china2",
+          "id": "china",
+          "name": "China"
+        },
+        {
+          "piece": "splash"
+        },
+        {
+          "piece": "cowbell"
+        }
+      ],
+      "midiMap": [
+        {
+          "note": 35,
+          "piece": "kick"
+        },
+        {
+          "note": 36,
+          "piece": "kick"
+        },
+        {
+          "note": 38,
+          "piece": "snare",
+          "articulation": "center"
+        },
+        {
+          "note": 40,
+          "piece": "snare",
+          "articulation": "center"
+        },
+        {
+          "note": 37,
+          "piece": "snare",
+          "articulation": "snares_off"
+        },
+        {
+          "note": 42,
+          "piece": "hihat",
+          "articulation": "closed"
+        },
+        {
+          "note": 44,
+          "piece": "hihat",
+          "articulation": "pedal"
+        },
+        {
+          "note": 46,
+          "piece": "hihat",
+          "articulation": "open"
+        },
+        {
+          "note": 25,
+          "piece": "hihat",
+          "articulation": "half_open"
+        },
+        {
+          "note": 45,
+          "piece": "tom"
+        },
+        {
+          "note": 48,
+          "piece": "tom"
+        },
+        {
+          "note": 43,
+          "piece": "floor"
+        },
+        {
+          "note": 41,
+          "piece": "floor"
+        },
+        {
+          "note": 49,
+          "piece": "crash",
+          "articulation": "hit"
+        },
+        {
+          "note": 57,
+          "piece": "crash",
+          "articulation": "hit"
+        },
+        {
+          "note": 51,
+          "piece": "ride",
+          "articulation": "bow"
+        },
+        {
+          "note": 59,
+          "piece": "ride",
+          "articulation": "bow"
+        },
+        {
+          "note": 53,
+          "piece": "ride",
+          "articulation": "bell"
+        },
+        {
+          "note": 52,
+          "piece": "china",
+          "articulation": "hit"
+        },
+        {
+          "note": 55,
+          "piece": "splash"
+        },
+        {
+          "note": 56,
+          "piece": "cowbell"
+        }
+      ]
+    }
+  ]
+}

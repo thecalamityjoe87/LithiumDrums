@@ -19,7 +19,7 @@ public:
     ~HeaderBar() override;
 
     std::function<void (Tab)> onTabChanged;
-    std::function<void()> onShowAbout, onShowSettings;
+    std::function<void()> onShowAbout, onShowSettings, onShowBrowser;
     void setTab (Tab);
 
     /** Re-reads the kits folder (after it changes). */
@@ -42,14 +42,15 @@ private:
     LithiumDrumsProcessor& processor;
     std::vector<std::unique_ptr<TabButton>> tabs;
     juce::ComboBox kitBox;
+    juce::TextButton browseButton { "Browse" };
     std::unique_ptr<IconButton> aboutButton, settingsButton;
-    std::vector<kitlibrary::Entry> kits;
+    kitlibrary::Library library;
 
     int cpuPercent = 0, voices = 0;
     std::size_t sampleBytes = 0;
     float loadProgress = -1.0f;   // -1 while no kit is loading
 
-    static constexpr int refreshItemId = 10000, settingsItemId = 10001;
+    static constexpr int refreshItemId = 10000, settingsItemId = 10001, browseItemId = 10002;
 };
 
 } // namespace lithium

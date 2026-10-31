@@ -77,8 +77,10 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
             if (v.isActive() && (v.getChokeGroups() & art.chokesMask) != 0)
                 v.fadeOut (secondsToSamples (hiHatChokeSeconds));
 
+    // The Tune parameter is added to the kit's (or preset's) own tuning of the piece.
     const auto& piece = params.pieces[(size_t) art.piece];
-    const auto pitchRatio = std::exp2 (piece.tuneSemitones / 12.0) * kit.sampleRate / sampleRate;
+    const auto semitones = piece.tuneSemitones + kit.pieces[(size_t) art.piece].defaultTune;
+    const auto pitchRatio = std::exp2 (semitones / 12.0) * kit.sampleRate / sampleRate;
 
     // Within one zone, velocity still scales the level a little (by the zone's
     // velocityRangeDb), so the response is continuous instead of stepping at
@@ -239,8 +241,10 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
     for (size_t i = 0; i < (size_t) numPieces; ++i)
     {
         const auto& pp = params.pieces[i];
+        const auto& kitPiece = kit.pieces[i];
         const auto audible = ! pp.mute && (! anySolo || pp.solo);
-        const auto level = audible ? pp.volume : 0.0f;
+        const auto level = audible ? pp.volume * kitPiece.defaultGain : 0.0f;
+        const auto decay = pp.decay * kitPiece.defaultDecay;
 
         for (size_t r = 0; r < (size_t) numMicRoles; ++r)
             context.roleGains[i][r] = level * pp.sends[r];
@@ -248,13 +252,13 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
         // Decay 1.0 leaves the sample untouched. Below that, an exponential
         // decay starts after a short hold, with a time constant from 30 ms
         // (decay 0) up to 4 s (just below 1).
-        if (pp.decay >= 0.999f)
+        if (decay >= 0.999f)
         {
             context.decayCoefficient[i] = 1.0f;
         }
         else
         {
-            const auto tau = 0.03 * std::pow (4.0 / 0.03, (double) pp.decay);
+            const auto tau = 0.03 * std::pow (4.0 / 0.03, (double) decay);
             context.decayCoefficient[i] = (float) std::exp (-1.0 / (tau * sampleRate));
         }
     }

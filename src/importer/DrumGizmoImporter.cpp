@@ -1,13 +1,9 @@
 #include "DrumGizmoImporter.h"
 
-#include "LithiumImportMaps.h"
-
-#include <juce_audio_formats/juce_audio_formats.h>
-
 #include <cmath>
-#include <filesystem>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <set>
 
 namespace lithium::importer
@@ -48,6 +44,7 @@ namespace
     struct DgInstrument
     {
         juce::String name, group;
+        juce::String file;                 // the instrument XML, relative to the kit's root folder
         juce::StringArray chokes;          // instruments this one chokes (drumkit format 2.x)
         std::vector<DgSample> samples;
     };
@@ -89,6 +86,7 @@ namespace
         DgInstrument instrument;
         instrument.name = entry.getStringAttribute ("name");
         instrument.group = entry.getStringAttribute ("group");
+        instrument.file = entry.getStringAttribute ("file");
 
         // The channelmap renames the instrument's channels ("in") to kit channels ("out").
         std::map<juce::String, juce::String> channelMap;
@@ -247,28 +245,6 @@ namespace
         std::vector<OutArticulation> articulations;
     };
 
-    juce::String toId (const juce::String& name)
-    {
-        auto id = name.toLowerCase().replaceCharacters (" /\\:", "____");
-        id = id.retainCharacters ("abcdefghijklmnopqrstuvwxyz0123456789_-.");
-        return id.isNotEmpty() ? id : juce::String ("item");
-    }
-
-    juce::String roleForName (const juce::String& name)
-    {
-        const auto n = name.toLowerCase();
-
-        if (n.contains ("kick") || n.contains ("kdrum") || n.contains ("bassdrum") || n.startsWith ("bd"))  return "kick";
-        if (n.contains ("snare"))                                                                           return "snare";
-        if (n.contains ("hihat") || n.contains ("hi-hat") || n.startsWith ("hh"))                           return "hihat";
-        if (n.contains ("floor") || n.contains ("ftom"))                                                     return "floor_tom";
-        if (n.contains ("tom"))                                                                              return "tom";
-        if (n.contains ("crash") || n.contains ("splash"))                                                   return "crash";
-        if (n.contains ("ride"))                                                                             return "ride";
-        if (n.contains ("china"))                                                                            return "china";
-        return "other";
-    }
-
     juce::String micRoleForChannel (const juce::String& name)
     {
         const auto n = name.toLowerCase();
@@ -385,153 +361,38 @@ namespace
     }
 
     //==============================================================================
-    juce::var findBuiltInMapping (const DgKit& kit)
+    juce::String kitIdFor (const juce::String& name)     { return toId (name).replaceCharacter ('_', '-'); }
+
+    /** One drumkit XML, converted into the kit model. */
+    struct Conversion
     {
-        for (int i = 0; i < LithiumImportMaps::namedResourceListSize; ++i)
-        {
-            int size = 0;
-            const auto* data = LithiumImportMaps::getNamedResource (LithiumImportMaps::namedResourceList[i], size);
-            const auto mapping = juce::JSON::parse (juce::String::fromUTF8 (data, size));
+        juce::File xmlFile;
+        DgKit dg;
+        KitModel kit;
+    };
 
-            if (const auto* matches = mapping["matches"].getArray())
-                for (const auto& m : *matches)
-                    if (m.toString().equalsIgnoreCase (kit.name))
-                        return mapping;
-        }
-
-        return {};
-    }
-
-    juce::StringArray toStringArray (const juce::var& v)
+    Conversion convert (const juce::File& xmlFile, const juce::var& mapping, const Options& options)
     {
-        juce::StringArray result;
+        Conversion c;
+        c.xmlFile = xmlFile;
+        c.dg = parseDrumkit (xmlFile);
 
-        if (const auto* a = v.getArray())
-            for (const auto& s : *a)
-                result.add (s.toString());
-
-        return result;
-    }
-
-    //==============================================================================
-    juce::var object()                         { return juce::var (new juce::DynamicObject()); }
-
-    void put (juce::var& obj, const juce::Identifier& key, const juce::var& value)
-    {
-        obj.getDynamicObject()->setProperty (key, value);
-    }
-
-    juce::var channelMapFor (const std::map<juce::String, int>& channels, const std::vector<OutMic>& mics)
-    {
-        auto map = object();
-
-        for (const auto& mic : mics)
-        {
-            std::vector<int> found;
-
-            for (const auto& c : mic.channels)
-                if (const auto it = channels.find (c); it != channels.end())
-                    found.push_back (it->second);
-
-            if (found.empty())
-                continue;
-
-            if (mic.channels.size() == 2 && found.size() == 2)
-                put (map, mic.id, juce::Array<juce::var> { found[0], found[1] });
-            else
-                put (map, mic.id, found[0]);    // mono, or one side of a stereo pair (plays centred)
-        }
-
-        return map;
-    }
-
-    juce::String writeLicenseText (const juce::String& name, const juce::String& author, const juce::String& sourceUrl,
-                                   const juce::String& licenseName, const juce::String& licenseUrl,
-                                   const juce::String& credits, const juce::StringArray& originalFiles)
-    {
-        juce::String text;
-        text << name << "\n"
-             << juce::String::repeatedString ("=", name.length()) << "\n\n"
-             << "Author: " << author << "\n"
-             << "Source: " << sourceUrl << "\n"
-             << "License: " << licenseName << (licenseUrl.isNotEmpty() ? " (" + licenseUrl + ")" : juce::String()) << "\n\n";
-
-        if (credits.isNotEmpty())
-            text << credits << "\n\n";
-
-        text << "These samples were converted from the original DrumGizmo kit for use in Lithium Drums.\n"
-             << "The audio itself is unchanged. The velocity zones were derived from DrumGizmo's\n"
-             << "per-sample power values, and the mics and pieces were renamed and regrouped.\n";
-
-        if (! originalFiles.isEmpty())
-            text << "\nThe kit's original notice is included as: " << originalFiles.joinIntoString (", ") << "\n";
-
-        return text;
-    }
-
-    /** Recognises the usual Creative Commons licences in a kit's notice. */
-    std::pair<juce::String, juce::String> detectLicense (const juce::String& text)
-    {
-        struct Known { const char* phrase; const char* name; const char* url; };
-
-        // More specific phrases first: "Attribution-ShareAlike" also contains "Attribution".
-        static const Known known[] {
-            { "Attribution-NonCommercial-ShareAlike 4.0", "CC BY-NC-SA 4.0", "https://creativecommons.org/licenses/by-nc-sa/4.0/" },
-            { "Attribution-NonCommercial 4.0",            "CC BY-NC 4.0",    "https://creativecommons.org/licenses/by-nc/4.0/" },
-            { "Attribution-ShareAlike 4.0",               "CC BY-SA 4.0",    "https://creativecommons.org/licenses/by-sa/4.0/" },
-            { "Attribution-ShareAlike 3.0",               "CC BY-SA 3.0",    "https://creativecommons.org/licenses/by-sa/3.0/" },
-            { "Attribution 4.0",                          "CC BY 4.0",       "https://creativecommons.org/licenses/by/4.0/" },
-            { "Attribution 3.0",                          "CC BY 3.0",       "https://creativecommons.org/licenses/by/3.0/" },
-            { "CC0",                                      "CC0 1.0",         "https://creativecommons.org/publicdomain/zero/1.0/" },
-        };
-
-        const auto squashed = text.replace ("\n", " ").replace (" license", " License");
-
-        for (const auto& k : known)
-            if (squashed.containsIgnoreCase (k.phrase) || squashed.containsIgnoreCase (k.name))
-                return { k.name, k.url };
-
-        return {};
-    }
-
-    bool linkOrCopy (const juce::File& source, const juce::File& dest, bool allowLink)
-    {
-        if (! dest.getParentDirectory().createDirectory())
-            return false;
-
-        if (allowLink)
-        {
-            // A hard link shares the data on disk: the five DRSKit variants
-            // use the same audio without five copies of it. It only works on
-            // the same file system, so fall back to copying.
-            std::error_code error;
-            std::filesystem::create_hard_link (source.getFullPathName().toStdString(), dest.getFullPathName().toStdString(), error);
-
-            if (! error)
-                return true;
-        }
-
-        return source.copyFileTo (dest);
-    }
-
-    //==============================================================================
-    ImportedKit importOne (const juce::File& xmlFile, const juce::var& explicitMapping, const Options& options)
-    {
-        auto log = [&] (const juce::String& s) { if (options.log) options.log (s); };
-
-        const auto dg = parseDrumkit (xmlFile);
-        const auto mapping = explicitMapping.isVoid() ? findBuiltInMapping (dg) : explicitMapping;
+        const auto& dg = c.dg;
+        auto& kit = c.kit;
         const auto haveMapping = ! mapping.isVoid();
         const auto variant = mapping["variants"][juce::Identifier (xmlFile.getFileName())];
 
-        ImportedKit result;
-        result.name = variant["name"].toString();
+        kit.name = variant["name"].toString();
 
-        if (result.name.isEmpty())
-            result.name = dg.name.isNotEmpty() ? dg.name : xmlFile.getFileNameWithoutExtension();
+        if (kit.name.isEmpty())
+            kit.name = dg.name.isNotEmpty() ? dg.name : xmlFile.getFileNameWithoutExtension();
 
-        log ("Importing " + xmlFile.getFileName() + " as \"" + result.name + "\""
-             + (haveMapping ? juce::String() : " (no mapping file: automatic mapping)"));
+        kit.id = variant["id"].toString().isNotEmpty() ? variant["id"].toString() : kitIdFor (kit.name);
+        kit.description = variant["description"].toString();
+        kit.tags = toStringArray (variant["tags"].isVoid() ? mapping["tags"] : variant["tags"]);
+
+        if (kit.description.isEmpty())
+            kit.description = mapping["description"].toString().isNotEmpty() ? mapping["description"].toString() : dg.description;
 
         // --- Mics ---------------------------------------------------------------
         std::vector<OutMic> mics;
@@ -554,20 +415,24 @@ namespace
                     if (mic.channels.size() < 1 || mic.channels.size() > 2)
                         fail ("Mapping mic \"" + mic.id + "\" needs one or two channels");
 
+                    // A variant without any of the mic's channels doesn't get the mic.
+                    if (std::none_of (mic.channels.begin(), mic.channels.end(), [&] (const auto& ch) { return dg.channels.contains (ch); }))
+                        continue;
+
                     mics.push_back (mic);
                 }
             }
 
             // Kit channels the mapping doesn't mention still get a mic, so nothing is lost.
-            for (const auto& c : dg.channels)
+            for (const auto& ch : dg.channels)
             {
-                if (ignored.contains (c))
+                if (ignored.contains (ch))
                     continue;
 
-                if (std::none_of (mics.begin(), mics.end(), [&] (const auto& m) { return m.channels.contains (c); }))
+                if (std::none_of (mics.begin(), mics.end(), [&] (const auto& m) { return m.channels.contains (ch); }))
                 {
-                    result.warnings.add ("Channel \"" + c + "\" isn't in the mapping; added as a mono close mic");
-                    mics.push_back ({ toId (c), c, "close", juce::StringArray (c) });
+                    kit.warnings.add ("Channel \"" + ch + "\" isn't in the mapping; added as a mono close mic");
+                    mics.push_back ({ toId (ch), ch, "close", juce::StringArray (ch) });
                 }
             }
         }
@@ -575,12 +440,16 @@ namespace
         {
             juce::StringArray channels;
 
-            for (const auto& c : dg.channels)
-                if (! ignored.contains (c))
-                    channels.add (c);
+            for (const auto& ch : dg.channels)
+                if (! ignored.contains (ch))
+                    channels.add (ch);
 
             mics = automaticMics (channels);
         }
+
+        for (const auto& m : mics)
+            kit.mics.push_back ({ m.id, m.name, m.role.isNotEmpty() ? m.role : juce::String ("close"), m.channels.size(),
+                                  m.volumeDb, m.pan, m.invertPolarity });
 
         // --- Pieces -------------------------------------------------------------
         std::vector<OutPiece> pieces;
@@ -621,49 +490,25 @@ namespace
             if (mappedInstruments.count (i.name) == 0)
                 unmapped.push_back (&i);
 
-        if (haveMapping && ! unmapped.empty())
+        if (haveMapping)
             for (const auto* i : unmapped)
-                result.warnings.add ("Instrument \"" + i->name + "\" isn't in the mapping; imported as its own piece");
+                kit.warnings.add ("Instrument \"" + i->name + "\" isn't in the mapping; imported as its own piece");
 
         for (auto& p : automaticPieces (unmapped))
             pieces.push_back (std::move (p));
 
         if (pieces.empty() || pieces.size() > 24)
-            fail (result.name + ": " + juce::String ((int) pieces.size()) + " pieces (Lithium Drums takes 1 to 24)");
+            fail (kit.name + ": " + juce::String ((int) pieces.size()) + " pieces (Lithium Drums takes 1 to 24)");
 
         if (mics.empty() || mics.size() > 24)
-            fail (result.name + ": " + juce::String ((int) mics.size()) + " mics (Lithium Drums takes 1 to 24)");
-
-        // --- Destination --------------------------------------------------------
-        const auto dest = options.kitsFolder.getChildFile (juce::File::createLegalFileName (result.name));
-        result.folder = dest;
-
-        if (dest.exists())
-        {
-            if (! options.overwrite)
-                fail (dest.getFullPathName() + " already exists (use --overwrite to replace it)");
-
-            // Only ever delete something that is clearly a kit.
-            if (! dest.getChildFile ("kit.json").existsAsFile() || ! dest.deleteRecursively())
-                fail ("Can't replace " + dest.getFullPathName());
-        }
-
-        if (! dest.createDirectory())
-            fail ("Can't create " + dest.getFullPathName());
+            fail (kit.name + ": " + juce::String ((int) mics.size()) + " mics (Lithium Drums takes 1 to 24)");
 
         // --- Articulations, zones and hits ------------------------------------------
-        std::set<juce::String> audioFiles;
-        juce::Array<juce::var> pieceList;
         std::map<juce::String, std::pair<juce::String, juce::String>> instrumentTarget;   // instrument -> (piece, articulation)
 
         for (const auto& p : pieces)
         {
-            auto piece = object();
-            put (piece, "id", p.id);
-            put (piece, "name", p.name);
-            put (piece, "role", p.role);
-
-            juce::Array<juce::var> articulations;
+            KitModel::Piece piece { p.id, p.name, p.role, 0.0, 0.0, {} };
 
             for (const auto& a : p.articulations)
             {
@@ -672,107 +517,82 @@ namespace
 
                 if (instrument.samples.empty())
                 {
-                    result.warnings.add ("Instrument \"" + a.instrument + "\" has no samples; skipped");
+                    kit.warnings.add ("Instrument \"" + a.instrument + "\" has no samples; skipped");
                     continue;
                 }
 
-                // Where each sample's audio comes from: file -> (kit channel -> file channel).
-                std::vector<std::map<juce::String, std::map<juce::String, int>>> sampleSources;
+                KitModel::Articulation art { a.id, a.name.isNotEmpty() ? a.name : a.id, a.chokeGroup, a.chokes, {} };
 
-                for (const auto& s : instrument.samples)
+                // Each sample is a hit; its audio usually comes from one
+                // multichannel file, with one file channel per kit channel.
+                auto hitFor = [&] (const DgSample& s)
                 {
-                    std::map<juce::String, std::map<juce::String, int>> byFile;
+                    std::map<juce::String, std::map<juce::String, int>> byFile;   // file -> (kit channel -> file channel)
 
                     for (const auto& audio : s.audio)
-                    {
                         byFile[audio.file][audio.channel] = audio.fileChannel;
-                        audioFiles.insert (audio.file);
+
+                    KitModel::Hit hit;
+
+                    for (const auto& [file, channels] : byFile)
+                    {
+                        KitModel::Part part { file, {}, 0 };
+
+                        for (size_t m = 0; m < mics.size(); ++m)
+                        {
+                            std::vector<int> found;
+
+                            for (const auto& ch : mics[m].channels)
+                                if (const auto it = channels.find (ch); it != channels.end())
+                                    found.push_back (it->second);
+
+                            if (found.empty())
+                                continue;
+
+                            // Mono, a stereo pair, or one side of a pair (which plays centred).
+                            const auto pair = mics[m].channels.size() == 2 && found.size() == 2;
+                            part.channels.push_back ({ (int) m, { found[0], pair ? found[1] : 0 } });
+                        }
+
+                        if (! part.channels.empty())
+                            hit.parts.push_back (std::move (part));
                     }
 
-                    sampleSources.push_back (std::move (byFile));
-                }
-
-                // An articulation-wide channel map lets hits be plain file names,
-                // which keeps kit.json small: DrumGizmo's multichannel files
-                // normally use the same layout for every sample.
-                const auto common = sampleSources.front().size() == 1 ? sampleSources.front().begin()->second
-                                                                       : std::map<juce::String, int>();
-                const auto allCommon = ! common.empty()
-                    && std::all_of (sampleSources.begin(), sampleSources.end(),
-                                    [&] (const auto& src) { return src.size() == 1 && src.begin()->second == common; });
-
-                auto art = object();
-                put (art, "id", a.id);
-                put (art, "name", a.name.isNotEmpty() ? a.name : a.id);
-
-                if (a.chokeGroup.isNotEmpty())
-                    put (art, "chokeGroup", a.chokeGroup);
-
-                if (! a.chokes.isEmpty())
-                {
-                    juce::Array<juce::var> chokes;
-
-                    for (const auto& c : a.chokes)
-                        chokes.add (c);
-
-                    put (art, "chokes", chokes);
-                }
-
-                if (allCommon)
-                    put (art, "channelMap", channelMapFor (common, mics));
+                    return hit;
+                };
 
                 std::vector<double> powers;
 
                 for (const auto& s : instrument.samples)
                     powers.push_back (s.power);
 
-                juce::Array<juce::var> zones;
-
                 for (const auto& z : makeZones (powers, options.maxZones, options.minRoundRobins))
                 {
-                    auto zone = object();
-                    put (zone, "velocity", juce::Array<juce::var> { z.velocityLow, z.velocityHigh });
-                    put (zone, "velocityRangeDb", std::round ((double) z.velocityRangeDb * 10.0) / 10.0);
-
-                    juce::Array<juce::var> hits;
+                    KitModel::Zone zone { z.velocityLow, z.velocityHigh, 0.0, (double) z.velocityRangeDb, {} };
 
                     for (const auto index : z.samples)
-                    {
-                        const auto& src = sampleSources[(size_t) index];
-                        const auto toAudioPath = [] (const juce::String& f) { return "audio/" + f; };
+                        zone.hits.push_back (hitFor (instrument.samples[(size_t) index]));
 
-                        if (allCommon)
-                        {
-                            hits.add (toAudioPath (src.begin()->first));
-                        }
-                        else
-                        {
-                            juce::Array<juce::var> parts;
-
-                            for (const auto& [file, channels] : src)
-                            {
-                                auto part = object();
-                                put (part, "file", toAudioPath (file));
-                                put (part, "channelMap", channelMapFor (channels, mics));
-                                parts.add (part);
-                            }
-
-                            hits.add (parts.size() == 1 ? parts[0] : juce::var (parts));
-                        }
-
-                        ++result.numHits;
-                    }
-
-                    put (zone, "roundRobins", hits);
-                    zones.add (zone);
+                    art.zones.push_back (std::move (zone));
                 }
 
-                put (art, "zones", zones);
-                articulations.add (art);
+                piece.articulations.push_back (std::move (art));
             }
 
-            put (piece, "articulations", articulations);
-            pieceList.add (piece);
+            if (! piece.articulations.empty())
+                kit.pieces.push_back (std::move (piece));
+        }
+
+        // Variants can list articulations to put first, so that a click on a
+        // piece plays what the variant is about (brushes, in a brush kit).
+        if (const auto prefer = toStringArray (variant["preferArticulations"]); ! prefer.isEmpty())
+        {
+            for (auto& piece : kit.pieces)
+                std::stable_sort (piece.articulations.begin(), piece.articulations.end(), [&] (const auto& a, const auto& b)
+                {
+                    const auto rank = [&] (const auto& x) { const auto i = prefer.indexOf (x.id); return i < 0 ? prefer.size() : i; };
+                    return rank (a) < rank (b);
+                });
         }
 
         // --- MIDI map -----------------------------------------------------------------
@@ -790,178 +610,128 @@ namespace
                     midimapFile = candidate;
         }
 
-        juce::Array<juce::var> midiMap;
-
         for (const auto& [note, instrument] : readMidimap (dg.root.getChildFile (midimapFile)))
         {
             const auto it = instrumentTarget.find (instrument);
 
             if (it == instrumentTarget.end())
             {
-                result.warnings.add ("MIDI map note " + juce::String (note) + " plays \"" + instrument + "\", which isn't in the kit");
+                kit.warnings.add ("MIDI map note " + juce::String (note) + " plays \"" + instrument + "\", which isn't in the kit");
                 continue;
             }
 
-            auto entry = object();
-            put (entry, "note", note);
-            put (entry, "piece", it->second.first);
-            put (entry, "articulation", it->second.second);
-            midiMap.add (entry);
+            kit.midiMap.push_back ({ note, it->second.first, it->second.second });
         }
-
-        // --- Audio ----------------------------------------------------------------------
-        double sampleRate = 0.0;
-        juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
-
-        for (const auto& f : audioFiles)
-        {
-            const auto source = dg.root.getChildFile (f);
-
-            if (! source.existsAsFile())
-                fail ("Missing audio file " + source.getFullPathName());
-
-            if (sampleRate <= 0.0)
-                if (std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (source)); reader != nullptr)
-                    sampleRate = reader->sampleRate;
-
-            const auto target = dest.getChildFile ("audio/" + f);
-
-            if (! linkOrCopy (source, target, ! options.copyAudio))
-                fail ("Can't write " + target.getFullPathName());
-
-            result.linked = result.linked || ! options.copyAudio;
-            result.audioBytes += source.getSize();
-            ++result.numFiles;
-
-            if (result.numFiles % 500 == 0)
-                log ("  " + juce::String (result.numFiles) + " of " + juce::String ((int) audioFiles.size()) + " audio files");
-        }
-
-        if (sampleRate <= 0.0)
-            fail ("Can't read the sample rate of the kit's audio");
-
-        // --- Licence and credits --------------------------------------------------------
-        auto licenseName = mapping["license"]["name"].toString();
-        auto licenseUrl = mapping["license"]["url"].toString();
-        const auto author = mapping["author"].toString().isNotEmpty() ? mapping["author"].toString() : dg.author;
-        const auto sourceUrl = mapping["sourceUrl"].toString().isNotEmpty() ? mapping["sourceUrl"].toString() : dg.website;
-        const auto credits = mapping["credits"].toString();
-
-        // Copy the kit's own licence notice. Without a mapping, take the usual suspects.
-        auto licenseFiles = toStringArray (mapping["license"]["files"]);
-
-        if (licenseFiles.isEmpty())
-            for (const auto& f : dg.root.findChildFiles (juce::File::findFiles, false))
-                if (f.getFileName().startsWithIgnoreCase ("license") || f.getFileName().startsWithIgnoreCase ("copying")
-                    || f.getFileName().startsWithIgnoreCase ("readme"))
-                    licenseFiles.add (f.getFileName());
-
-        juce::StringArray copied;
-
-        for (const auto& name : licenseFiles)
-        {
-            const auto source = dg.root.getChildFile (name);
-
-            if (source.existsAsFile() && source.copyFileTo (dest.getChildFile ("Original " + name)))
-                copied.add ("Original " + name);
-            else
-                result.warnings.add ("Licence file \"" + name + "\" not found in the kit");
-        }
-
-        // Without a mapping, recognise the licence from the kit's metadata or its notice.
-        if (licenseName.isEmpty())
-        {
-            auto text = dg.license;
-
-            for (const auto& name : licenseFiles)
-                text << "\n" << dg.root.getChildFile (name).loadFileAsString();
-
-            std::tie (licenseName, licenseUrl) = detectLicense (text);
-
-            if (licenseName.isEmpty() && dg.license.isNotEmpty())
-                licenseName = dg.license;   // whatever the kit says, verbatim
-        }
-
-        if (licenseName.isEmpty())
-            result.warnings.add ("No licence found. Check the kit's terms before using or sharing it.");
-
-        dest.getChildFile ("LICENSE.txt").replaceWithText (writeLicenseText (result.name, author, sourceUrl,
-                                                                             licenseName.isNotEmpty() ? licenseName : "Unknown",
-                                                                             licenseUrl, credits, copied));
-
-        // --- kit.json, written last: its presence means a complete kit ---------------------
-        auto kit = object();
-        put (kit, "formatVersion", 2);
-        put (kit, "type", "kit");
-        put (kit, "name", result.name);
-        put (kit, "author", author);
-        put (kit, "sourceUrl", sourceUrl);
-
-        auto license = object();
-        put (license, "name", licenseName.isNotEmpty() ? licenseName : "Unknown");
-
-        if (licenseUrl.isNotEmpty())
-            put (license, "url", licenseUrl);
-
-        put (license, "file", "LICENSE.txt");
-        put (kit, "license", license);
-
-        if (credits.isNotEmpty())
-            put (kit, "credits", credits);
-
-        const auto description = mapping["description"].toString().isNotEmpty() ? mapping["description"].toString() : dg.description;
-
-        if (description.isNotEmpty())
-            put (kit, "description", description);
-
-        put (kit, "sampleRate", sampleRate);
 
         auto importedFrom = object();
         put (importedFrom, "format", "DrumGizmo");
         put (importedFrom, "file", xmlFile.getFileName());
         put (importedFrom, "maxZones", options.maxZones);
         put (importedFrom, "minRoundRobins", options.minRoundRobins);
-        put (kit, "importedFrom", importedFrom);
+        kit.importedFrom = importedFrom;
 
-        juce::Array<juce::var> micList;
+        return c;
+    }
 
-        for (const auto& m : mics)
+    /** A variant that plays a subset of another variant's instruments (same
+        instrument files, same pieces) becomes a kit preset of it rather than a
+        second copy of the kit. Returns nothing, and says why, if it can't. */
+    std::optional<PresetModel> asPreset (const Conversion& variant, const Conversion& base, juce::String& whyNot)
+    {
+        for (const auto& i : variant.dg.instruments)
         {
-            auto mic = object();
-            put (mic, "id", m.id);
-            put (mic, "name", m.name);
-            put (mic, "channels", m.channels.size());
-            put (mic, "role", m.role);
+            const auto* b = base.dg.find (i.name);
 
-            if (std::abs (m.volumeDb) > 1.0e-6)
-                put (mic, "volumeDb", m.volumeDb);
-
-            if (std::abs (m.pan) > 1.0e-6)
-                put (mic, "pan", m.pan);
-
-            if (m.invertPolarity)
-                put (mic, "invertPolarity", true);
-
-            micList.add (mic);
+            if (b == nullptr || b->file != i.file)
+            {
+                whyNot = "instrument \"" + i.name + "\" isn't the same in " + base.xmlFile.getFileName();
+                return std::nullopt;
+            }
         }
 
-        put (kit, "mics", micList);
-        put (kit, "pieces", pieceList);
+        PresetModel preset;
+        preset.id = variant.kit.id;
+        preset.name = variant.kit.name;
+        preset.description = variant.kit.description;
+        preset.tags = variant.kit.tags;
+        preset.baseId = base.kit.id;
 
-        if (! midiMap.isEmpty())
-            put (kit, "midiMap", midiMap);
+        juce::Array<juce::var> pieces;
 
-        if (! dest.getChildFile ("kit.json").replaceWithText (juce::JSON::toString (kit) + "\n"))
-            fail ("Can't write kit.json in " + dest.getFullPathName());
+        for (const auto& vp : variant.kit.pieces)
+        {
+            const auto* bp = base.kit.findPiece (vp.id);
 
-        result.numPieces = (int) pieces.size();
-        result.numMics = (int) mics.size();
+            if (bp == nullptr || bp->role != vp.role)
+            {
+                whyNot = "piece \"" + vp.id + "\" isn't in " + base.kit.name;
+                return std::nullopt;
+            }
 
-        for (const auto& w : result.warnings)
-            log ("  warning: " + w);
+            auto choice = object();
+            put (choice, "piece", vp.id);
 
-        return result;
+            juce::StringArray variantArts, baseArts;
+
+            for (const auto& a : vp.articulations)
+                variantArts.add (a.id);
+
+            for (const auto& a : bp->articulations)
+                baseArts.add (a.id);
+
+            if (variantArts != baseArts)
+            {
+                juce::Array<juce::var> ids;
+
+                for (const auto& id : variantArts)
+                    ids.add (id);
+
+                put (choice, "articulations", ids);
+            }
+
+            if (vp.name != bp->name)
+                put (choice, "name", vp.name);
+
+            pieces.add (choice);
+        }
+
+        preset.pieces = pieces;
+
+        // Mics the variant doesn't record are left out (and never loaded).
+        auto mics = object();
+        bool anyLeftOut = false;
+
+        for (const auto& m : base.kit.mics)
+        {
+            if (variant.kit.findMic (m.id) < 0)
+            {
+                auto change = object();
+                put (change, "enabled", false);
+                put (mics, m.id, change);
+                anyLeftOut = true;
+            }
+        }
+
+        if (anyLeftOut)
+            preset.mics = mics;
+
+        if (! variant.kit.midiMap.empty())
+        {
+            juce::Array<juce::var> map;
+
+            for (const auto& e : variant.kit.midiMap)
+            {
+                auto entry = object();
+                put (entry, "note", e.note);
+                put (entry, "piece", e.piece);
+                put (entry, "articulation", e.articulation);
+                map.add (entry);
+            }
+
+            preset.midiMap = map;
+        }
+
+        return preset;
     }
 } // namespace
 
@@ -1078,17 +848,36 @@ std::vector<ZoneSplit> makeZones (const std::vector<double>& powers, int maxZone
     return result;
 }
 
-juce::Result importKits (const Options& options, std::vector<ImportedKit>& results)
+
+bool isDrumGizmoSource (const juce::File& source)
 {
-    results.clear();
+    auto isDrumkit = [] (const juce::File& f)
+    {
+        auto xml = juce::XmlDocument::parse (f);
+        return xml != nullptr && xml->hasTagName ("drumkit");
+    };
+
+    if (source.existsAsFile())
+        return source.hasFileExtension ("xml") && isDrumkit (source);
+
+    for (const auto& f : source.findChildFiles (juce::File::findFiles, false, "*.xml"))
+        if (isDrumkit (f))
+            return true;
+
+    return false;
+}
+
+juce::Result importDrumGizmo (const Options& options, std::vector<ImportedKit>& results)
+{
+    auto log = [&] (const juce::String& s) { if (options.log) options.log (s); };
 
     try
     {
-        juce::var mapping;
+        juce::var explicitMapping;
 
         if (options.mappingFile != juce::File())
         {
-            if (auto r = juce::JSON::parse (options.mappingFile.loadFileAsString(), mapping); r.failed())
+            if (auto r = juce::JSON::parse (options.mappingFile.loadFileAsString(), explicitMapping); r.failed())
                 fail ("Can't read the mapping file: " + r.getErrorMessage());
         }
 
@@ -1110,18 +899,101 @@ juce::Result importKits (const Options& options, std::vector<ImportedKit>& resul
         if (xmlFiles.empty())
             fail ("No DrumGizmo drumkit XML found at " + options.source.getFullPathName());
 
-        if (! options.kitsFolder.createDirectory())
-            fail ("Can't create the kits folder " + options.kitsFolder.getFullPathName());
+        // Every variant of the kit is converted with the same mapping.
+        const auto first = parseDrumkit (xmlFiles.front());
+        const auto mapping = explicitMapping.isVoid() ? findBuiltInMapping ({ first.name }, "drumgizmo") : explicitMapping;
+
+        log (mapping.isVoid() ? "No mapping file for \"" + first.name + "\": automatic mapping"
+                              : "Using the mapping for \"" + first.name + "\"");
+
+        std::vector<Conversion> conversions;
 
         for (const auto& f : xmlFiles)
-            results.push_back (importOne (f, mapping, options));
+        {
+            log ("Reading " + f.getFileName());
+            conversions.push_back (convert (f, mapping, options));
+        }
+
+        // --- The pack ---------------------------------------------------------------
+        PackModel pack;
+        pack.sourceRoot = first.root;
+        pack.sourceFormat = "DrumGizmo";
+        pack.name = mapping["pack"]["name"].toString();
+
+        if (pack.name.isEmpty())
+            pack.name = first.name.isNotEmpty() ? first.name : options.source.getFileNameWithoutExtension();
+
+        pack.id = mapping["pack"]["id"].toString().isNotEmpty() ? mapping["pack"]["id"].toString() : kitIdFor (pack.name);
+        pack.author = mapping["author"].toString().isNotEmpty() ? mapping["author"].toString() : first.author;
+        pack.sourceUrl = mapping["sourceUrl"].toString().isNotEmpty() ? mapping["sourceUrl"].toString() : first.website;
+        pack.credits = mapping["credits"].toString();
+        pack.description = mapping["description"].toString().isNotEmpty() ? mapping["description"].toString() : first.description;
+        pack.licenseName = mapping["license"]["name"].toString();
+        pack.licenseUrl = mapping["license"]["url"].toString();
+        pack.licenseFiles = toStringArray (mapping["license"]["files"]);
+        pack.licenseNote = mapping["licenseNote"].toString();
+        pack.conversionNote = "The audio itself is unchanged. The velocity zones were derived from DrumGizmo's\n"
+                              "per-sample power values, and the mics and pieces were renamed and regrouped.";
+
+        // Without a mapping, take the usual licence notices and recognise the licence in them.
+        if (pack.licenseFiles.isEmpty())
+            for (const auto& f : first.root.findChildFiles (juce::File::findFiles, false))
+                if (f.getFileName().startsWithIgnoreCase ("license") || f.getFileName().startsWithIgnoreCase ("copying")
+                    || f.getFileName().startsWithIgnoreCase ("readme"))
+                    pack.licenseFiles.add (f.getFileName());
+
+        if (pack.licenseName.isEmpty())
+        {
+            auto text = first.license;
+
+            for (const auto& name : pack.licenseFiles)
+                text << "\n" << first.root.getChildFile (name).loadFileAsString();
+
+            std::tie (pack.licenseName, pack.licenseUrl) = detectLicense (text);
+
+            if (pack.licenseName.isEmpty() && first.license.isNotEmpty())
+                pack.licenseName = first.license;   // whatever the kit says, verbatim
+        }
+
+        if (pack.licenseName.isEmpty())
+            pack.warnings.add ("No licence found. Check the kit's terms before using or sharing it.");
+
+        pack.shareAlike = mapping["license"]["shareAlike"].isVoid() ? pack.licenseName.containsIgnoreCase ("-SA")
+                                                                    : (bool) mapping["license"]["shareAlike"];
+
+        // --- Kits and presets ---------------------------------------------------------
+        for (const auto& c : conversions)
+        {
+            const auto baseFile = mapping["variants"][juce::Identifier (c.xmlFile.getFileName())]["presetOf"].toString();
+            const auto base = std::find_if (conversions.begin(), conversions.end(),
+                                            [&] (const auto& b) { return baseFile.isNotEmpty() && b.xmlFile.getFileName() == baseFile; });
+
+            if (base != conversions.end() && &*base != &c)
+            {
+                juce::String whyNot;
+
+                if (auto preset = asPreset (c, *base, whyNot))
+                {
+                    pack.presets.push_back (std::move (*preset));
+                    continue;
+                }
+
+                pack.warnings.add (c.kit.name + " imported as a kit of its own: " + whyNot);
+            }
+
+            pack.kits.push_back (c.kit);
+        }
+
+        // Presets written by hand in the mapping (other piece choices, tuning, mixes).
+        for (auto& p : presetsFromMapping (mapping, pack.kits))
+            pack.presets.push_back (std::move (p));
+
+        return writePack (pack, options, results);
     }
     catch (const ImportError& e)
     {
         return juce::Result::fail (e.message);
     }
-
-    return juce::Result::ok();
 }
 
 } // namespace lithium::importer

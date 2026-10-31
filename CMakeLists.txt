@@ -57,7 +57,11 @@ target_sources(LithiumDrums PRIVATE
     src/Parameters.cpp
     src/Settings.cpp
     src/KitLibrary.cpp
+    src/importer/Importer.cpp
+    src/importer/KitWriter.cpp
     src/importer/DrumGizmoImporter.cpp
+    src/importer/SfzParser.cpp
+    src/importer/SfzImporter.cpp
     src/engine/KitManifest.cpp
     src/engine/MidiMap.cpp
     src/engine/InMemorySampleSource.cpp
@@ -71,6 +75,7 @@ target_sources(LithiumDrums PRIVATE
     src/ui/KitPage.cpp
     src/ui/KitStage.cpp
     src/ui/PieceStrip.cpp
+    src/ui/KitBrowser.cpp
     src/ui/InfoPanels.cpp)
 
 target_include_directories(LithiumDrums PRIVATE src)
@@ -101,13 +106,16 @@ juce_add_binary_data(LithiumAssets
         assets/kit-renders/china.png
         assets/midi-maps/general-midi.json)
 
-# The importer's built-in mappings for known DrumGizmo kits.
+# The importer's built-in mappings for known kits.
 juce_add_binary_data(LithiumImportMaps
     NAMESPACE   LithiumImportMaps
     HEADER_NAME LithiumImportMaps.h
     SOURCES
         assets/import-maps/DRSKit.json
-        assets/import-maps/MuldjordKit.json)
+        assets/import-maps/MuldjordKit.json
+        assets/import-maps/AVLDrumkits.json
+        assets/import-maps/SalamanderDrumkit.json
+        assets/import-maps/VirtuosityDrums.json)
 
 target_compile_definitions(LithiumDrums
     PUBLIC
@@ -133,15 +141,21 @@ target_link_libraries(LithiumDrums
         juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------
-# DrumGizmo importer
+# Kit importer (DrumGizmo and SFZ)
 
 # A small command-line tool. It compiles the importer and settings sources
 # itself (rather than linking the plugin), so it only needs the core audio
-# modules.
+# modules. KitManifest is there so the importer can check what it wrote by
+# parsing it back.
 juce_add_console_app(LithiumImport PRODUCT_NAME "LithiumImport")
 target_sources(LithiumImport PRIVATE
     tools/importer/ImportMain.cpp
+    src/importer/Importer.cpp
+    src/importer/KitWriter.cpp
     src/importer/DrumGizmoImporter.cpp
+    src/importer/SfzParser.cpp
+    src/importer/SfzImporter.cpp
+    src/engine/KitManifest.cpp
     src/Settings.cpp)
 target_include_directories(LithiumImport PRIVATE src)
 target_compile_definitions(LithiumImport PRIVATE

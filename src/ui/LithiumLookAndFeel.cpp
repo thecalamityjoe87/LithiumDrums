@@ -122,6 +122,13 @@ LithiumLookAndFeel::LithiumLookAndFeel()
     setColour (juce::PopupMenu::highlightedTextColourId, accent);
 
     setColour (juce::Label::textColourId, text);
+
+    setColour (juce::TextEditor::backgroundColourId, raised);
+    setColour (juce::TextEditor::textColourId, text);
+    setColour (juce::TextEditor::outlineColourId, border);
+    setColour (juce::TextEditor::focusedOutlineColourId, accent);
+    setColour (juce::TextEditor::highlightColourId, accent.withAlpha (0.3f));
+    setColour (juce::CaretComponent::caretColourId, accent);
     setColour (juce::Slider::trackColourId, accent);
     setColour (juce::Slider::backgroundColourId, raisedHigh);
     setColour (juce::Slider::thumbColourId, text);

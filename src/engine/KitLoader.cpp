@@ -194,9 +194,16 @@ namespace
             return (int) std::lrint (juce::jlimit (-1.0f, 1.0f, x) * floatScale);
         };
 
-        const auto length = reader->lengthInSamples;
+        // Targets may skip the start of the file (a "start" offset), so
+        // reading begins at the earliest frame any wanted target uses.
+        const std::int64_t length = reader->lengthInSamples;
+        auto firstFrame = length;
 
-        for (std::int64_t pos = 0; pos < length; pos += chunk)
+        for (const auto& t : f.targets)
+            if ((mask & (1u << t.mic)) != 0)
+                firstFrame = std::min (firstFrame, t.start);
+
+        for (std::int64_t pos = firstFrame; pos < length; pos += chunk)
         {
             const auto n = (int) std::min<std::int64_t> (chunk, length - pos);
 
@@ -208,14 +215,15 @@ namespace
 
             for (const auto& t : f.targets)
             {
-                if ((mask & (1u << t.mic)) == 0)
+                if ((mask & (1u << t.mic)) == 0 || pos + n <= t.start)
                     continue;
 
+                const auto skip = (int) std::max<std::int64_t> (0, t.start - pos);   // frames of this chunk before the start
                 const auto channels = layout.samples[t.sample].numChannels;
                 auto* dest = layout.getWritePointer (*stores[(size_t) t.mic], t.sample)
-                           + (size_t) pos * (size_t) channels * (size_t) bytes;
+                           + (size_t) (pos + skip - t.start) * (size_t) channels * (size_t) bytes;
 
-                for (int i = 0; i < n; ++i)
+                for (int i = skip; i < n; ++i)
                 {
                     for (int ch = 0; ch < channels; ++ch, dest += bytes)
                         SampleLayout::pack (dest, bytes, convert (buffers[(size_t) t.fileChannels[(size_t) ch]][(size_t) i]));
@@ -297,7 +305,9 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
     info = {};
     info.credits = manifest.credits;
+    info.id = manifest.id;
     info.folder = folder;
+    info.isPreset = manifest.isPreset;
     info.warnings = manifest.warnings;
 
     for (const auto& [i, m] : juce::enumerate (manifest.mics))
@@ -332,6 +342,9 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         pd.firstArticulation = (int) kit->articulations.size();
         pd.numArticulations = (int) pm.articulations.size();
         pd.defaultChokeNote = pm.chokeNote;
+        pd.defaultGain = juce::Decibels::decibelsToGain (pm.volumeDb, -200.0f);
+        pd.defaultTune = pm.tuneSemitones;
+        pd.defaultDecay = pm.decay;
 
         KitPieceInfo pieceInfo { pm.id, pm.name, pm.role, {}, -1 };
 
@@ -395,8 +408,9 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
     // Every distinct audio file, once. A multichannel file usually feeds
     // every mic of one hit.
+    // A preset's audio lives in its base kit's folder.
     auto plan = std::make_shared<LoadPlan>();
-    plan->folder = folder;
+    plan->folder = manifest.audioFolder;
     plan->numMics = kit->numMics;
 
     std::map<juce::String, size_t> fileIndex;
@@ -419,7 +433,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
                        [&] (size_t i, juce::AudioFormatManager& formats, juce::String& jobError)
                        {
                            const auto& f = plan->files[i];
-                           return readHeader (formats, folder.getChildFile (f.path), f.path, manifest.sampleRate, headers[i], jobError);
+                           return readHeader (formats, plan->folder.getChildFile (f.path), f.path, manifest.sampleRate, headers[i], jobError);
                        }))
         return nullptr;
 
@@ -456,14 +470,21 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
             }
         }
 
-        const auto id = layout->add (s.source.mic, micChannels, header.length);
+        if (s.source.start >= header.length)
+        {
+            error = file.path + " is shorter than its \"start\" offset of " + juce::String (s.source.start) + " frames";
+            return nullptr;
+        }
+
+        const auto id = layout->add (s.source.mic, micChannels, header.length - s.source.start);
         auto& slot = kit->hitSamples[(size_t) (s.hit * kit->numMics + s.source.mic)];
 
         if (slot != invalidSampleId)
             info.warnings.addIfNotAlreadyThere ("Some hits list the same mic twice; the last one is used");
 
         slot = id;
-        file.targets.push_back ({ s.source.mic, id, { channels[0] - 1, (micChannels == 2 ? channels[1] : channels[0]) - 1 } });
+        file.targets.push_back ({ s.source.mic, id, { channels[0] - 1, (micChannels == 2 ? channels[1] : channels[0]) - 1 },
+                                  s.source.start });
     }
 
     plan->layout = layout;

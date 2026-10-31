@@ -1,0 +1,481 @@
+{
+  "comment": "Import mapping for Virtuosity Drums (v0.925). Its full-kit program is evaluated with every mic switched on (CC101-111 at 127), the pitched-down 'epic' layers off (CC113 = 0) and the snares on (CC21 = 0; the second kit has them off). The hand percussion is recorded at 44.1 kHz rather than 48 kHz, so it is left out of these kits. The snare roll (CC1 crossfades) isn't imported. Hi-hat chokes are set here rather than taken from the SFZ's silence-sample groups.",
+  "format": "sfz",
+  "matches": [
+    "02-full-kit.sfz",
+    "Virtuosity Drums.bank.xml"
+  ],
+  "pack": {
+    "id": "virtuosity-drums",
+    "name": "Virtuosity Drums"
+  },
+  "author": "Versilian Studios and Karoryfer Lecolds; performed by Austin McMahon",
+  "sourceUrl": "https://versilian-studios.com/virtuosity-drums/",
+  "license": {
+    "name": "CC0 1.0",
+    "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "shareAlike": false,
+    "files": [
+      "LICENSE",
+      "notes.txt"
+    ]
+  },
+  "credits": "Virtuosity Drums by Versilian Studios LLC and Karoryfer Lecolds, performed by Austin McMahon and recorded at Virtuosity Musical Instruments, Boston. Dedicated to the public domain (CC0); credited here with thanks.",
+  "description": "A contemporary jazz kit with deep dynamics (up to 36 velocity layers) and six mic positions.",
+  "cc": {
+    "1": 31,
+    "4": 0,
+    "21": 0,
+    "71": 0,
+    "101": 127,
+    "102": 127,
+    "103": 127,
+    "104": 127,
+    "105": 127,
+    "106": 127,
+    "107": 127,
+    "108": 127,
+    "109": 127,
+    "110": 127,
+    "111": 127,
+    "113": 0
+  },
+  "exclude": [
+    "*/Samples/perc/*",
+    "Samples/perc/*"
+  ],
+  "audienceView": true,
+  "mics": [
+    {
+      "id": "kick",
+      "name": "Kick",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/kickmic/*"
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/snaremic/*"
+      ]
+    },
+    {
+      "id": "overheads",
+      "name": "Overheads",
+      "role": "overheads",
+      "channels": 2,
+      "samples": [
+        "*Samples/oh/*"
+      ]
+    },
+    {
+      "id": "mid",
+      "name": "Mid",
+      "role": "room",
+      "channels": 2,
+      "volumeDb": -8,
+      "samples": [
+        "*Samples/mid/*"
+      ]
+    },
+    {
+      "id": "room",
+      "name": "Room",
+      "role": "room",
+      "channels": 2,
+      "volumeDb": -8,
+      "samples": [
+        "*Samples/room/*"
+      ]
+    },
+    {
+      "id": "vintage",
+      "name": "Vintage",
+      "role": "room",
+      "channels": 1,
+      "volumeDb": -18,
+      "samples": [
+        "*Samples/lofi/*"
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "id": "kick",
+      "name": "Kick",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 36
+        },
+        {
+          "id": "snares_off",
+          "name": "Snares off",
+          "key": 35
+        }
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 38
+        },
+        {
+          "id": "off_center",
+          "name": "Off-center",
+          "key": 39
+        },
+        {
+          "id": "rimshot",
+          "name": "Rimshot",
+          "key": 40
+        },
+        {
+          "id": "cross_stick",
+          "name": "Cross-stick",
+          "key": 88
+        },
+        {
+          "id": "stick_shot",
+          "name": "Stick shot",
+          "key": 37
+        },
+        {
+          "id": "stick_shot_2",
+          "name": "Stick shot 2",
+          "key": 85
+        },
+        {
+          "id": "muted",
+          "name": "Hand muted",
+          "key": 86
+        },
+        {
+          "id": "half_muted",
+          "name": "Half muted",
+          "key": 87
+        },
+        {
+          "id": "buzz",
+          "name": "Buzz",
+          "key": 93
+        },
+        {
+          "id": "flam",
+          "name": "Flam",
+          "key": 95
+        }
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat",
+      "role": "hihat",
+      "articulations": [
+        {
+          "id": "closed",
+          "name": "Closed",
+          "key": 42,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "pedal",
+          "name": "Pedal",
+          "key": 44,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "half_open",
+          "name": "Half open",
+          "key": 90,
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "three_quarter",
+          "name": "Three-quarter open",
+          "key": 94,
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "open",
+          "name": "Open",
+          "key": 46,
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "splash",
+          "name": "Foot splash",
+          "key": 92,
+          "chokeGroup": "hihat_open"
+        }
+      ]
+    },
+    {
+      "id": "tom",
+      "name": "High Tom",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 48
+        },
+        {
+          "id": "off_center",
+          "name": "Off-center",
+          "key": 50
+        }
+      ]
+    },
+    {
+      "id": "floor",
+      "name": "Low Tom",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 41
+        },
+        {
+          "id": "off_center",
+          "name": "Off-center",
+          "key": 43
+        },
+        {
+          "id": "rimshot",
+          "name": "Rimshot",
+          "key": 45
+        },
+        {
+          "id": "cross_stick",
+          "name": "Cross-stick",
+          "key": 47
+        },
+        {
+          "id": "muted",
+          "name": "Hand muted",
+          "key": 89
+        },
+        {
+          "id": "half_muted",
+          "name": "Half muted",
+          "key": 91
+        }
+      ]
+    },
+    {
+      "id": "crash",
+      "name": "Crash",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 49
+        },
+        {
+          "id": "sizzle",
+          "name": "Sizzle",
+          "key": 57
+        }
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 51
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 53
+        }
+      ]
+    },
+    {
+      "id": "flat_ride",
+      "name": "Flat Ride",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 59
+        },
+        {
+          "id": "crash",
+          "name": "Crash",
+          "key": 55
+        }
+      ]
+    }
+  ],
+  "kits": [
+    {
+      "file": "Programs/02-full-kit.sfz",
+      "id": "virtuosity",
+      "name": "Virtuosity Drums",
+      "tags": [
+        "acoustic",
+        "jazz",
+        "multi-mic"
+      ]
+    },
+    {
+      "file": "Programs/02-full-kit.sfz",
+      "id": "virtuosity-snares-off",
+      "name": "Virtuosity Snares Off",
+      "cc": {
+        "21": 127
+      },
+      "description": "The Virtuosity kit with the snare wires off: a dry, tom-like snare, and no snare buzz from the kick.",
+      "tags": [
+        "acoustic",
+        "jazz",
+        "snares off",
+        "multi-mic"
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "id": "virtuosity-close",
+      "name": "Virtuosity Close",
+      "base": "virtuosity",
+      "description": "Kick, snare and overhead mics only: a tight, modern sound that loads in half the memory.",
+      "tags": [
+        "acoustic",
+        "jazz",
+        "dry"
+      ],
+      "mics": {
+        "mid": {
+          "enabled": false
+        },
+        "room": {
+          "enabled": false
+        },
+        "vintage": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "id": "virtuosity-room",
+      "name": "Virtuosity Room",
+      "base": "virtuosity",
+      "description": "Only the pair of room mics (sE RN17s): the whole kit at a distance.",
+      "tags": [
+        "acoustic",
+        "jazz",
+        "room"
+      ],
+      "mics": {
+        "kick": {
+          "enabled": false
+        },
+        "snare": {
+          "enabled": false
+        },
+        "overheads": {
+          "enabled": false
+        },
+        "mid": {
+          "enabled": false
+        },
+        "vintage": {
+          "enabled": false
+        },
+        "room": {
+          "volumeDb": 0
+        }
+      }
+    },
+    {
+      "id": "virtuosity-ribbon",
+      "name": "Virtuosity Ribbon",
+      "base": "virtuosity",
+      "description": "Only the stereo ribbon mic in front of the kit: warm and dark.",
+      "tags": [
+        "acoustic",
+        "jazz",
+        "vintage"
+      ],
+      "mics": {
+        "kick": {
+          "enabled": false
+        },
+        "snare": {
+          "enabled": false
+        },
+        "overheads": {
+          "enabled": false
+        },
+        "room": {
+          "enabled": false
+        },
+        "vintage": {
+          "enabled": false
+        },
+        "mid": {
+          "volumeDb": 0
+        }
+      }
+    },
+    {
+      "id": "virtuosity-vintage",
+      "name": "Virtuosity Vintage",
+      "base": "virtuosity",
+      "description": "Only the 1950s Shure Hercules: lo-fi, mono and full of character.",
+      "tags": [
+        "acoustic",
+        "vintage",
+        "lofi"
+      ],
+      "mics": {
+        "kick": {
+          "enabled": false
+        },
+        "snare": {
+          "enabled": false
+        },
+        "overheads": {
+          "enabled": false
+        },
+        "mid": {
+          "enabled": false
+        },
+        "room": {
+          "enabled": false
+        },
+        "vintage": {
+          "volumeDb": 0
+        }
+      }
+    }
+  ],
+  "levelDb": -4,
+  "levelComment": "-4 dB on every mic: hard snare hits otherwise peak around +3.5 dBFS."
+}

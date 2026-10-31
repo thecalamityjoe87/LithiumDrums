@@ -1,19 +1,22 @@
-// LithiumImport: converts a downloaded DrumGizmo kit into Lithium Drums kits.
+// LithiumImport: converts a downloaded drum library into a Lithium Drums
+// content pack.
 //
-//   LithiumImport <kit folder or drumkit.xml> [options]
+//   LithiumImport <folder, drumkit.xml or .sfz> [options]
 //
-//   --kits-folder <dir>   where to put the kits (default: the plugin's kits folder)
-//   --mapping <file>      a mapping file (default: built in for DRSKit and MuldjordKit, else automatic)
-//   --zones <n>           velocity zones per articulation, at most (default 8)
-//   --min-rr <n>          round-robins per zone, at least (default 3)
+//   --kits-folder <dir>   where to put the pack (default: the plugin's kits folder)
+//   --mapping <file>      a mapping file (default: built in for known kits, else automatic)
+//   --zones <n>           DrumGizmo: velocity zones per articulation, at most (default 8)
+//   --min-rr <n>          DrumGizmo: round-robins per zone, at least (default 3)
 //   --overwrite           replace kits that are already there
 //   --copy                copy the audio even where a hard link would do
 //
-// A folder imports every drumkit XML in it, so DRSKit's five variants become
-// five kits. See docs/kit-format.md for what the conversion does.
+// DrumGizmo kits and SFZ instruments are recognised by their files. A folder
+// imports everything the mapping (or, without one, the folder) holds: DRSKit
+// becomes one kit and four kit presets, the AVL Drumkits the five Basalt Kits. See
+// docs/kit-format.md for what the conversion does.
 
 #include "Settings.h"
-#include "importer/DrumGizmoImporter.h"
+#include "importer/Importer.h"
 
 #include <iostream>
 
@@ -21,14 +24,15 @@ namespace
 {
     int usage()
     {
-        std::cerr << "usage: LithiumImport <kit folder or drumkit.xml> [--kits-folder <dir>] [--mapping <file>]\n"
+        std::cerr << "usage: LithiumImport <folder, drumkit.xml or .sfz> [--kits-folder <dir>] [--mapping <file>]\n"
                      "                     [--zones <n>] [--min-rr <n>] [--overwrite] [--copy]\n";
         return 2;
     }
 
     juce::String formatBytes (std::int64_t bytes)
     {
-        return juce::String ((double) bytes / (1024.0 * 1024.0 * 1024.0), 2) + " GB";
+        const auto mb = (double) bytes / (1024.0 * 1024.0);
+        return mb >= 1000.0 ? juce::String (mb / 1024.0, 2) + " GB" : juce::String (mb, 1) + " MB";
     }
 }
 
@@ -68,10 +72,14 @@ int main (int argc, char* argv[])
 
     for (const auto& k : kits)
     {
-        std::cout << "  " << k.name << ": " << k.numPieces << " pieces, " << k.numMics << " mics, " << k.numHits
-                  << " hits, " << k.numFiles << " files (" << formatBytes (k.audioBytes)
-                  << (k.linked ? ", hard-linked where possible" : ", copied") << ")\n"
-                  << "    -> " << k.folder.getFullPathName() << std::endl;
+        std::cout << "  " << k.name << (k.isPreset ? " (preset)" : "") << ": " << k.numPieces << " pieces, "
+                  << k.numMics << " mics, " << k.numHits << " hits, " << formatBytes (k.ramBytes) << " in RAM";
+
+        if (! k.isPreset)
+            std::cout << ", " << k.numFiles << " files (" << formatBytes (k.audioBytes)
+                      << (k.linked ? " on disk, hard-linked where possible" : " on disk, copied") << ")";
+
+        std::cout << "\n    -> " << k.folder.getFullPathName() << std::endl;
     }
 
     if (result.failed())
