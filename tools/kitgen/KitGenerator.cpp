@@ -498,13 +498,15 @@ std::vector<PieceSpec> makeKit()
           { { "hihat", 0.15f, 1.0f }, { "kickIn", 0.04f, 2.0f }, { "tom1", 0.08f, 1.2f } },
           { A { "center", "Center", 0.7, [] (const P& p) { return snare (p, 0.7, 1.0f, 0.55f, 0.0f); } },
             A { "rimshot", "Rimshot", 0.8, [] (const P& p) { return snare (p, 0.8, 1.2f, 0.6f, 0.45f); } },
-            A { "sidestick", "Sidestick", 0.3, [] (const P& p) { return sidestick (p, 0.3); } } }, false },
+            A { "sidestick", "Sidestick", 0.3, [] (const P& p) { return sidestick (p, 0.3); } },
+            A { "off_center", "Off center", 0.7, [] (const P& p) { return snare (p, 0.7, 0.7f, 0.7f, 0.25f); } } }, false },
 
         { "hihat", "Lithium Hats 14\"", 0.55f, 0.8f, 0.4f, { "hihat" },
           { { "snareTop", 0.12f, 1.0f } },
           { A { "closed", "Closed", 0.35, [] (const P& p) { return hat (p, 0.35, 0.045, 0.0f); }, nullptr, "hihat-open" },
             A { "open", "Open", 1.3, [] (const P& p) { return hat (p, 1.3, 0.55, 0.0f); }, "hihat-open", nullptr },
-            A { "pedal", "Pedal", 0.35, [] (const P& p) { return hat (p, 0.35, 0.03, 0.5f); }, nullptr, "hihat-open" } }, true },
+            A { "pedal", "Pedal", 0.35, [] (const P& p) { return hat (p, 0.35, 0.03, 0.5f); }, nullptr, "hihat-open" },
+            A { "half_open", "Half open", 0.8, [] (const P& p) { return hat (p, 0.8, 0.2, 0.0f); }, "hihat-open", nullptr } }, true },
 
         { "tom1", "Lithium Rack Tom 10x8", 0.15f, 0.5f, 0.45f, { "tom1" },
           { { "tom2", 0.1f, 1.0f }, { "snareTop", 0.06f, 1.5f } },

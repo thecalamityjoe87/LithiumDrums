@@ -81,11 +81,14 @@ int main (int argc, char* argv[])
     check (desc.isInstrument, "registers as an instrument");
 
     // The plugin runs in this process, so this points it at a kits folder
-    // holding only the synthetic test kit, which a new instance then loads.
+    // holding only the synthetic test kit, which a new instance then loads,
+    // with the Kit default MIDI map whatever the user has set as default.
    #if JUCE_WINDOWS
     _putenv_s ("LITHIUM_KITS_FOLDER", LITHIUM_TEST_KITS_FOLDER);
+    _putenv_s ("LITHIUM_MIDI_MAP", "kit-default");
    #else
     setenv ("LITHIUM_KITS_FOLDER", LITHIUM_TEST_KITS_FOLDER, 1);
+    setenv ("LITHIUM_MIDI_MAP", "kit-default", 1);
    #endif
 
     juce::AudioPluginFormatManager formats;

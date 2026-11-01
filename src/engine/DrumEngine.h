@@ -53,6 +53,24 @@ struct EngineFeedback
     // even if the UI polls slower than notes arrive.
     std::array<std::atomic<std::uint32_t>, maxPieces> pieceHits {};   // by piece index in the current kit
     std::atomic<int> activeVoices { 0 };
+
+    // MIDI input, for the MIDI panel and MIDI learn. The latest note-on,
+    // packed as (count << 16) | (velocity << 8) | note, so the UI can tell a
+    // new hit of the same note from the last one. 0 = none yet.
+    std::atomic<std::uint32_t> lastNote { 0 };
+
+    // The hi-hat pedal's openness (0 = closed, 1 = open) and the strike
+    // positions (0 = centre, 1 = edge), by PositionSource. -1 = not received yet.
+    std::atomic<float> hihatOpenness { -1.0f };
+    std::array<std::atomic<float>, numPositionSources> position { -1.0f, -1.0f, -1.0f };
+
+    static std::optional<std::pair<int, int>> unpackNote (std::uint32_t bits) noexcept
+    {
+        if (bits == 0)
+            return std::nullopt;
+
+        return std::pair { (int) (bits & 0x7f), (int) ((bits >> 8) & 0x7f) };   // note, velocity
+    }
 };
 
 /** The voice pool and everything that decides what plays.
@@ -75,7 +93,16 @@ public:
 
     void noteOn (Kit&, int note, int velocity, const EngineParams&) noexcept;
     void polyAftertouch (Kit&, int note, int pressure) noexcept;
-    void trigger (Kit&, int articulation, int velocity, const EngineParams&) noexcept;
+
+    /** The hi-hat pedal and strike position controllers, as the kit's note
+        table names them. Other controllers are ignored. */
+    void controlChange (Kit&, int controller, int value) noexcept;
+
+    /** Plays one articulation. gainScale scales the whole hit (for blends
+        between openness or position steps); with chokeOthers false the hit
+        doesn't apply its chokes (the caller already has). */
+    void trigger (Kit&, int articulation, int velocity, const EngineParams&,
+                  float gainScale = 1.0f, bool chokeOthers = true) noexcept;
 
     /** Mixes all voices into the buses: close mics into the pieces' channels,
         overhead and room mics into the mic bus. numSamples may be any
@@ -88,6 +115,9 @@ public:
 
 private:
     int findZone (const Kit&, const Articulation&, int velocity) const noexcept;
+    void playLadder (Kit&, const Ladder&, float value, int velocity, const EngineParams&) noexcept;
+    void applyChokes (const Kit&, const Articulation&) noexcept;
+    void dampHats (const Kit&, float openness) noexcept;
     /** Returns the round-robin that was started (within its zone), or -1 if
         the pool had no free voice. */
     int startVoice (Kit&, const Articulation&, int articulationIndex, int zoneIndex, float gain,
@@ -102,6 +132,12 @@ private:
     std::uint64_t nextSerial = 0;
     double sampleRate = 44100.0;
     juce::Random random;
+
+    // Controller state, kept across kit changes: it's where the pedal is,
+    // not something about the kit. -1 = not received yet.
+    float hatOpenness = -1.0f;
+    std::array<float, numPositionSources> position { -1.0f, -1.0f, -1.0f };
+    std::uint32_t noteCount = 0;
 
     juce::AudioBuffer<float> scratch;      // resampler source frames
     juce::AudioBuffer<float> streamOut;    // one stream's output before it's mixed

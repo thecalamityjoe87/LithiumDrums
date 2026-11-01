@@ -78,6 +78,7 @@ M = {
     'rubber': mat('rubber', (0.012, 0.012, 0.013), rough=0.85),
     'plastic': mat('plastic', (0.02, 0.02, 0.022), rough=0.35),
     'cast': mat('cast', (0.42, 0.43, 0.44), metal=1.0, rough=0.42),   # cast aluminium pedal parts
+    'wood': mat('wood', (0.78, 0.56, 0.34), rough=0.6),                 # bare maple inside the shell
 }
 
 def smooth(o):
@@ -125,6 +126,10 @@ def empty(name, loc, rot):
     coll(name).objects.link(e); return e
 
 # ---------- drum ----------
+# The kick's port: about a quarter of the head across, right of centre and a
+# little low, as on most ported front heads (drum-local x, y on the head).
+PORT_R, PORT_AT = 0.075, (0.15, -0.05)
+
 def drum(name, r, d, loc, rot, lugs, rows=1, shell='finish', reso=False, port=False, wood_hoop=False):
     e = empty(name, loc, rot)
     sh = cyl(r, d, (0, 0, 0), m=shell, parent=e, cname=name, verts=128, fill='NOTHING')
@@ -132,7 +137,13 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='finish', reso=False, port=Fa
     for side in (1, -1):
         z = side * d / 2
         head_m = 'reso' if (reso and side == 1) else 'head'
-        cyl(r - 0.002, 0.003, (0, 0, z), m=head_m, parent=e, cname=name, verts=128)
+        head = cyl(r - 0.002, 0.003, (0, 0, z), m=head_m, parent=e, cname=name, verts=128)
+        if port and side == 1:
+            # A real hole in the front head, so the inside of the drum shows through it.
+            cutter = cyl(PORT_R, 0.03, (*PORT_AT, z), parent=e, cname=name, verts=96)
+            cutter.hide_render = True
+            cutter.hide_viewport = True
+            cut = head.modifiers.new('port', 'BOOLEAN'); cut.operation = 'DIFFERENCE'; cut.object = cutter
         if wood_hoop:
             h = cyl(r + 0.012, 0.03, (0, 0, z - side * 0.006), m='finish', parent=e, cname=name, verts=128, fill='NOTHING')
             s2 = h.modifiers.new('s', 'SOLIDIFY'); s2.thickness = 0.014
@@ -161,8 +172,20 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='finish', reso=False, port=Fa
                     box((0.012, 0.02, 0.03), (cx * (r + 0.018), cy * (r + 0.018), s * (d / 2 - 0.004)), rot=(0, 0, a), m='chrome', parent=e, cname=name)
     if port:
         z = d / 2 + 0.003
-        cyl(0.05, 0.002, (0.11, -0.12, z), m='black', parent=e, cname=name)
-        torus(0.051, 0.004, (0.11, -0.12, z), m='chrome', parent=e, cname=name)
+        torus(PORT_R + 0.001, 0.004, (*PORT_AT, z), m='chrome', parent=e, cname=name)
+        # What shows through the port: the bare wood inside the shell, with
+        # the lugs' nuts and bolt ends on it.
+        cyl(r - 0.0065, d - 0.004, (0, 0, 0), m='wood', parent=e, cname=name, verts=128, fill='NOTHING')
+        # Each lug is bolted through the shell: a hex nut and the bolt's end
+        # on the inside wall, top and bottom of the lug.
+        hl = d * 0.22
+        for i in range(lugs):
+            ang = 2 * math.pi * (i + 0.5) / lugs
+            cx, cy = math.cos(ang), math.sin(ang)
+            # A close pair of bolts (3 cm apart) at each end of the lug.
+            for zc in (0.07, 0.04, -0.10, -0.13):
+                cyl(0.011, 0.008, (cx * (r - 0.010), cy * (r - 0.010), zc), rot=(0, math.pi / 2, ang), m='chrome', parent=e, cname=name, verts=6)
+                cyl(0.004, 0.008, (cx * (r - 0.017), cy * (r - 0.017), zc), rot=(0, math.pi / 2, ang), m='chrome', parent=e, cname=name, verts=12)
     return e
 
 # ---------- cymbal ----------
@@ -219,7 +242,10 @@ top = cymbal('hihat', 0.178, (0, 0, 0.945), None, felt=False, parent=hh, cname='
 cyl(0.004, 0.25, (0, 0, 1.02), m='chrome', parent=hh, cname='hihat', verts=12)
 cyl(0.022, 0.014, (0, 0, 0.985), m='black', parent=hh, cname='hihat', verts=32)
 
-KIT['crash'] = cymbal('crash', 0.229, (0.44, -0.02, 1.36), (R(-17), R(-10), 0))
+CRASH1 = ((0.34, 0.04, 1.28), (R(-17), R(-10), 0))   # over the rack tom, at crash 2's height
+KIT['crash'] = cymbal('crash', 0.229, *CRASH1)
+CRASH2 = ((-0.36, 0.06, 1.28), (R(-18), R(8), 0))   # over the rack tom, toward the ride, at crash 1's height
+KIT['crash2'] = cymbal('crash2', 0.229, *CRASH2)
 KIT['ride'] = cymbal('ride', 0.267, (-0.66, 0.1, 1.06), (R(-12), R(8), 0))
 # The china hangs upside down, level front to back and leaning in toward the
 # kit's centre. Tilting it toward the drummer like the other cymbals turns it
@@ -347,7 +373,9 @@ def cymbal_stand(x, y, height, loc, rot, radius, china=False, spread=0.3, facing
     ring(pivot - arm * 0.19, 0.017, 0.06, axis=arm, m='chrome')    # counterweight
 
 # Cymbal stands (positions chosen so the booms reach in over the kit).
-cymbal_stand(0.86, -0.12, 1.02, (0.44, -0.02, 1.36), (R(-17), R(-10), 0), 0.229)
+cymbal_stand(0.66, -0.20, 1.06, *CRASH1, 0.229)
+# In the gap between the kick and the floor tom, in front of the kit.
+cymbal_stand(-0.62, -0.30, 1.06, *CRASH2, 0.229, facing=90)
 cymbal_stand(-0.98, 0.02, 0.86, (-0.66, 0.1, 1.06), (R(-12), R(8), 0), 0.267, facing=150)
 cymbal_stand(-1.30, 0.50, 1.02, (-1.02, 0.36, 1.32), CHINA_ROT, 0.229, china=True)
 
@@ -459,6 +487,13 @@ area((-1.6, -2.2, 3.0), 520, 2.2)
 area((2.2, -1.6, 1.8), 160, 1.6, (0.85, 0.92, 1.0))
 area((0.4, 2.4, 2.6), 650, 1.4, (1.0, 0.95, 0.88))
 
+# A small warm light inside the kick, behind the front head, so the wood
+# inside shows through the port as it does in studio photos. The shell
+# encloses it, so it lights nothing else.
+ld = bpy.data.lights.new('KickInside', 'POINT'); ld.energy = 6.0; ld.shadow_soft_size = 0.05; ld.color = (1.0, 0.9, 0.78)
+o = bpy.data.objects.new('KickInside', ld); o.location = (0.05, -0.12, 0.36)
+scn.collection.objects.link(o)
+
 cd = bpy.data.cameras.new('C'); cd.lens = 31
 cam = bpy.data.objects.new('C', cd); scn.collection.objects.link(cam); scn.camera = cam
 cam.location = (-0.12, -3.4, 2.05)
@@ -472,7 +507,10 @@ def render(path):
 if MODE == 'preview':
     render(os.path.join(OUT, 'preview.png'))
 else:
-    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'ride', 'china']
+    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride', 'china']
+    # only=base,crash2 re-renders just those layers (the others keep their renders).
+    if 'only' in args:
+        layers = [L for L in layers if L in args['only'].split(',')]
     every = [o for o in scn.objects if o.type in ('MESH',)]
     for L in layers:
         mine = set(COLL[L].all_objects)
@@ -485,7 +523,7 @@ else:
 
 if MODE == 'final':
     render(os.path.join(OUT, 'full.png'))
-    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'ride', 'china']
+    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride', 'china']
     pal = {}
     for i, L in enumerate(layers):
         c = ((i * 37 % 10) / 9.0, (i * 53 % 10) / 9.0, ((i * 71) % 10) / 9.0)

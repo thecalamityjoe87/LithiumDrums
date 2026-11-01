@@ -1,7 +1,9 @@
 #pragma once
 
+#include "Articulations.h"
 #include "InMemorySampleSource.h"
 #include "KitSchema.h"
+#include "MidiMap.h"
 
 #include <juce_core/juce_core.h>
 
@@ -43,12 +45,36 @@ struct Zone
     int firstHit, numHits;       // the zone's round-robins, in Kit::hitSamples
 };
 
+/** What a hit's chokes do to the ringing hits of its own piece. */
+enum class SelfChoke : std::uint8_t
+{
+    all,         // drums: as the kit says
+    none,        // cymbals: the new hit adds to the ringing one (only grabs choke)
+    moreOpen     // hi-hats: closing the hats stops the hits that rang more open
+};
+
 struct Articulation
 {
     int piece;
     int firstZone, numZones;     // in Kit::zones, sorted by velocity
     std::uint32_t chokeGroupMask;  // groups this articulation belongs to
     std::uint32_t chokesMask;      // groups it chokes when played
+    SelfChoke selfChoke;         // what its chokes do to its own piece's ringing hits (see KitLoader)
+    float hatLevel;              // hi-hats: how open it leaves the hats (articulations::hatChokeLevel)
+    float openness;              // hi-hats: its step on the openness ladder, -1 = not on it
+    HatStroke stroke;            // hi-hats: which openness ladder it's on
+};
+
+/** The steps a continuous controller moves between: a hi-hat's openness
+    levels, or a drum's strike positions. Sorted by value, at most one
+    articulation per value. */
+struct Ladder
+{
+    static constexpr int maxSteps = 8;
+
+    int numSteps = 0;
+    std::array<int, maxSteps> articulation {};   // index into Kit::articulations
+    std::array<float, maxSteps> value {};        // 0..1
 };
 
 struct PieceData
@@ -63,11 +89,12 @@ struct PieceData
     float defaultGain = 1.0f;    // linear
     float defaultTune = 0.0f;    // semitones
     float defaultDecay = 1.0f;   // 0..1, multiplies the Decay parameter
-};
 
-struct NoteTarget
-{
-    int articulation = -1;       // index into Kit::articulations, -1 = unmapped note
+    // What the hi-hat pedal and the position controllers move between.
+    std::array<Ladder, 2> hatLadders {};   // [0] tip (bow) hits, [1] shank (edge) hits
+    Ladder positionLadder {};
+
+    const Ladder& hatLadder (HatStroke s) const noexcept   { return hatLadders[s == HatStroke::shank ? 1 : 0]; }
 };
 
 class Kit
@@ -85,7 +112,11 @@ public:
     std::vector<PieceData> pieces;               // at most maxPieces
     std::vector<Articulation> articulations;
     std::vector<Zone> zones;
-    std::array<NoteTarget, 128> noteMap {};
+
+    // Which articulation each MIDI note plays. Built by the loader from the
+    // map chosen when the load was requested; when the map changes, the
+    // processor sends a new table to the audio thread (see NoteTable).
+    NoteTable notes;
 
     // One SampleId per hit per mic: hitSamples[hit * numMics + mic], with
     // invalidSampleId where that mic has no recording of the hit.
@@ -186,7 +217,7 @@ struct KitArticulationInfo
 {
     juce::String id, name;
     std::vector<KitZoneInfo> zones;   // sorted by velocity
-    juce::Array<int> notes;           // the MIDI notes that play it
+    ArticulationTraits traits;        // openness and strike position, if it's a step of either
 };
 
 struct KitPieceInfo
@@ -197,6 +228,26 @@ struct KitPieceInfo
     int defaultChokeNote = -1;
     int firstArticulation = 0;        // index of the first one in the kit's (flattened) articulations
     bool hasDirectSignal = true;      // false if no mic that feeds the drum channels recorded it
+    std::array<int, 2> hatSteps {};   // steps on the tip and shank openness ladders
+    int positionSteps = 0;            // steps on the strike position ladder
+
+    /** Whether an articulation of this piece can follow the hi-hat pedal or a position controller. */
+    bool canFollow (int articulation, Follow f) const noexcept
+    {
+        if (! juce::isPositiveAndBelow (articulation, (int) articulations.size()))
+            return false;
+
+        const auto& t = articulations[(size_t) articulation].traits;
+
+        switch (f)
+        {
+            case Follow::pedal:    return t.openness >= 0.0f && hatSteps[t.stroke == HatStroke::shank ? 1 : 0] > 1;
+            case Follow::position: return t.position >= 0.0f && positionSteps > 1 && positionSourceFor (role).has_value();
+            case Follow::none:     break;
+        }
+
+        return false;
+    }
 };
 
 struct KitMicInfo
@@ -213,6 +264,8 @@ struct KitInfo
     KitCredits credits;
     juce::String id;             // the kit's id (see docs/kit-format.md), saved with projects
     juce::File folder;
+    std::uint64_t serial = 0;    // the Kit's serial, for sending it a new NoteTable
+    std::vector<MidiMapEntry> kitMidiMap;           // the kit's own default map (empty = it has none)
     bool isPreset = false;
     std::vector<KitPieceInfo> pieces;
     std::vector<KitMicInfo> mics;
@@ -244,9 +297,10 @@ struct KitInfo
 };
 
 /** Assigns pieces to stage slots by role: each slot takes the nth piece of
-    its role, in kit order. Pieces left over get no slot (they still play and
-    still get a strip); slots left over are shown dimmed. */
-inline std::array<int, numStageSlots> assignStageSlots (const std::vector<PieceRole>& roles)
+    its role, in kit order. Splashes (splash[p], if given) don't count as
+    crashes, as in the MIDI maps. Pieces left over get no slot (they still
+    play and still get a strip); slots left over are shown dimmed. */
+inline std::array<int, numStageSlots> assignStageSlots (const std::vector<PieceRole>& roles, const std::vector<bool>& splash = {})
 {
     std::array<int, numStageSlots> result;
     result.fill (-1);
@@ -257,6 +311,9 @@ inline std::array<int, numStageSlots> assignStageSlots (const std::vector<PieceR
 
         for (size_t p = 0; p < roles.size(); ++p)
         {
+            if (s.role == PieceRole::crash && p < splash.size() && splash[p])
+                continue;
+
             if (roles[p] == s.role && seen++ == s.nth)
             {
                 result[(size_t) index (s.slot)] = (int) p;

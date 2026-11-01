@@ -15,9 +15,9 @@ namespace
         return module.getLocalBounds().reduced (12, 0).withTrimmedTop (32).withTrimmedBottom (10);
     }
 
-    juce::String noteName (int note)
+    juce::String noteLabel (int note)
     {
-        return juce::String (note) + " (" + juce::MidiMessage::getMidiNoteName (note, true, true, 3) + ")";
+        return juce::String (note) + " (" + noteName (note) + ")";
     }
 }
 
@@ -260,6 +260,7 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
         addAndMakeVisible (c);
 
     processor.addChangeListener (this);
+    processor.getMidiMapBroadcaster().addChangeListener (this);
     processor.getSelection().addListener (this);
     updateKitInfo();
     startTimerHz (30);
@@ -268,6 +269,7 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
 EditPage::~EditPage()
 {
     processor.getSelection().removeListener (this);
+    processor.getMidiMapBroadcaster().removeChangeListener (this);
     processor.removeChangeListener (this);
 }
 
@@ -279,9 +281,12 @@ const KitPieceInfo* EditPage::currentPiece() const
     return &shownKit->pieces[(size_t) piece];
 }
 
-void EditPage::changeListenerCallback (juce::ChangeBroadcaster*)
+void EditPage::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
-    updateKitInfo();
+    if (source == &processor.getMidiMapBroadcaster())
+        showArticulation (articulation);   // only the notes in the zone strip's title change
+    else
+        updateKitInfo();
 }
 
 void EditPage::selectedPieceChanged (int p)
@@ -413,10 +418,13 @@ void EditPage::showArticulation (int a)
     const auto& art = info->articulations[(size_t) a];
     zoneMap.setArticulation (&art, theme::groupColour (lithium::info (info->role).group));
 
+    // The notes that play it with the current MIDI map.
     juce::StringArray notes;
+    const auto table = processor.getNoteTable();
 
-    for (const auto n : art.notes)
-        notes.add (noteName (n));
+    for (int n = 0; n < 128; ++n)
+        if (table.targets[(size_t) n].articulation == info->firstArticulation + a)
+            notes.add (noteLabel (n));
 
     // (juce::String reads plain char strings as ASCII, so the UTF-8 dot is marked as such.)
     zonesModule.setTitle ("Zones" + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + art.name + "   MIDI " + (notes.isEmpty() ? juce::String ("not mapped") : notes.joinIntoString (", ")));

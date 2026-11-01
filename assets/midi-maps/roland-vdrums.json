@@ -1,0 +1,40 @@
+{
+  "format": "lithium-midi-map",
+  "version": 1,
+  "id": "roland-vdrums",
+  "name": "Roland V-Drums",
+  "description": "The factory note map of Roland V-Drums modules (TD-17, TD-27, TD-50 and others). Hi-hat hits follow the pedal (CC4); snare, tom and ride hits follow positional sensing.",
+  "controllers": {
+    "hihatPedal": 4,
+    "pedalInverted": false,
+    "snarePosition": 16,
+    "ridePosition": 17,
+    "tomPosition": 18
+  },
+  "notes": [
+    {"note": 22, "role": "hihat", "articulation": "closed_edge", "follow": "pedal"},
+    {"note": 26, "role": "hihat", "articulation": "open_edge", "follow": "pedal"},
+    {"note": 36, "role": "kick", "articulation": "hit"},
+    {"note": 37, "role": "snare", "articulation": "sidestick"},
+    {"note": 38, "role": "snare", "articulation": "center", "follow": "position"},
+    {"note": 39, "role": "toms", "nth": 3, "articulation": "rimshot"},
+    {"note": 40, "role": "snare", "articulation": "rimshot"},
+    {"note": 41, "role": "toms", "nth": 3, "articulation": "center", "follow": "position"},
+    {"note": 42, "role": "hihat", "articulation": "closed", "follow": "pedal"},
+    {"note": 43, "role": "toms", "nth": 2, "articulation": "center", "follow": "position"},
+    {"note": 44, "role": "hihat", "articulation": "pedal"},
+    {"note": 45, "role": "toms", "nth": 1, "articulation": "center", "follow": "position"},
+    {"note": 46, "role": "hihat", "articulation": "open", "follow": "pedal"},
+    {"note": 47, "role": "toms", "nth": 1, "articulation": "rimshot"},
+    {"note": 48, "role": "toms", "articulation": "center", "follow": "position"},
+    {"note": 49, "role": "crash", "articulation": "bow"},
+    {"note": 50, "role": "toms", "articulation": "rimshot"},
+    {"note": 51, "role": "ride", "articulation": "bow", "follow": "position"},
+    {"note": 52, "role": "crash", "nth": 1, "articulation": "edge"},
+    {"note": 53, "role": "ride", "articulation": "bell"},
+    {"note": 55, "role": "crash", "articulation": "edge"},
+    {"note": 57, "role": "crash", "nth": 1, "articulation": "bow"},
+    {"note": 58, "role": "toms", "nth": 2, "articulation": "rimshot"},
+    {"note": 59, "role": "ride", "articulation": "edge"}
+  ]
+}

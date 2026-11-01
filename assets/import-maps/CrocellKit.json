@@ -1,0 +1,449 @@
+{
+  "comment": "Import mapping for DrumGizmo's CrocellKit 1.1, the kit of the Danish metal band Crocell. Left/right in piece names are as seen by the drummer (as in the kit's instrument names); stereo mics and pans are from the audience's side, to match the kit stage. The full variant is the kit; the default, small and tiny variants become presets of it.",
+  "matches": [
+    "CrocellKit"
+  ],
+  "pack": {
+    "id": "drumgizmo-crocellkit",
+    "name": "CrocellKit"
+  },
+  "variants": {
+    "CrocellKit_full.xml": {
+      "name": "CrocellKit Full",
+      "id": "crocellkit-full",
+      "midimap": "Midimap_full.xml",
+      "tags": [
+        "acoustic",
+        "metal",
+        "rock",
+        "multi-mic"
+      ]
+    },
+    "CrocellKit_default.xml": {
+      "name": "CrocellKit",
+      "id": "crocellkit",
+      "midimap": "Midimap_default.xml",
+      "presetOf": "CrocellKit_full.xml",
+      "tags": [
+        "acoustic",
+        "metal",
+        "rock",
+        "multi-mic"
+      ],
+      "description": "The rock kit: double kick, four toms, three crashes, two splashes, two chinas and a ride."
+    },
+    "CrocellKit_small.xml": {
+      "name": "CrocellKit Small",
+      "id": "crocellkit-small",
+      "midimap": "Midimap_small.xml",
+      "presetOf": "CrocellKit_full.xml",
+      "tags": [
+        "acoustic",
+        "rock",
+        "multi-mic"
+      ],
+      "description": "CrocellKit with fewer cymbals: two crashes, two splashes, a china and the ride."
+    },
+    "CrocellKit_tiny.xml": {
+      "name": "CrocellKit Tiny",
+      "id": "crocellkit-tiny",
+      "midimap": "Midimap_tiny.xml",
+      "presetOf": "CrocellKit_full.xml",
+      "tags": [
+        "acoustic",
+        "rock",
+        "multi-mic"
+      ],
+      "description": "A plain rock kit from CrocellKit: one kick, two toms, a floor tom, two crashes, a china and the ride."
+    }
+  },
+  "author": "Lars Muldjord (DrumGizmo)",
+  "sourceUrl": "https://drumgizmo.org/wiki/doku.php?id=kits:crocellkit",
+  "license": {
+    "name": "CC BY 4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "files": [
+      "README.md"
+    ]
+  },
+  "credits": "Drum samples provided by DrumGizmo.org. CrocellKit: the kit of Crocell (crocell.dk), set up by their drummer Andreas, mic setup by Jacob Olsen of JBOSound (jbosound.com), sampled, edited and prepared by Lars Muldjord, 2017-2018.",
+  "description": "A big metal and rock kit with a double kick, four toms, three crashes, two splashes, two chinas and a ride, sampled at the 2018 sessions of Crocell's album Relics.",
+  "levelDb": -9,
+  "mics": [
+    {
+      "id": "kick_in",
+      "name": "Kick In",
+      "role": "close",
+      "channels": [
+        "KDrumInside"
+      ]
+    },
+    {
+      "id": "kick_out",
+      "name": "Kick Out",
+      "role": "close",
+      "channels": [
+        "KDrumOutside"
+      ]
+    },
+    {
+      "id": "snare_top",
+      "name": "Snare Top",
+      "role": "close",
+      "channels": [
+        "SnareTop"
+      ],
+      "pan": 0.15
+    },
+    {
+      "id": "snare_bottom",
+      "name": "Snare Btm",
+      "role": "close",
+      "channels": [
+        "SnareBottom"
+      ],
+      "pan": 0.15
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat",
+      "role": "close",
+      "channels": [
+        "Hihat"
+      ],
+      "pan": 0.45
+    },
+    {
+      "id": "tom1",
+      "name": "Tom 1",
+      "role": "close",
+      "channels": [
+        "Tom1"
+      ],
+      "pan": 0.3
+    },
+    {
+      "id": "tom2",
+      "name": "Tom 2",
+      "role": "close",
+      "channels": [
+        "Tom2"
+      ],
+      "pan": 0.1
+    },
+    {
+      "id": "floor1",
+      "name": "Floor 1",
+      "role": "close",
+      "channels": [
+        "FTom1"
+      ],
+      "pan": -0.2
+    },
+    {
+      "id": "floor2",
+      "name": "Floor 2",
+      "role": "close",
+      "channels": [
+        "FTom2"
+      ],
+      "pan": -0.35
+    },
+    {
+      "id": "ride",
+      "name": "Ride",
+      "role": "close",
+      "channels": [
+        "Ride"
+      ],
+      "pan": -0.45
+    },
+    {
+      "id": "overheads",
+      "name": "Overheads",
+      "role": "overheads",
+      "channels": [
+        "OHRight",
+        "OHLeft"
+      ]
+    },
+    {
+      "id": "oh_center",
+      "name": "OH Center",
+      "role": "overheads",
+      "channels": [
+        "OHCenter"
+      ]
+    },
+    {
+      "id": "ambience",
+      "name": "Ambience",
+      "role": "room",
+      "channels": [
+        "AmbRight",
+        "AmbLeft"
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "id": "kick",
+      "name": "Kick",
+      "role": "kick",
+      "articulations": [
+        {
+          "instrument": "KDrumR",
+          "id": "hit",
+          "name": "Hit"
+        }
+      ]
+    },
+    {
+      "id": "kick_left",
+      "name": "Kick L",
+      "role": "kick",
+      "articulations": [
+        {
+          "instrument": "KDrumL",
+          "id": "hit",
+          "name": "Hit"
+        }
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare",
+      "role": "snare",
+      "articulations": [
+        {
+          "instrument": "Snare",
+          "id": "center",
+          "name": "Center"
+        },
+        {
+          "instrument": "SnareRimShot",
+          "id": "rimshot",
+          "name": "Rimshot"
+        },
+        {
+          "instrument": "SnareRim",
+          "id": "sidestick",
+          "name": "Rim click"
+        },
+        {
+          "instrument": "SnareRest",
+          "id": "rest",
+          "name": "Rest"
+        }
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat",
+      "role": "hihat",
+      "articulations": [
+        {
+          "instrument": "HihatClosed",
+          "id": "closed",
+          "name": "Closed",
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "instrument": "HihatPedalHit",
+          "id": "tight",
+          "name": "Pedal hit",
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "instrument": "HihatPedal",
+          "id": "pedal",
+          "name": "Pedal",
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "instrument": "HihatClosedNoPedal",
+          "id": "quarter_open",
+          "name": "Loose",
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "instrument": "HihatSemiOpen",
+          "id": "half_open",
+          "name": "Semi-open",
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "instrument": "HihatOpen",
+          "id": "open",
+          "name": "Open",
+          "chokeGroup": "hihat_open"
+        }
+      ]
+    },
+    {
+      "id": "tom1",
+      "name": "Tom 1",
+      "role": "tom",
+      "articulations": [
+        {
+          "instrument": "Tom1",
+          "id": "center",
+          "name": "Center"
+        }
+      ]
+    },
+    {
+      "id": "tom2",
+      "name": "Tom 2",
+      "role": "tom",
+      "articulations": [
+        {
+          "instrument": "Tom2",
+          "id": "center",
+          "name": "Center"
+        }
+      ]
+    },
+    {
+      "id": "floor1",
+      "name": "Floor Tom 1",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "instrument": "FTom1",
+          "id": "center",
+          "name": "Center"
+        }
+      ]
+    },
+    {
+      "id": "floor2",
+      "name": "Floor Tom 2",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "instrument": "FTom2",
+          "id": "center",
+          "name": "Center"
+        }
+      ]
+    },
+    {
+      "id": "crash_left",
+      "name": "Crash L",
+      "role": "crash",
+      "articulations": [
+        {
+          "instrument": "CrashL",
+          "id": "hit",
+          "name": "Hit"
+        },
+        {
+          "instrument": "CrashLStopped",
+          "id": "choke",
+          "name": "Choked"
+        }
+      ]
+    },
+    {
+      "id": "crash_right",
+      "name": "Crash R",
+      "role": "crash",
+      "articulations": [
+        {
+          "instrument": "CrashR",
+          "id": "hit",
+          "name": "Hit"
+        },
+        {
+          "instrument": "CrashRStopped",
+          "id": "choke",
+          "name": "Choked"
+        }
+      ]
+    },
+    {
+      "id": "crash3",
+      "name": "Crash 3",
+      "role": "crash",
+      "articulations": [
+        {
+          "instrument": "CrashRXtra",
+          "id": "hit",
+          "name": "Hit"
+        }
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride",
+      "role": "ride",
+      "articulations": [
+        {
+          "instrument": "RideR",
+          "id": "bow",
+          "name": "Bow"
+        },
+        {
+          "instrument": "RideRBell",
+          "id": "bell",
+          "name": "Bell"
+        }
+      ]
+    },
+    {
+      "id": "splash_left",
+      "name": "Splash L",
+      "role": "crash",
+      "articulations": [
+        {
+          "instrument": "SplashL",
+          "id": "hit",
+          "name": "Hit"
+        }
+      ]
+    },
+    {
+      "id": "splash_right",
+      "name": "Splash R",
+      "role": "crash",
+      "articulations": [
+        {
+          "instrument": "SplashR",
+          "id": "hit",
+          "name": "Hit"
+        }
+      ]
+    },
+    {
+      "id": "china_left",
+      "name": "China L",
+      "role": "china",
+      "articulations": [
+        {
+          "instrument": "ChinaL",
+          "id": "hit",
+          "name": "Hit"
+        }
+      ]
+    },
+    {
+      "id": "china_right",
+      "name": "China R",
+      "role": "china",
+      "articulations": [
+        {
+          "instrument": "ChinaR",
+          "id": "hit",
+          "name": "Hit"
+        }
+      ]
+    }
+  ]
+}

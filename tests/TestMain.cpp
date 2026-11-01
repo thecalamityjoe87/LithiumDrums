@@ -4,17 +4,28 @@
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
 //                                     [--mixer-channel piece:<n> | mic:<n> | reverb]
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
-//   LithiumDrumsTests --measure-kit <kit folder> [--stream] [--preload <frames>] [--stress <seconds> [--full-mix]] [--cold]
+//   LithiumDrumsTests --sfz-dump <file.sfz> [n]
+//                                     parse an SFZ instrument and print its first n regions (default 5),
+//                                     its controller defaults and warnings: for writing import mappings
+//   LithiumDrumsTests --midi-audit [--no-play]
+//                                     check every installed kit and preset against every built-in MIDI map:
+//                                     what each map reaches, what only spare notes reach, and (unless
+//                                     --no-play) that every articulation makes a sound
+//   LithiumDrumsTests --measure-kit <kit folder> [--map <map id>] [--stream] [--preload <frames>] [--stress <seconds> [--full-mix]] [--cold]
 //                                     load a real kit, report its RAM use and play every mapped note.
 //                                     --stream streams it from the stream cache (building the cache if needed),
 //                                     --stress then plays a dense groove in real time and counts dropouts,
 //                                     --full-mix runs it with EQ, compression and a reverb send on every mic,
-//                                     --cold first drops the cache file from the OS page cache (Linux)
+//                                     --cold first drops the cache file from the OS page cache (Linux),
+//                                     --map plays it through another MIDI map (roland-vdrums, alesis, ...),
+//                                     and then sweeps the hi-hat pedal and snare position
 
 #include "AllocationCounter.h"
+#include "KitLibrary.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "engine/DrumEngine.h"
+#include "importer/SfzParser.h"
 #include "engine/KitLoader.h"
 #include "engine/Mixer.h"
 #include "engine/StreamCache.h"
@@ -145,6 +156,184 @@ private:
     juce::String selectId, clickName;
     int ticks = 0, readyTick = 0;
 };
+
+//==============================================================================
+static int sfzDump (const juce::StringArray& args)
+{
+    const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--sfz-dump") + 1]);
+    const auto count = juce::jmax (1, args[args.indexOf ("--sfz-dump") + 2].getIntValue() > 0 ? args[args.indexOf ("--sfz-dump") + 2].getIntValue() : 5);
+
+    lithium::sfz::Instrument instrument;
+
+    if (const auto r = lithium::sfz::parse (file, instrument); r.failed())
+    {
+        std::cerr << r.getErrorMessage() << std::endl;
+        return 1;
+    }
+
+    std::cout << instrument.regions.size() << " regions" << std::endl;
+
+    for (const auto& [cc, value] : instrument.controllerDefaults)
+        std::cout << "  set_cc" << cc << " = " << value << std::endl;
+
+    for (size_t i = 0; i < instrument.regions.size() && i < (size_t) count; ++i)
+    {
+        const auto& r = instrument.regions[i];
+        std::cout << "region " << i << " (" << r.where << ") sample " << r.sample
+                  << (r.sampleFile.existsAsFile() ? "" : "  [MISSING]") << std::endl;
+
+        for (const auto& [name, value] : r.opcodes)
+            std::cout << "    " << name << "=" << value << std::endl;
+    }
+
+    for (const auto& w : instrument.warnings)
+        std::cout << "warning: " << w << std::endl;
+
+    return 0;
+}
+
+static int midiAudit (const juce::StringArray& args)
+{
+    using namespace lithium;
+
+    const juce::SharedResourcePointer<Settings> settings;
+    const auto library = kitlibrary::scan (settings->getKitsFolder());
+    const auto maps = MidiMap::factoryMaps();
+    const auto play = ! args.contains ("--no-play");
+    int problems = 0;
+
+    std::cout << "MIDI audit of " << library.kits.size() << " kits and presets in "
+              << settings->getKitsFolder().getFullPathName() << std::endl;
+
+    for (const auto& entry : library.kits)
+    {
+        KitLoader::Options options;
+        options.streaming = settings->getStreaming();
+        options.streamStats = std::make_shared<StreamStats>();
+
+        KitInfo info;
+        juce::String error;
+        auto kit = KitLoader::loadKit (entry.folder, MidiMap::kitDefault(), info, error, options);
+
+        if (kit == nullptr)
+        {
+            std::cout << "\n" << entry.credits().name << ": FAILED TO LOAD: " << error << std::endl;
+            ++problems;
+            continue;
+        }
+
+        const auto numArticulations = (int) kit->articulations.size();
+        std::cout << "\n" << info.credits.name << (info.isPreset ? " (preset)" : "") << ": "
+                  << info.pieces.size() << " pieces, " << numArticulations << " articulations" << std::endl;
+
+        auto name = [&] (int a)
+        {
+            const auto [p, local] = pieceAndArticulation (info, a);
+            return info.pieces[(size_t) p].name + " " + info.pieces[(size_t) p].articulations[(size_t) local].name;
+        };
+
+        for (const auto& map : maps)
+        {
+            const auto table = resolveMidiMap (map, info);
+            std::vector<bool> byMap ((size_t) numArticulations), bySpare ((size_t) numArticulations);
+            std::vector<bool> pieceByMap (info.pieces.size());
+            juce::StringArray spareNotes;
+
+            for (int n = 0; n < 128; ++n)
+            {
+                const auto& t = table.targets[(size_t) n];
+
+                if (t.articulation < 0)
+                    continue;
+
+                (t.spare ? bySpare : byMap)[(size_t) t.articulation] = true;
+
+                if (! t.spare)
+                    pieceByMap[(size_t) pieceAndArticulation (info, t.articulation).first] = true;
+                else
+                    spareNotes.add (juce::String (n));
+            }
+
+            juce::StringArray unreached, piecesOnlySpare;
+
+            for (int a = 0; a < numArticulations; ++a)
+                if (! byMap[(size_t) a] && ! bySpare[(size_t) a])
+                    unreached.add (name (a));
+
+            for (size_t p = 0; p < info.pieces.size(); ++p)
+                if (! pieceByMap[p])
+                    piecesOnlySpare.add (info.pieces[p].name);
+
+            const auto reached = (int) std::count (byMap.begin(), byMap.end(), true);
+            std::cout << "  " << map.name.paddedRight (' ', 15) << " the map plays " << reached << "/" << numArticulations
+                      << " articulations, spare notes " << spareNotes.size()
+                      << (spareNotes.isEmpty() ? juce::String() : " (" + spareNotes[0] + "-" + spareNotes[spareNotes.size() - 1] + ")");
+
+            if (! piecesOnlySpare.isEmpty())
+                std::cout << "; only on spare notes: " << piecesOnlySpare.joinIntoString (", ");
+
+            std::cout << std::endl;
+
+            if (! unreached.isEmpty())
+            {
+                std::cout << "    UNREACHABLE: " << unreached.joinIntoString (", ") << std::endl;
+                ++problems;
+            }
+        }
+
+        if (! play)
+            continue;
+
+        // Every articulation, once, at a medium velocity: anything silent is
+        // a broken recording or channel map, whatever the MIDI map.
+        for (int m = 0; m < kit->numMics; ++m)
+            kit->mics[(size_t) m].direct = false;
+
+        EngineFeedback feedback;
+        DrumEngine engine (feedback);
+        EngineParams params;
+        params.resetForKit (*kit);
+        params.velocityCrossfade = false;
+        engine.prepare (kit->sampleRate);
+
+        juce::AudioBuffer<float> bus (maxMicBusChannels, 512), pieceBus (maxPieces * 2, 512);
+        juce::StringArray silent;
+
+        for (int a = 0; a < numArticulations; ++a)
+        {
+            engine.trigger (*kit, a, 100, params);
+            float peak = 0.0f;
+
+            for (int block = 0; block < 12; ++block)
+            {
+                bus.clear();
+                pieceBus.clear();
+                engine.render (*kit, { bus, pieceBus }, 0, 512, params);
+
+                for (int ch = 0; ch < kit->numBusChannels; ++ch)
+                    peak = std::max (peak, bus.getMagnitude (ch, 0, 512));
+            }
+
+            engine.stopAll (*kit);
+
+            if (peak < 1.0e-4f)
+                silent.add (name (a));
+        }
+
+        if (silent.isEmpty())
+        {
+            std::cout << "  every articulation makes a sound" << std::endl;
+        }
+        else
+        {
+            std::cout << "  SILENT: " << silent.joinIntoString (", ") << std::endl;
+            ++problems;
+        }
+    }
+
+    std::cout << "\n" << (problems == 0 ? "MIDI AUDIT PASSED" : "MIDI AUDIT FOUND " + juce::String (problems) + " PROBLEMS") << std::endl;
+    return problems == 0 ? 0 : 1;
+}
 
 static int writeSnapshot (const juce::StringArray& args)
 {
@@ -357,7 +546,8 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
     const auto rssBefore = residentKb();
     KitInfo info;
     juce::String error;
-    auto kit = KitLoader::loadKit (folder, MidiMap::generalMidi(), info, error, options);
+    const auto map = option ("--map").isNotEmpty() ? MidiMap::factoryMap (option ("--map")) : MidiMap::kitDefault();
+    auto kit = KitLoader::loadKit (folder, map, info, error, options);
 
     if (kit == nullptr)
     {
@@ -384,6 +574,42 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
 
     for (const auto& w : info.warnings)
         std::cout << "  warning: " << w << std::endl;
+
+    // The steps the pedal and position controllers move between, and the
+    // cymbal hits that the kit would have choke their own cymbal.
+    auto artName = [&] (int a)
+    {
+        const auto& p = kit->pieces[(size_t) kit->articulations[(size_t) a].piece];
+        return info.pieces[(size_t) kit->articulations[(size_t) a].piece].articulations[(size_t) (a - p.firstArticulation)].name;
+    };
+
+    auto ladderText = [&] (const Ladder& l)
+    {
+        juce::StringArray steps;
+
+        for (int i = 0; i < l.numSteps; ++i)
+            steps.add (artName (l.articulation[(size_t) i]) + " " + juce::String (l.value[(size_t) i], 2));
+
+        return steps.joinIntoString (", ");
+    };
+
+    std::cout << "  MIDI map: " << map.name << std::endl;
+
+    for (size_t p = 0; p < kit->pieces.size(); ++p)
+    {
+        const auto& pd = kit->pieces[p];
+
+        if (pd.hatLadders[0].numSteps > 1)
+            std::cout << "  " << info.pieces[p].name << " openness (bow): " << ladderText (pd.hatLadders[0]) << "\n"
+                      << "  " << info.pieces[p].name << " openness (edge): " << ladderText (pd.hatLadders[1]) << std::endl;
+
+        if (pd.positionLadder.numSteps > 1)
+            std::cout << "  " << info.pieces[p].name << " positions: " << ladderText (pd.positionLadder) << std::endl;
+
+        for (int a = pd.firstArticulation; a < pd.firstArticulation + pd.numArticulations; ++a)
+            if (kit->articulations[(size_t) a].chokesMask != 0 && kit->articulations[(size_t) a].selfChoke == SelfChoke::none)
+                std::cout << "  " << info.pieces[p].name << " / " << artName (a) << " rings on (the kit chokes the cymbal with it)" << std::endl;
+    }
 
     // Play every mapped note at three velocities through the engine and mixer.
     // For this report every mic gets a bus channel of its own (rather than
@@ -426,7 +652,7 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
 
     for (int note = 0; note < 128; ++note)
     {
-        const auto target = kit->noteMap[(size_t) note].articulation;
+        const auto target = kit->notes.targets[(size_t) note].articulation;
 
         if (target < 0)
             continue;
@@ -468,6 +694,37 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
         }
     }
 
+    // With a map that follows controllers: sweep the pedal under an open-hat
+    // note, and the snare position under a snare note, and say what played.
+    auto sweep = [&] (const char* what, int controller, int note, bool openness)
+    {
+        const auto& target = kit->notes.targets[(size_t) note];
+
+        if (controller < 0 || target.articulation < 0 || target.follow == Follow::none)
+            return;
+
+        const auto piece = (size_t) kit->articulations[(size_t) target.articulation].piece;
+        std::cout << "  " << what << " (note " << note << ", CC " << controller << "):";
+
+        for (const auto v : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+        {
+            // CC4 runs from open (0) to closed (127); positions from centre to edge.
+            engine.controlChange (*kit, controller, juce::roundToInt ((openness ? 1.0f - v : v) * 127.0f));
+            engine.noteOn (*kit, note, 100, params);
+            const auto voices = engine.getNumActiveVoices();
+            const auto hit = LastHit::unpack (feedback.lastHit[piece].load());
+            std::cout << "  " << juce::String (v, 2) << " " << (hit ? artName (hit->articulation) : juce::String ("-"))
+                      << (voices > 1 ? " (+ blend)" : "");
+            engine.stopAll (*kit);
+        }
+
+        std::cout << std::endl;
+    };
+
+    params.velocityCrossfade = false;
+    sweep ("hi-hat pedal", kit->notes.controllers.hihatPedal, 46, true);
+    sweep ("snare position", kit->notes.controllers.position[(size_t) PositionSource::snare], 38, false);
+
     // Hi-hat choke: an articulation that's choked, then one that chokes it.
     // Crossfading is off here, so each hit is exactly one voice.
     params.velocityCrossfade = false;
@@ -481,7 +738,14 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
 
         for (int closer = 0; closer < (int) kit->articulations.size(); ++closer)
         {
-            if ((kit->articulations[(size_t) closer].chokesMask & group) == 0)
+            const auto& c = kit->articulations[(size_t) closer];
+            const auto& o = kit->articulations[(size_t) open];
+
+            if ((c.chokesMask & group) == 0)
+                continue;
+
+            // Skip pairs that are meant to ring together (see SelfChoke).
+            if (c.piece == o.piece && (c.selfChoke == SelfChoke::none || (c.selfChoke == SelfChoke::moreOpen && o.hatLevel <= c.hatLevel)))
                 continue;
 
             engine.trigger (*kit, open, 110, params);
@@ -501,6 +765,34 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
             open = (int) kit->articulations.size();
             break;
         }
+    }
+
+    // Hi-hats: the most open step rings on when hit again, and a closed hit
+    // stops both.
+    for (size_t p = 0; p < kit->pieces.size(); ++p)
+    {
+        const auto& ladder = kit->pieces[p].hatLadders[0];
+
+        if (kit->pieces[p].role != PieceRole::hihat || ladder.numSteps < 2)
+            continue;
+
+        const auto closed = ladder.articulation[0], open = ladder.articulation[(size_t) ladder.numSteps - 1];
+        engine.trigger (*kit, open, 100, params);
+        render (8);
+        engine.trigger (*kit, open, 100, params);
+        render (8);
+        const auto together = engine.getNumActiveVoices();
+        engine.trigger (*kit, closed, 80, params);
+        render (8);
+        const auto afterClosing = engine.getNumActiveVoices();
+        engine.stopAll (*kit);
+
+        const auto ok = together == 2 && afterClosing == 1;
+        std::cout << "  hi-hat: two " << artName (open) << " hits ring together (" << together << " voices); "
+                  << artName (closed) << " leaves " << afterClosing << (ok ? " (right)" : " (WRONG)") << std::endl;
+
+        if (! ok)
+            ++silent;
     }
 
     auto result = silent == 0 ? 0 : 1;
@@ -543,6 +835,12 @@ int main (int argc, char* argv[])
     if (args.contains ("--snapshot"))
         return writeSnapshot (args);
 
+    if (args.contains ("--sfz-dump"))
+        return sfzDump (args);
+
+    if (args.contains ("--midi-audit"))
+        return midiAudit (args);
+
     if (args.contains ("--measure-kit"))
         return measureKit (juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--measure-kit") + 1]), args);
 
@@ -550,13 +848,18 @@ int main (int argc, char* argv[])
     // new processor loads that rather than whatever real kits are installed.
     // Likewise the stream cache goes in the build folder, starting empty so
     // the tests build it, and kits stay in RAM unless a test asks otherwise,
-    // whatever the user's own settings say.
+    // whatever the user's own settings say. New instances start with the
+    // Kit default MIDI map, and saved maps go in a folder of their own.
     const auto testCache = juce::File (LITHIUM_TEST_KITS_FOLDER).getSiblingFile ("test-cache");
     testCache.deleteRecursively();
+    const auto testMaps = juce::File (LITHIUM_TEST_KITS_FOLDER).getSiblingFile ("test-midi-maps");
+    testMaps.deleteRecursively();
 
     lithium::test::setEnvironment ("LITHIUM_KITS_FOLDER", LITHIUM_TEST_KITS_FOLDER);
     lithium::test::setEnvironment ("LITHIUM_CACHE_FOLDER", testCache.getFullPathName());
     lithium::test::setEnvironment ("LITHIUM_STREAMING", "never");
+    lithium::test::setEnvironment ("LITHIUM_MIDI_MAP", "kit-default");
+    lithium::test::setEnvironment ("LITHIUM_MIDI_MAPS_FOLDER", testMaps.getFullPathName());
 
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);

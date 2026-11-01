@@ -52,7 +52,7 @@ namespace
         {
             SharedKit k;
             juce::String error;
-            k.kit = KitLoader::loadKit (testKitFolder, MidiMap::generalMidi(), k.info, error);
+            k.kit = KitLoader::loadKit (testKitFolder, MidiMap::kitDefault(), k.info, error);
             jassert (k.kit != nullptr);
             return k;
         }();
@@ -177,8 +177,8 @@ public:
                         expect (z.roundRobins.size() >= 2);
                 }
 
-            expectEquals ((int) m.pieces[(size_t) m.findPiece ("snare")].articulations.size(), 3);
-            expectEquals ((int) m.pieces[(size_t) m.findPiece ("hihat")].articulations.size(), 3);
+            expectEquals ((int) m.pieces[(size_t) m.findPiece ("snare")].articulations.size(), 4);
+            expectEquals ((int) m.pieces[(size_t) m.findPiece ("hihat")].articulations.size(), 4);
         }
 
         beginTest ("Invalid manifests are rejected with a reason");
@@ -260,7 +260,7 @@ public:
             expectEquals (s.info.bitsPerSample, 24);
             expectEquals (s.info.pieces[(size_t) s.piece ("snare")].name, juce::String ("Lithium Brass Snare 14x6.5"));
 
-            auto pieceOf = [&] (int note) { return kit.articulations[(size_t) kit.noteMap[(size_t) note].articulation].piece; };
+            auto pieceOf = [&] (int note) { return kit.articulations[(size_t) kit.notes.targets[(size_t) note].articulation].piece; };
             expectEquals (pieceOf (36), s.piece ("kick"));
             expectEquals (pieceOf (38), s.piece ("snare"));
             expectEquals (pieceOf (42), s.piece ("hihat"));
@@ -269,16 +269,17 @@ public:
             expectEquals (pieceOf (45), s.piece ("tom2"));     // GM 45 asks for a third rack tom: the last one
             expectEquals (pieceOf (43), s.piece ("floor"));
             expectEquals (pieceOf (52), s.piece ("china"));
-            expect (kit.noteMap[60].articulation < 0);
+            expect (kit.notes.targets[60].articulation < 0);
 
             // The open hat is in a choke group that the closed hat chokes.
-            const auto& open = kit.articulations[(size_t) kit.noteMap[46].articulation];
-            const auto& closed = kit.articulations[(size_t) kit.noteMap[42].articulation];
+            const auto& open = kit.articulations[(size_t) kit.notes.targets[46].articulation];
+            const auto& closed = kit.articulations[(size_t) kit.notes.targets[42].articulation];
             expect (open.chokeGroupMask != 0 && (closed.chokesMask & open.chokeGroupMask) != 0);
 
-            // Cymbals get choke notes from 85 up.
+            // Cymbals get fixed choke notes by role: crash 1 on 85, ride 1 on 88, china 1 on 90.
             expectEquals (s.info.pieces[(size_t) s.piece ("crash")].defaultChokeNote, 85);
-            expectEquals (s.info.pieces[(size_t) s.piece ("ride")].defaultChokeNote, 86);
+            expectEquals (s.info.pieces[(size_t) s.piece ("ride")].defaultChokeNote, 88);
+            expectEquals (s.info.pieces[(size_t) s.piece ("china")].defaultChokeNote, 90);
             expectEquals (s.info.pieces[(size_t) s.piece ("snare")].defaultChokeNote, -1);
 
             std::cout << "    test kit: " << s.info.numSampleFiles << " files, "
@@ -296,6 +297,11 @@ public:
             expectEquals (drs[(size_t) index (StageSlot::tom2)], -1);
             expectEquals (drs[(size_t) index (StageSlot::floorTom)], 4);
             expectEquals (drs[(size_t) index (StageSlot::crash)], 6);
+            expectEquals (drs[(size_t) index (StageSlot::crash2)], 7);
+
+            // A splash listed before the second crash doesn't take its slot.
+            const auto basalt = assignStageSlots ({ R::crash, R::crash, R::crash, R::ride }, { false, true, false, false });
+            expectEquals (basalt[(size_t) index (StageSlot::crash2)], 2);
             expectEquals (drs[(size_t) index (StageSlot::china)], -1);
 
             // MuldjordKit: two kicks, three rack toms, a china.
@@ -310,7 +316,7 @@ public:
         {
             KitInfo info;
             juce::String error;
-            auto kit = KitLoader::loadKit (juce::File ("/nonexistent/kit"), MidiMap::generalMidi(), info, error);
+            auto kit = KitLoader::loadKit (juce::File ("/nonexistent/kit"), MidiMap::kitDefault(), info, error);
             expect (kit == nullptr);
             expect (error.contains ("kit.json"));
         }
@@ -321,7 +327,7 @@ public:
             juce::String error;
             KitLoader::Options options;
             options.shouldAbort = [] { return true; };
-            auto kit = KitLoader::loadKit (testKitFolder, MidiMap::generalMidi(), info, error, options);
+            auto kit = KitLoader::loadKit (testKitFolder, MidiMap::kitDefault(), info, error, options);
             expect (kit == nullptr);
         }
 
@@ -334,7 +340,7 @@ public:
             const auto withoutSnareTop = allMics & ~(1u << snareTop);
 
             KitHandoff handoff;
-            KitLoader loader (handoff, MidiMap::generalMidi());
+            KitLoader loader (handoff);
             loader.setWantedMics (withoutSnareTop);   // muted, so it stays out until it's wanted
 
             KitLoader::Request request;
@@ -497,7 +503,7 @@ public:
             // At unity pitch, every mic's output must be its recording times one
             // common gain (and its default pan), sample for sample.
             const auto& kit = rig.kit;
-            const auto& art = kit.articulations[(size_t) kit.noteMap[38].articulation];
+            const auto& art = kit.articulations[(size_t) kit.notes.targets[38].articulation];
             const auto& zone = kit.zones[(size_t) (art.firstZone + art.numZones - 1)];
             float commonGain = -1.0f;
             bool aligned = true;
@@ -587,7 +593,7 @@ public:
 
         beginTest ("Cymbals are choked by their choke note and by poly aftertouch");
         {
-            EngineRig rig;          // choke notes come from the kit: crash 85, ride 86, china 87
+            EngineRig rig;          // choke notes come from the kit: crash 85, ride 88, china 90
             rig.note (49);
             rig.render (4410);
             expectEquals (rig.voices(), 1);
@@ -830,7 +836,8 @@ public:
             }
 
             expectEquals ((int) (rig.feedback.pieceHits[(size_t) snare].load() - before), 3);
-            expect (art.notes.contains (38), "the snare's first articulation should be on note 38");
+            expectEquals ((int) rig.kit.notes.targets[38].articulation, shared().info.pieces[(size_t) snare].firstArticulation,
+                          "the snare's first articulation should be on note 38");
         }
 
         beginTest ("The mixer applies the kit's default level, pan and polarity");
@@ -970,14 +977,14 @@ public:
             // It loads and plays, and 16-bit audio is stored exactly as it came.
             KitInfo info;
             juce::String error;
-            auto kit = KitLoader::loadKit (folder, MidiMap::generalMidi(), info, error);
+            auto kit = KitLoader::loadKit (folder, MidiMap::kitDefault(), info, error);
             expect (kit != nullptr, error);
 
             if (kit != nullptr)
             {
                 expectEquals (info.bitsPerSample, 16);
 
-                const auto& art = kit->articulations[(size_t) kit->noteMap[38].articulation];
+                const auto& art = kit->articulations[(size_t) kit->notes.targets[38].articulation];
                 const auto& zone = kit->zones[(size_t) art.firstZone];
                 const auto hit = zone.firstHit;
                 const auto mic = m.findMic ("sntop");
@@ -1131,7 +1138,7 @@ public:
         {
             KitInfo info;
             juce::String error;
-            auto kit = KitLoader::loadKit (presetFolder, MidiMap::generalMidi(), info, error);
+            auto kit = KitLoader::loadKit (presetFolder, MidiMap::kitDefault(), info, error);
             expect (kit != nullptr, error);
 
             if (kit != nullptr)
@@ -1282,6 +1289,31 @@ public:
             temp.deleteRecursively();
         }
 
+        beginTest ("The parser reads ARIA-style libraries: one-line #defines, spaced labels, set_hdcc");
+        {
+            // Naked Drums' SFZ writes several #defines on a line, labels with
+            // spaces before the sample, and high-resolution controller defaults.
+            const auto temp = makeTemp();
+            sfz::Instrument inst;
+            const auto r = sfz::parse (R"(
+                #define $LO 1            #define $HI 64
+                #define $RR one
+                <control> set_hdcc20=0.5 set_cc21=127
+                <group> key=36
+                <region> lovel=$LO hivel=$HI region_label=10 $RR sample=kick_$RR.flac
+            )", temp.getChildFile ("kit.sfz"), inst);
+
+            expect (r.wasOk(), r.getErrorMessage());
+            expectEquals ((int) inst.regions.size(), 1);
+            expectEquals (inst.regions[0].getNumber ("lovel", -1.0), 1.0);
+            expectEquals (inst.regions[0].getNumber ("hivel", -1.0), 64.0);
+            expectEquals (inst.regions[0].get ("region_label"), juce::String ("10 one"));
+            expectEquals (inst.regions[0].sample, juce::String ("kick_one.flac"));
+            expectWithinAbsoluteError (inst.controllerDefaults[20], 63.5, 1.0e-9);
+            expectEquals (inst.controllerDefaults[21], 127.0);
+            temp.deleteRecursively();
+        }
+
         beginTest ("Velocity curves follow amp_veltrack and amp_velcurve_N");
         {
             sfz::Region r;
@@ -1359,12 +1391,12 @@ public:
             // It loads, the overhead sample really starts at frame 100, and the preset drops the close mic.
             KitInfo info;
             juce::String error;
-            auto kit = KitLoader::loadKit (results[0].folder, MidiMap::generalMidi(), info, error);
+            auto kit = KitLoader::loadKit (results[0].folder, MidiMap::kitDefault(), info, error);
             expect (kit != nullptr, error);
 
             if (kit != nullptr)
             {
-                const auto& art = kit->articulations[(size_t) kit->noteMap[38].articulation];
+                const auto& art = kit->articulations[(size_t) kit->notes.targets[38].articulation];
                 const auto& zone = kit->zones[(size_t) art.firstZone];
                 juce::AudioBuffer<float> got (2, 8);
                 SampleCursor cursor;
@@ -1375,7 +1407,7 @@ public:
             }
 
             KitInfo presetInfo;
-            auto preset = KitLoader::loadKit (results[1].folder, MidiMap::generalMidi(), presetInfo, error);
+            auto preset = KitLoader::loadKit (results[1].folder, MidiMap::kitDefault(), presetInfo, error);
             expect (preset != nullptr, error);
             expectEquals ((int) presetInfo.mics.size(), 1);
             expect (presetInfo.memoryBytes < info.memoryBytes);
@@ -1483,7 +1515,7 @@ public:
         options.streaming.cacheFolder = cache;
         options.streaming.preloadFrames = 4096;    // small, so most of each test sample streams
         options.streamStats = k.stats;
-        k.kit = KitLoader::loadKit (folder, MidiMap::generalMidi(), k.info, k.error, options, &k.plan);
+        k.kit = KitLoader::loadKit (folder, MidiMap::kitDefault(), k.info, k.error, options, &k.plan);
         return k;
     }
 
@@ -2216,7 +2248,8 @@ public:
         expect (stage.getSlotAt ({ 676.7f, 407.3f }) == StageSlot::kick);
         expect (stage.getSlotAt ({ 771.3f, 286.0f }) == StageSlot::snare);
         expect (stage.getSlotAt ({ 862.0f, 176.0f }) == StageSlot::hihat);
-        expect (stage.getSlotAt ({ 822.7f, 100.7f }) == StageSlot::crash);
+        expect (stage.getSlotAt ({ 786.7f, 122.0f }) == StageSlot::crash);
+        expect (stage.getSlotAt ({ 563.3f, 119.3f }) == StageSlot::crash2);
         expect (stage.getSlotAt ({ 474.0f, 183.3f }) == StageSlot::ride);
         expect (stage.getSlotAt ({ 376.0f, 91.3f }) == StageSlot::china);
         expect (stage.getSlotAt ({ 724.7f, 247.3f }) == StageSlot::tom1);

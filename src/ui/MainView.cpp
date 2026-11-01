@@ -14,17 +14,20 @@ MainView::MainView (LithiumDrumsProcessor& p)
       fxPage ("FX", "Master bus effects."),
       aboutPanel (p),
       settingsPanel (p),
+      midiPanel (p),
       browser (p)
 {
     header.onTabChanged = [this] (Tab t) { showTab (t); };
     header.onShowAbout = [this] { showPanel (&aboutPanel); };
     header.onShowSettings = [this] { showPanel (&settingsPanel); };
     header.onShowBrowser = [this] { showPanel (&browser); };
+    header.onShowMidi = [this] { showPanel (&midiPanel); };
     kitPage.onEditPiece = [this] { header.setTab (Tab::edit); };
 
     aboutPanel.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onClose = [this] { showPanel (nullptr); };
     browser.onClose = [this] { showPanel (nullptr); };
+    midiPanel.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onKitsFolderChanged = [this] { header.refreshKitBox(); };
 
     addAndMakeVisible (header);
@@ -35,6 +38,7 @@ MainView::MainView (LithiumDrumsProcessor& p)
     addChildComponent (fxPage);
     addChildComponent (aboutPanel);      // added last, so they sit on top
     addChildComponent (settingsPanel);
+    addChildComponent (midiPanel);
     addChildComponent (browser);
 
     showTab (Tab::kit);
@@ -46,9 +50,12 @@ void MainView::showPanel (OverlayPanel* panel)
         aboutPanel.refresh();
     else if (panel == &settingsPanel)
         settingsPanel.refresh();
+    else if (panel == &midiPanel)
+        midiPanel.refresh();
 
     aboutPanel.setVisible (panel == &aboutPanel);
     settingsPanel.setVisible (panel == &settingsPanel);
+    midiPanel.setVisible (panel == &midiPanel);
     browser.setVisible (panel == &browser);
 
     // The browser puts the focus in its search box (once visible); the
@@ -83,6 +90,7 @@ void MainView::resized()
 
     aboutPanel.setBounds (getLocalBounds());
     settingsPanel.setBounds (getLocalBounds());
+    midiPanel.setBounds (getLocalBounds());
     browser.setBounds (getLocalBounds());
 }
 

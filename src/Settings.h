@@ -7,7 +7,8 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 // Per-user settings, shared by every Lithium Drums instance and by the
-// LithiumImport tool: where the kits live, and how they stream from disk.
+// LithiumImport tool: where the kits live, how they stream from disk, and
+// the MIDI map new instances start with.
 
 namespace lithium
 {
@@ -40,6 +41,16 @@ public:
         macOS: ~/Library/Caches/Lithium Drums/Stream Cache
         Windows: %LOCALAPPDATA%\Lithium Drums\Stream Cache */
     static juce::File getDefaultCacheFolder();
+
+    /** The MIDI map new instances start with, as saved by "Set as default"
+        (a map's JSON), or empty for the factory default (Kit default). See
+        midimaps::loadDefault(), which also applies LITHIUM_MIDI_MAP. */
+    juce::String getDefaultMidiMap() const;
+    void setDefaultMidiMap (const juce::String& json);
+
+    /** Where saved MIDI maps go: a "MIDI Maps" folder next to the default
+        kits folder. LITHIUM_MIDI_MAPS_FOLDER overrides it. */
+    static juce::File getMidiMapsFolder();
 
     /** The preload sizes offered in the settings, in frames. */
     static constexpr std::array<int, 4> preloadChoices { 8192, 16384, 32768, 65536 };

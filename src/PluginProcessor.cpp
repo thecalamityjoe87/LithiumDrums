@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 
+#include "MidiMapLibrary.h"
 #include "PluginEditor.h"
 #include "engine/StreamCache.h"
 
@@ -11,6 +12,8 @@ namespace
     const juce::Identifier stateKitFolder { "kitFolder" };
     const juce::Identifier stateKitId { "kitId" };
     const juce::Identifier stateSelectedPiece { "selectedPiece" };
+    const juce::Identifier stateMidiMap { "midiMap" };
+    const juce::Identifier stateMidiMapModified { "midiMapModified" };
 
     constexpr double kitSwapFadeSeconds = 0.01;
 
@@ -37,7 +40,8 @@ LithiumDrumsProcessor::LithiumDrumsProcessor()
     : AudioProcessor (createBuses()),
       parameters (*this, nullptr, "LithiumDrums", params::createLayout (slotNames)),
       snapshot (parameters),
-      loader (handoff, MidiMap::generalMidi())
+      loader (handoff),
+      midiMap (midimaps::loadDefault (*settings))
 {
     slotNames.set (nullptr);
 
@@ -86,6 +90,7 @@ void LithiumDrumsProcessor::prepareToPlay (double sampleRate, int maximumExpecte
     // arrived while playback was stopped can be swapped in straight away.
     swapInWaitingKit();
     handoff.applyMicUpdates();
+    applyNoteTables();
 }
 
 void LithiumDrumsProcessor::swapInWaitingKit() noexcept
@@ -125,6 +130,7 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
 
     handoff.applyMicUpdates();
+    applyNoteTables();
 
     auto* kit = handoff.getCurrent();
     const auto acceptNotes = kit != nullptr && ! kitSwapPending;
@@ -157,7 +163,11 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     while (auditions.pop (request))
     {
-        if (acceptNotes && juce::isPositiveAndBelow (request.piece, (int) kit->pieces.size()))
+        if (acceptNotes && request.note >= 0)
+        {
+            engine.noteOn (*kit, request.note, request.velocity, engineParams);
+        }
+        else if (acceptNotes && juce::isPositiveAndBelow (request.piece, (int) kit->pieces.size()))
         {
             // The request was made against the kit the UI knew about; if that
             // has changed since, the clamp keeps the index valid.
@@ -189,6 +199,8 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             engine.noteOn (*kit, message.getNoteNumber(), message.getVelocity(), engineParams);
         else if (message.isAftertouch())
             engine.polyAftertouch (*kit, message.getNoteNumber(), message.getAfterTouchValue());
+        else if (message.isController())
+            engine.controlChange (*kit, message.getControllerNumber(), message.getControllerValue());
     }
 
     render (kit, position, numSamples, mainOut, auxOuts);
@@ -220,10 +232,41 @@ void LithiumDrumsProcessor::render (Kit* kit, int from, int to, std::array<float
     }
 }
 
+void LithiumDrumsProcessor::applyNoteTables() noexcept
+{
+    // Only the newest table matters; older ones are overwritten.
+    NoteTableUpdate update;
+
+    while (noteTableUpdates.pop (update))
+    {
+        waitingNoteTable = update;
+        noteTableWaiting = true;
+    }
+
+    auto* kit = handoff.getCurrent();
+
+    if (! noteTableWaiting || kit == nullptr)
+        return;
+
+    // Serials only ever grow, so a table for an older kit will never be
+    // needed again. One for a newer kit waits until that kit is swapped in.
+    if (waitingNoteTable.kitSerial == kit->serial)
+        kit->notes = waitingNoteTable.table;
+
+    if (waitingNoteTable.kitSerial <= kit->serial)
+        noteTableWaiting = false;
+}
+
 //==============================================================================
 void LithiumDrumsProcessor::audition (int piece, int velocity, int articulation)
 {
     auditions.push ({ piece, articulation, velocity });   // if the queue is full the click is dropped, which is harmless
+}
+
+void LithiumDrumsProcessor::playNote (int note, int velocity)
+{
+    if (juce::isPositiveAndBelow (note, 128))
+        auditions.push ({ -1, 0, juce::jlimit (1, 127, velocity), note });
 }
 
 MicMask LithiumDrumsProcessor::currentlyUnmutedMics() const
@@ -263,6 +306,7 @@ void LithiumDrumsProcessor::requestKit (const juce::File& folder, bool resetMixe
 
         request.folder = folder;
         request.resetToken = resetMixer ? ++lastResetToken : 0;
+        request.midiMap = midiMap;
 
         // Muted mics of a restored project aren't loaded at all. A kit chosen
         // from the menu starts unmuted, so everything loads.
@@ -357,6 +401,10 @@ void LithiumDrumsProcessor::applyLoadResult (const KitLoader::Result& result)
     if (result.resetToken != 0)
         confirmedResetToken.store (std::max (confirmedResetToken.load(), result.resetToken), std::memory_order_release);
 
+    // The kit was built with the map as it was when the load was requested;
+    // send it the map as it is now.
+    sendNoteTable();
+
     // Slot parameters are named after the kit's pieces and mics; tell the
     // host to re-read the names.
     slotNames.set (info.get());
@@ -428,6 +476,92 @@ void LithiumDrumsProcessor::timerCallback()
     }
 
     loader.setWantedMics (wanted);
+
+    bool unsent = false;
+
+    {
+        std::scoped_lock lock (stateMutex);
+        unsent = noteTableUnsent;
+    }
+
+    if (unsent)
+        sendNoteTable();
+}
+
+//==============================================================================
+void LithiumDrumsProcessor::setMidiMap (const MidiMap& map, bool modified)
+{
+    {
+        std::scoped_lock lock (stateMutex);
+        midiMap = map;
+        midiMapModified = modified;
+    }
+
+    sendNoteTable();
+}
+
+void LithiumDrumsProcessor::sendNoteTable()
+{
+    {
+        // Pushed under the state lock: a host may restore state on its own
+        // thread while the UI edits the map, and the queue only allows one
+        // thread to push at a time. The audio thread, which pops, never
+        // takes this lock.
+        std::scoped_lock lock (stateMutex);
+
+        if (kitInfo != nullptr)
+        {
+            noteTable = resolveMidiMap (midiMap, *kitInfo);
+
+            // The queue copies the table, so nothing is shared with the audio
+            // thread. If it's full (the map changed many times within one
+            // block), the timer sends the newest table a moment later.
+            noteTableUnsent = ! noteTableUpdates.push ({ kitInfo->serial, noteTable });
+        }
+    }
+
+    midiMapBroadcaster.sendChangeMessage();   // asynchronous, so fine from any thread
+}
+
+void LithiumDrumsProcessor::editMidiMap (const std::function<void (MidiMap&, const KitInfo&)>& edit)
+{
+    const auto info = getKitInfo();
+
+    if (info == nullptr)
+        return;
+
+    auto map = editableCopy (getMidiMap(), *info);
+    edit (map, *info);
+    setMidiMap (map, true);
+}
+
+void LithiumDrumsProcessor::learnNote (int note, int articulation)
+{
+    editMidiMap ([=] (MidiMap& map, const KitInfo& info) { map.assign (entryForArticulation (info, articulation, note)); });
+}
+
+void LithiumDrumsProcessor::forgetNote (int note)
+{
+    editMidiMap ([=] (MidiMap& map, const KitInfo&) { map.remove (note); });
+}
+
+void LithiumDrumsProcessor::setFollow (int articulation, Follow follow)
+{
+    const auto table = getNoteTable();
+
+    editMidiMap ([&] (MidiMap& map, const KitInfo&)
+    {
+        for (auto& e : map.entries)
+            if (table.targets[(size_t) e.note].articulation == articulation)
+                e.follow = follow;
+    });
+}
+
+void LithiumDrumsProcessor::setControllers (const ControllerSettings& controllers)
+{
+    auto map = getMidiMap();
+    map.controllers = controllers;
+    setMidiMap (map, true);
 }
 
 //==============================================================================
@@ -448,6 +582,14 @@ void LithiumDrumsProcessor::getStateInformation (juce::MemoryBlock& destData)
     if (const auto info = getKitInfo(); info != nullptr && juce::isPositiveAndBelow (selected, (int) info->pieces.size()))
         state.setProperty (stateSelectedPiece, info->pieces[(size_t) selected].id, nullptr);
 
+    // The whole map goes into the project, not just its name, so the project
+    // plays the same on a machine without that saved map.
+    {
+        std::scoped_lock lock (stateMutex);
+        state.setProperty (stateMidiMap, midiMap.toJson(), nullptr);
+        state.setProperty (stateMidiMapModified, midiMapModified, nullptr);
+    }
+
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -463,11 +605,17 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
     const auto savedFolder = state[stateKitFolder].toString();
     const auto savedId = state[stateKitId].toString();
     const auto selected = state[stateSelectedPiece].toString();
-    state.removeProperty (stateKitFolder, nullptr);
-    state.removeProperty (stateKitId, nullptr);
-    state.removeProperty (stateSelectedPiece, nullptr);
+    const auto savedMap = state[stateMidiMap].toString();
+    const auto savedMapModified = (bool) state[stateMidiMapModified];
+
+    for (const auto& id : { stateKitFolder, stateKitId, stateSelectedPiece, stateMidiMap, stateMidiMapModified })
+        state.removeProperty (id, nullptr);
 
     parameters.replaceState (state);
+
+    // Projects saved before MIDI maps existed keep the instance's map.
+    if (MidiMap map; savedMap.isNotEmpty() && MidiMap::parse (savedMap, map).wasOk())
+        setMidiMap (map, savedMapModified);
 
     {
         std::scoped_lock lock (stateMutex);

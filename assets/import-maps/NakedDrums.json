@@ -1,0 +1,687 @@
+{
+  "comment": "Import mapping for Wilkinson Audio's Naked Drums, in kinwie's SFZ conversion (sfzinstruments/WilkinsonAudio.NakedDrums). The stereo-out program is read with every mic layer on. Its sample names don't say which drum a file belongs to (the kick-in and snare-bottom mics share one name, as do the kick-sub and first snare-top mics, and all five tom mics), so those mics are identified by the codes at the end of the file names, taken from the SFZ's own group files; the rest by name. The 'China Wide OH' mic is a stereo pair over the cymbals. Choke keys (60-66) aren't imported: cymbals are choked by their choke notes or aftertouch.",
+  "format": "sfz",
+  "matches": [
+    "Naked Drums.sfz"
+  ],
+  "pack": {
+    "id": "wilkinson-naked-drums",
+    "name": "Naked Drums"
+  },
+  "author": "Wilkinson Audio; SFZ conversion by kinwie",
+  "sourceUrl": "https://github.com/sfzinstruments/WilkinsonAudio.NakedDrums",
+  "license": {
+    "name": "CC BY 4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "shareAlike": false,
+    "files": [
+      "LICENSE",
+      "README.md"
+    ]
+  },
+  "credits": "Naked Drums by Wilkinson Audio (2016), recorded through vintage Neve 1073/1081, BAE 1073 and API 512 preamps into Apogee converters. SFZ conversion by kinwie for sfzinstruments. Licensed under CC BY 4.0.",
+  "description": "A Yamaha Recording Custom kit with a Joey Jordison snare and Sabian/Zildjian cymbals, made for metal and hard rock: 16 mic channels, 10 round-robins.",
+  "audienceView": true,
+  "levelDb": -6,
+  "mics": [
+    {
+      "id": "kick_in",
+      "name": "Kick In",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*-04C0.flac",
+        "*-1IVJ.flac",
+        "*-1JRA.flac",
+        "*-38CS.flac",
+        "*-4DHW.flac",
+        "*-4YGJ.flac",
+        "*-59HA.flac",
+        "*-5FY6.flac",
+        "*-7HL2.flac",
+        "*-7OII.flac",
+        "*-9VES.flac",
+        "*-9YV2.flac",
+        "*-A3CL.flac",
+        "*-BI09.flac",
+        "*-CGP2.flac",
+        "*-CUEH.flac",
+        "*-D9B5.flac",
+        "*-EAUF.flac",
+        "*-FHVM.flac",
+        "*-G626.flac",
+        "*-H8IO.flac",
+        "*-HLYB.flac",
+        "*-HO8N.flac",
+        "*-HP0W.flac",
+        "*-HV1M.flac",
+        "*-I6YU.flac",
+        "*-II9X.flac",
+        "*-J7N4.flac",
+        "*-JE4P.flac",
+        "*-K29K.flac",
+        "*-KYW0.flac",
+        "*-LN2C.flac",
+        "*-N3VW.flac",
+        "*-NLNF.flac",
+        "*-OPMQ.flac",
+        "*-S32F.flac",
+        "*-S3I0.flac",
+        "*-T9QM.flac",
+        "*-TAI8.flac",
+        "*-TEQT.flac",
+        "*-TPNU.flac",
+        "*-V4WI.flac",
+        "*-V6CH.flac",
+        "*-VFGS.flac",
+        "*-VUUG.flac",
+        "*-VYTH.flac",
+        "*-W6F4.flac",
+        "*-WTDR.flac",
+        "*-XN28.flac",
+        "*-YF30.flac"
+      ]
+    },
+    {
+      "id": "kick_sub",
+      "name": "Kick Sub",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*-0R4A.flac",
+        "*-0TV9.flac",
+        "*-2JIH.flac",
+        "*-3BOU.flac",
+        "*-3O8F.flac",
+        "*-4TTQ.flac",
+        "*-5TG5.flac",
+        "*-6FQE.flac",
+        "*-6NCK.flac",
+        "*-7O0Z.flac",
+        "*-80US.flac",
+        "*-92MD.flac",
+        "*-9O0E.flac",
+        "*-A8SL.flac",
+        "*-BI8O.flac",
+        "*-F9P6.flac",
+        "*-FHW3.flac",
+        "*-GQSQ.flac",
+        "*-HTGY.flac",
+        "*-IJQP.flac",
+        "*-IULU.flac",
+        "*-KI72.flac",
+        "*-KO6C.flac",
+        "*-KQZI.flac",
+        "*-LC6C.flac",
+        "*-MABA.flac",
+        "*-MNKN.flac",
+        "*-MYGT.flac",
+        "*-NRI2.flac",
+        "*-OQJY.flac",
+        "*-PHDM.flac",
+        "*-Q9F0.flac",
+        "*-QOO4.flac",
+        "*-QPFH.flac",
+        "*-R209.flac",
+        "*-R6DM.flac",
+        "*-RF7O.flac",
+        "*-RNK2.flac",
+        "*-RY3Q.flac",
+        "*-TMK8.flac",
+        "*-U17O.flac",
+        "*-UXSH.flac",
+        "*-V0XN.flac",
+        "*-VGOG.flac",
+        "*-WRM1.flac",
+        "*-YQU3.flac",
+        "*-YSLO.flac",
+        "*-Z8SX.flac",
+        "*-ZDNR.flac",
+        "*-ZHS7.flac"
+      ]
+    },
+    {
+      "id": "tom1",
+      "name": "Tom 1",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*-0GH3.flac",
+        "*-2ON2.flac",
+        "*-3TZV.flac",
+        "*-5J0Z.flac",
+        "*-5R18.flac",
+        "*-709K.flac",
+        "*-7KMZ.flac",
+        "*-9BTS.flac",
+        "*-9XX5.flac",
+        "*-A66G.flac",
+        "*-CZRP.flac",
+        "*-E0FX.flac",
+        "*-HB75.flac",
+        "*-HOOB.flac",
+        "*-I15A.flac",
+        "*-IHZS.flac",
+        "*-K1MT.flac",
+        "*-LWEE.flac",
+        "*-NGHA.flac",
+        "*-NGK0.flac",
+        "*-NJUD.flac",
+        "*-NNGJ.flac",
+        "*-NU9V.flac",
+        "*-ODEG.flac",
+        "*-PXKR.flac",
+        "*-SPLR.flac",
+        "*-UIXW.flac",
+        "*-X8M6.flac",
+        "*-XPRP.flac",
+        "*-ZFVJ.flac"
+      ]
+    },
+    {
+      "id": "tom2",
+      "name": "Tom 2",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*-3I7F.flac",
+        "*-49EV.flac",
+        "*-4E5P.flac",
+        "*-561Q.flac",
+        "*-5OUJ.flac",
+        "*-9YCY.flac",
+        "*-BHZT.flac",
+        "*-D2YA.flac",
+        "*-D6XN.flac",
+        "*-DJ8Z.flac",
+        "*-E309.flac",
+        "*-E3GB.flac",
+        "*-F4J9.flac",
+        "*-FA8F.flac",
+        "*-FJ84.flac",
+        "*-HUJ7.flac",
+        "*-KM5X.flac",
+        "*-LMST.flac",
+        "*-NHRO.flac",
+        "*-NWAU.flac",
+        "*-ORER.flac",
+        "*-P2LC.flac",
+        "*-S2EZ.flac",
+        "*-T56A.flac",
+        "*-X3UQ.flac",
+        "*-XI5N.flac",
+        "*-Y0VH.flac",
+        "*-Y5QW.flac",
+        "*-ZVCC.flac",
+        "*-ZWO1.flac"
+      ]
+    },
+    {
+      "id": "tom3",
+      "name": "Tom 3",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*-0V3W.flac",
+        "*-1O11.flac",
+        "*-1O83.flac",
+        "*-1QK8.flac",
+        "*-2FEY.flac",
+        "*-2J1F.flac",
+        "*-2S1B.flac",
+        "*-2VXX.flac",
+        "*-57TZ.flac",
+        "*-6FT7.flac",
+        "*-9BS2.flac",
+        "*-9SFY.flac",
+        "*-ATMN.flac",
+        "*-C7N7.flac",
+        "*-DE10.flac",
+        "*-DPKE.flac",
+        "*-F7HE.flac",
+        "*-FEEN.flac",
+        "*-FJ10.flac",
+        "*-HHWR.flac",
+        "*-I4RR.flac",
+        "*-LON9.flac",
+        "*-MAVH.flac",
+        "*-MSPB.flac",
+        "*-NATA.flac",
+        "*-NOJ0.flac",
+        "*-OKB4.flac",
+        "*-UKXC.flac",
+        "*-W16T.flac",
+        "*-ZNU9.flac"
+      ]
+    },
+    {
+      "id": "tom4",
+      "name": "Tom 4",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*-1HJ3.flac",
+        "*-53HU.flac",
+        "*-680S.flac",
+        "*-7V40.flac",
+        "*-95NU.flac",
+        "*-A3E9.flac",
+        "*-A4DQ.flac",
+        "*-A7RM.flac",
+        "*-ACSN.flac",
+        "*-BKV1.flac",
+        "*-C1VH.flac",
+        "*-D2I4.flac",
+        "*-DJ8O.flac",
+        "*-E9HR.flac",
+        "*-GQPJ.flac",
+        "*-HJHE.flac",
+        "*-I0WH.flac",
+        "*-LQTT.flac",
+        "*-MBPY.flac",
+        "*-MV5O.flac",
+        "*-N5ZE.flac",
+        "*-ODYD.flac",
+        "*-PY2E.flac",
+        "*-S98I.flac",
+        "*-T555.flac",
+        "*-URN0.flac",
+        "*-UYN6.flac",
+        "*-WL88.flac",
+        "*-X6GL.flac",
+        "*-ZOV2.flac"
+      ]
+    },
+    {
+      "id": "tom5",
+      "name": "Tom 5",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*-00GZ.flac",
+        "*-0A51.flac",
+        "*-0QXV.flac",
+        "*-2MZ1.flac",
+        "*-3UYN.flac",
+        "*-67N7.flac",
+        "*-6AWO.flac",
+        "*-6XKQ.flac",
+        "*-7AXO.flac",
+        "*-8VH6.flac",
+        "*-AV1C.flac",
+        "*-BVKQ.flac",
+        "*-CA3D.flac",
+        "*-GBC1.flac",
+        "*-HKD9.flac",
+        "*-I2YZ.flac",
+        "*-JWEY.flac",
+        "*-KEI8.flac",
+        "*-KH0Z.flac",
+        "*-M11L.flac",
+        "*-R7DP.flac",
+        "*-RWLO.flac",
+        "*-SFNB.flac",
+        "*-TOM2.flac",
+        "*-TYEX.flac",
+        "*-V9FL.flac",
+        "*-WLRQ.flac",
+        "*-YF18.flac",
+        "*-YM4F.flac",
+        "*-YY0Z.flac"
+      ]
+    },
+    {
+      "id": "snare_top1",
+      "name": "Snare Top 1",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*/Samples/-TopOne_Black_D2*",
+        "*/Samples/TopOne_Black_D2*"
+      ]
+    },
+    {
+      "id": "snare_top2",
+      "name": "Snare Top 2",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*/Samples/-TopTwo_Black_D2*",
+        "*/Samples/TopTwo_Black_D2*"
+      ]
+    },
+    {
+      "id": "snare_bottom",
+      "name": "Snare Btm",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*/Samples/-Bottom_Black_D2*",
+        "*/Samples/Bottom_Black_D2*"
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hats",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*/Samples/HatMic_*"
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*/Samples/RideMic_*"
+      ]
+    },
+    {
+      "id": "overheads",
+      "name": "Overheads",
+      "role": "overheads",
+      "channels": 2,
+      "samples": [
+        "*/Samples/-OH_*",
+        "*/Samples/OH_*"
+      ]
+    },
+    {
+      "id": "cymbals",
+      "name": "China Wide OH",
+      "role": "overheads",
+      "channels": 2,
+      "samples": [
+        "*/Samples/TopOne_D3*",
+        "*/Samples/TopOne_E3*",
+        "*/Samples/TopOne_F3*",
+        "*/Samples/China_Mics_*"
+      ]
+    },
+    {
+      "id": "close_room",
+      "name": "Close Room",
+      "role": "room",
+      "channels": 1,
+      "samples": [
+        "*/Samples/-CloseRoom_*",
+        "*/Samples/CloseRoom_*"
+      ]
+    },
+    {
+      "id": "far_rooms",
+      "name": "Far Rooms",
+      "role": "room",
+      "channels": 2,
+      "samples": [
+        "*/Samples/-FarRooms_*",
+        "*/Samples/FarRooms_*"
+      ]
+    },
+    {
+      "id": "mid_side",
+      "name": "Mid-Side",
+      "role": "room",
+      "channels": 2,
+      "samples": [
+        "*/Samples/-MS_*",
+        "*/Samples/MS_*",
+        "*/Samples/-MidSide_*",
+        "*/Samples/MidSide_*"
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "id": "kick",
+      "name": "Kick 22\"",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 36
+        }
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 38
+        },
+        {
+          "id": "rimshot",
+          "name": "Rimshot",
+          "key": 40
+        },
+        {
+          "id": "sidestick",
+          "name": "Sidestick",
+          "key": 37
+        }
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat",
+      "role": "hihat",
+      "articulations": [
+        {
+          "id": "closed",
+          "name": "Closed",
+          "key": 42,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "tight",
+          "name": "Tight",
+          "key": 39,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "pedal",
+          "name": "Pedal",
+          "key": 44,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "half_open",
+          "name": "Half open",
+          "key": 46,
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "open",
+          "name": "Open",
+          "key": 49,
+          "chokeGroup": "hihat_open"
+        }
+      ]
+    },
+    {
+      "id": "tom1",
+      "name": "Tom 10\"",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 48
+        }
+      ]
+    },
+    {
+      "id": "tom2",
+      "name": "Tom 12\"",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 47
+        }
+      ]
+    },
+    {
+      "id": "tom3",
+      "name": "Tom 13\"",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 45
+        }
+      ]
+    },
+    {
+      "id": "floor1",
+      "name": "Floor Tom 14\"",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 43
+        }
+      ]
+    },
+    {
+      "id": "floor2",
+      "name": "Floor Tom 16\"",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 41
+        }
+      ]
+    },
+    {
+      "id": "crash1",
+      "name": "Crash 1",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 55
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 58
+        }
+      ]
+    },
+    {
+      "id": "crash2",
+      "name": "Crash 2",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 57
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 59
+        }
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 51
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 53
+        }
+      ]
+    },
+    {
+      "id": "splash1",
+      "name": "Splash 1",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 54
+        }
+      ]
+    },
+    {
+      "id": "splash2",
+      "name": "Splash 2",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 56
+        }
+      ]
+    },
+    {
+      "id": "china1",
+      "name": "China 1",
+      "role": "china",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 50
+        }
+      ]
+    },
+    {
+      "id": "china2",
+      "name": "China 2",
+      "role": "china",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 52
+        }
+      ]
+    }
+  ],
+  "kits": [
+    {
+      "file": "Stereo/Naked Drums.sfz",
+      "id": "naked-drums",
+      "name": "Naked Drums",
+      "tags": [
+        "acoustic",
+        "metal",
+        "rock",
+        "multi-mic"
+      ]
+    }
+  ]
+}

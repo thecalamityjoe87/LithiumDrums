@@ -105,7 +105,7 @@ defaults, so 0 dB and centre mean "as the kit was mixed". A kit has at most
 | `id`       | Used by the MIDI map. |
 | `name`     | Shown on its strip and the stage. |
 | `role`     | `kick`, `snare`, `hihat`, `tom` (rack tom), `floor_tom`, `crash`, `ride`, `china` or `other`. |
-| `chokeNote` | A MIDI note that chokes this piece. Cymbals without one get the next free note from 85 up. |
+| `chokeNote` | A MIDI note that chokes this piece. Cymbals without one get a fixed note by role, the same on every kit: crashes 1-3 on 85-87, rides 1-2 on 88-89, chinas 1-2 on 90-91, the splash on 92 (see [midi.md](midi.md)). |
 | `tune`     | The kit's own tuning of the piece, in semitones (-24 to 24). Default 0. |
 | `volumeDb` | The kit's own level for the piece. Default 0. |
 | `decay`    | The kit's own decay, 0-100 (100 = the samples' natural length). Default 100. |
@@ -126,6 +126,17 @@ gets a strip.
 **Articulations** are the ways of hitting a piece (snare: center, rim, rest;
 hi-hat: closed, open, pedal; ride: bow, bell). Each has an `id`, a `name`,
 choke settings, an optional `channelMap`, and `zones`.
+
+Standard ids (`center`, `off_center`, `rimshot`, `sidestick`, `closed`,
+`half_open`, `open`, `pedal`, `bow`, `bell`, `edge`, ...) let kit-independent
+MIDI maps find an articulation, and tell the e-kit controllers what it is (see
+[midi.md](midi.md)). Kits that use other ids, or record more steps, can say so:
+
+| Key        | Meaning |
+|------------|---------|
+| `openness` | Hi-hats: the articulation's step on the pedal's openness ladder, 0 (closed) to 1 (fully open). |
+| `stroke`   | Hi-hats: `"tip"` (bow hits) or `"shank"` (edge hits). Default `tip`. |
+| `position` | Drums and cymbals: the strike position, 0 (centre, or near the bell) to 1 (edge). A ride with several bow recordings uses this to follow positional sensing. |
 
 **Zones** split the velocity range 1-127. They must not overlap; a velocity in
 a gap uses the nearest zone. Each zone has:
@@ -184,14 +195,24 @@ fades out over a few milliseconds (never a hard cut):
 Cymbals are also choked by their `chokeNote` and by polyphonic aftertouch,
 which e-kits send when a cymbal edge is grabbed.
 
+A cymbal hit never chokes its own cymbal, whatever its `chokes` say: hitting
+the bell over a ringing bow adds to the sound, as on a real cymbal. Only a grab
+(an articulation whose id contains `choke`, `grab` or `stop`) silences its own
+cymbal. A hi-hat hit only chokes its own hits that rang more open than it
+leaves the hats, so closed and pedal hits stop open ones but open hits ring on
+together. Chokes between different pieces apply as written. SFZ kits with
+`off_by` on every cymbal and hi-hat region (the AVL Drumkits) rely on this;
+see [midi.md](midi.md).
+
 ## MIDI map
 
 `midiMap` is the kit's default note map: `{ "note", "piece", "articulation" }`
-entries, where `articulation` is optional (the piece's first). A kit without a
-map uses Lithium Drums' General MIDI map instead. That map is written by role
-("the second rack tom", "the first ride, bell"), so it fits any kit; a request
-for a piece the kit doesn't have (a third rack tom) uses the last piece of that
-role. E-kit maps (Roland, Alesis) will use the same role-based form.
+entries, where `articulation` is optional (the piece's first). It's what the
+"Kit default" MIDI map plays, with General MIDI on the notes it leaves free. The
+other maps (General MIDI, Roland V-Drums, Alesis and the user's own) are
+written by role ("the second rack tom", "the first ride, bell"), so they fit
+any kit; a request for a piece the kit doesn't have (a third rack tom) uses the
+last piece of that role. See [midi.md](midi.md).
 
 ## Audio and memory
 
@@ -456,7 +477,8 @@ per mic, each mic switched on and off by a controller. The importer turns
 regions into hits like this:
 
 1. **Fix the controllers.** The instrument is evaluated at one controller
-   state: its own `set_ccN` defaults, then the mapping's `cc`, then the kit's.
+   state: its own `set_ccN` (and high-resolution `set_hdccN`, 0-1) defaults,
+   then the mapping's `cc`, then the kit's.
    A region whose `loccN`/`hiccN` range excludes the state is left out, so the
    mapping can switch every mic on, switch alternative layers off (Virtuosity's
    pitched-down "epic" layers), or pick snares on or off. Release-triggered
@@ -477,7 +499,9 @@ regions into hits like this:
    order (`seq_position`, then `lorand` for random-robin kits), and hit n
    plays every mic's nth region together, sample-aligned.
 6. **Levels.** A zone's `gainDb` is its regions' `volume`, `amplitude` and
-   controller gains, plus the velocity curve (`amp_veltrack`,
+   controller gains (`amplitude_onccN`/`amplitude_ccN` as ARIA plays them: a
+   multiplier from 0 at CC 0 to N% at CC 127, which is how library mixers use
+   them as faders), plus the velocity curve (`amp_veltrack`,
    `amp_velcurve_N`, or SFZ's default velocity-squared) at the zone's top.
    `velocityRangeDb` is the curve's drop to the bottom of the zone, so the level
    follows the SFZ's curve within the zone too.
@@ -550,7 +574,16 @@ the hi-hat keys gathered into one hi-hat piece.
 - A folder per preset, with just its `kit.json`.
 
 The imports were verified on DRSKit 2.1 (a kit and four presets), MuldjordKit
-3.0 (a kit and three presets), the five AVL Drumkits (as the Basalt Kits
-pack), the Salamander Drumkit (a kit and two presets) and Virtuosity Drums 0.925 (two kits and four
-presets): every note in each MIDI map plays at three velocities, every mic
+3.0 (a kit and three presets), CrocellKit 1.1 (a kit and three presets), the
+five AVL Drumkits (as the Basalt Kits pack), the Salamander Drumkit (a kit and
+two presets), Virtuosity Drums 0.925 (two kits and four presets), Big Rusty
+Drums 1.100, SM Drums 1.2 (Sforzando edition) and Naked Drums (sfzinstruments
+edition): every note in each MIDI map plays at three velocities, every mic
 channel is audible, and closing the hi-hat chokes the open hi-hat.
+`LithiumDrumsTests --midi-audit` repeats the check for every installed kit.
+
+The SFZ reader also handles what ARIA-authored libraries do: several
+`#define`s on one line (a value is one word), labels with spaces
+(`region_label=10 one`), and sources three folders deep.
+`LithiumDrumsTests --sfz-dump <file.sfz>` prints what it reads, for writing a
+mapping.

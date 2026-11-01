@@ -89,6 +89,7 @@ public:
         MicMask mics = allMics;         // mics to load into RAM straight away
         StreamingSettings streaming;
         std::shared_ptr<StreamStats> streamStats;
+        MidiMap midiMap = MidiMap::lithiumStandard();   // the map the kit starts with
     };
 
     struct Result
@@ -99,7 +100,7 @@ public:
         std::uint64_t resetToken = 0;
     };
 
-    KitLoader (KitHandoff&, MidiMap generalMidi);
+    explicit KitLoader (KitHandoff&);
     ~KitLoader() override;
 
     /** Starts loading a kit. Any thread except the audio thread. */
@@ -128,7 +129,7 @@ public:
 
     /** Loads a kit synchronously on the calling thread. Returns null and fills
         error on failure. planOut, if given, receives the decode plan. */
-    static std::unique_ptr<Kit> loadKit (const juce::File& folder, const MidiMap& generalMidi, KitInfo& info,
+    static std::unique_ptr<Kit> loadKit (const juce::File& folder, const MidiMap&, KitInfo& info,
                                          juce::String& error, const Options& = {},
                                          std::shared_ptr<const LoadPlan>* planOut = nullptr);
 
@@ -142,7 +143,6 @@ private:
     bool updateMics();
 
     KitHandoff& handoff;
-    const MidiMap generalMidi;
 
     std::mutex mutex;                       // guards request and result (never used by the audio thread)
     std::optional<Request> request;

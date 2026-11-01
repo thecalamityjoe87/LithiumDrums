@@ -6,6 +6,7 @@
 #include "engine/DrumEngine.h"
 #include "engine/KitHandoff.h"
 #include "engine/KitLoader.h"
+#include "engine/MidiMapping.h"
 #include "engine/Mixer.h"
 #include "engine/SpscQueue.h"
 
@@ -26,8 +27,9 @@ namespace lithium
         deletes what the audio thread retires.
       - Everything else (UI, state, kit requests) is the message thread.
     The only ways the audio thread talks to anyone are lock-free: parameter
-    atomics, the KitHandoff, the audition queue, EngineFeedback,
-    MixerFeedback and one atomic counter for kit-switch resets. */
+    atomics, the KitHandoff, the audition and note table queues,
+    EngineFeedback, MixerFeedback and one atomic counter for kit-switch
+    resets. */
 class LithiumDrumsProcessor final : public juce::AudioProcessor,
                                     public juce::ChangeBroadcaster,
                                     private juce::AsyncUpdater,
@@ -120,6 +122,38 @@ public:
     /** Plays one of a piece's articulations (0 = its first), as if hit from MIDI. */
     void audition (int piece, int velocity, int articulation = 0);
 
+    //==============================================================================
+    // The MIDI map (message thread). Every change is resolved against the
+    // current kit and sent to the audio thread at once; listeners of
+    // getMidiMapBroadcaster() hear about it.
+
+    MidiMap getMidiMap() const                                       { std::scoped_lock lock (stateMutex); return midiMap; }
+
+    /** Whether the map differs from the saved (or factory) map it came from. */
+    bool isMidiMapModified() const                                   { std::scoped_lock lock (stateMutex); return midiMapModified; }
+
+    void setMidiMap (const MidiMap&, bool modified);
+
+    /** What each note plays on the current kit. */
+    NoteTable getNoteTable() const                                   { std::scoped_lock lock (stateMutex); return noteTable; }
+
+    /** MIDI learn: makes a note play one of the kit's articulations (an
+        index into its flattened articulations), instead of what it played. */
+    void learnNote (int note, int articulation);
+    void forgetNote (int note);
+
+    /** Makes the notes that play an articulation follow the pedal or a
+        position controller, or not. */
+    void setFollow (int articulation, Follow);
+
+    void setControllers (const ControllerSettings&);
+
+    juce::ChangeBroadcaster& getMidiMapBroadcaster() noexcept        { return midiMapBroadcaster; }
+
+    /** Plays a MIDI note as if it came in from MIDI: through the map, with
+        chokes and the pedal and position following. For the on-screen keyboard. */
+    void playNote (int note, int velocity);
+
     static constexpr int auditionVelocity = 90;
 
 private:
@@ -133,11 +167,26 @@ private:
     MicMask currentlyUnmutedMics() const;
     static BusesProperties createBuses();
 
+    /** Edits the map: an editable copy (see editableCopy()) goes to the
+        function, and the result becomes the current, modified map. */
+    void editMidiMap (const std::function<void (MidiMap&, const KitInfo&)>&);
+    void sendNoteTable();
+    void applyNoteTables() noexcept;
+
     struct AuditionRequest
     {
         int piece;
         int articulation;            // within the piece
         int velocity;
+        int note = -1;               // >= 0: play this MIDI note instead of the piece
+    };
+
+    /** A note table for one kit, sent when the map changes (or a kit
+        arrives). Plain data, copied through the queue. */
+    struct NoteTableUpdate
+    {
+        std::uint64_t kitSerial = 0;
+        NoteTable table;
     };
 
     // Slot names are referenced by the parameters, so they're declared first
@@ -157,12 +206,18 @@ private:
     bool kitSwapPending = false;
     juce::AudioProcessLoadMeasurer loadMeasurer;
 
+    // The newest note table, kept until the kit it's for is playing: it can
+    // arrive while that kit is still waiting to be swapped in.
+    NoteTableUpdate waitingNoteTable;
+    bool noteTableWaiting = false;
+
     // Shared between threads, lock-free. Declaration order matters: the
     // loader thread uses the handoff, so the handoff must be destroyed after
     // the loader.
     KitHandoff handoff;
     KitLoader loader;
     SpscQueue<AuditionRequest, 32> auditions;
+    SpscQueue<NoteTableUpdate, 4> noteTableUpdates;
     std::shared_ptr<StreamStats> streamStats = std::make_shared<StreamStats>();
     std::atomic<bool> kitLoadPending { false };
     std::atomic<std::uint64_t> confirmedResetToken { 0 };   // see Kit::resetToken
@@ -177,8 +232,14 @@ private:
     bool resetWanted = false;
     bool resetSelection = false;
 
+    MidiMap midiMap;
+    bool midiMapModified = false;
+    NoteTable noteTable;                     // midiMap resolved for kitInfo
+    bool noteTableUnsent = false;            // the queue was full; the timer tries again
+
     // Message thread only.
     juce::String kitError;
+    juce::ChangeBroadcaster midiMapBroadcaster;
     std::array<double, maxMics> mutedSince {};   // ms timestamps, 0 = not muted
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LithiumDrumsProcessor)

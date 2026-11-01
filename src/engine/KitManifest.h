@@ -1,11 +1,13 @@
 #pragma once
 
+#include "Articulations.h"
 #include "Kit.h"
 #include "MidiMap.h"
 
 #include <juce_core/juce_core.h>
 
 #include <array>
+#include <optional>
 #include <vector>
 
 // The parsed contents of a kit's kit.json: metadata, mics, pieces, velocity
@@ -54,6 +56,12 @@ struct ArticulationManifest
     juce::String chokeGroup;               // the group this articulation belongs to (can be choked)
     juce::StringArray chokes;              // groups this articulation chokes when it plays
     std::vector<ZoneManifest> zones;       // sorted by velocity
+
+    // Steps for continuous control, where the kit sets them. Without them,
+    // the standard articulation names decide (see Articulations.h).
+    std::optional<float> openness;         // hi-hats: 0 = closed .. 1 = fully open
+    std::optional<HatStroke> stroke;       // hi-hats: "tip" (bow) or "shank" (edge)
+    std::optional<float> position;         // strike position: 0 = centre (or near the bell) .. 1 = edge
 };
 
 struct PieceManifest

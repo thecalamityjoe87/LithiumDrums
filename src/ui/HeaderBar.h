@@ -22,7 +22,7 @@ public:
     ~HeaderBar() override;
 
     std::function<void (Tab)> onTabChanged;
-    std::function<void()> onShowAbout, onShowSettings, onShowBrowser;
+    std::function<void()> onShowAbout, onShowSettings, onShowBrowser, onShowMidi;
     void setTab (Tab);
 
     /** Re-reads the kits folder (after it changes). */
@@ -37,11 +37,13 @@ public:
 private:
     class TabButton;
     class IconButton;
+    class MidiButton;
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
     void kitBoxChanged();
     juce::Rectangle<int> getReadoutArea() const;
+    juce::Rectangle<int> getReadoutBounds (int index) const;
     juce::Rectangle<int> getProgressArea() const;
     float getWordmarkRight() const;
 
@@ -50,6 +52,7 @@ private:
     juce::ComboBox kitBox;
     juce::TextButton browseButton { "Browse" };
     std::unique_ptr<IconButton> aboutButton, settingsButton;
+    std::unique_ptr<MidiButton> midiButton;
     kitlibrary::Library library;
 
     int cpuPercent = 0, voices = 0;

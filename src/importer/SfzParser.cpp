@@ -85,8 +85,14 @@ namespace
                     {
                         readWhile ([] (char x) { return x == ' ' || x == '\t'; });
                         const auto name = readWhile ([] (char x) { return isNameChar ((juce::juce_wchar) (unsigned char) x); });
-                        const auto value = readWhile ([] (char x) { return x != '\n' && x != '\r'; });
-                        define (name, value.upToFirstOccurrenceOf ("//", false, false).trim());
+                        readWhile ([] (char x) { return x == ' ' || x == '\t'; });
+
+                        // The value is one token, as ARIA and sfizz read it: some
+                        // libraries put several #defines on one line (Naked
+                        // Drums: "#define $V11L 1    #define $V11H 127"), so the
+                        // rest of the line is parsed as usual.
+                        const auto value = readWhile ([] (char x) { return ! juce::CharacterFunctions::isWhitespace ((juce::juce_wchar) (unsigned char) x); });
+                        define (name, value.upToFirstOccurrenceOf ("//", false, false));
                     }
                     else if (directive == "include")
                     {
@@ -118,21 +124,26 @@ namespace
                 }
                 else
                 {
-                    // opcode=value. Values end at whitespace, except sample=,
-                    // whose value may contain spaces: it runs to the end of
-                    // the line, or to the next "opcode=" on the same line.
+                    // opcode=value. Values end at whitespace, except sample=
+                    // and labels, whose values may contain spaces: they run to
+                    // the end of the line, or to the next "opcode=" on it.
                     const auto name = substitute (readWhile ([] (char x) { return isNameChar ((juce::juce_wchar) (unsigned char) x); }));
 
-                    if (name.isEmpty() || peek() != '=')
+                    if (name.isEmpty())
                     {
                         skipToEndOfLine();
                         continue;
                     }
 
+                    // A stray word (not "name=") is skipped on its own, so the
+                    // opcodes after it on the line still count.
+                    if (peek() != '=')
+                        continue;
+
                     advance();   // '='
                     juce::String value;
 
-                    if (name == "sample" || name == "default_path" || name.startsWith ("label_"))
+                    if (name == "sample" || name == "default_path" || name.startsWith ("label_") || name.endsWith ("_label"))
                     {
                         const auto from = pos;
                         auto end = pos;
@@ -253,6 +264,8 @@ namespace
                         defaultPath = value.replaceCharacter ('\\', '/');
                     else if (name.startsWith ("set_cc"))
                         result.controllerDefaults[name.substring (6).getIntValue()] = value.getDoubleValue();
+                    else if (name.startsWith ("set_hdcc"))   // high-resolution: 0..1 rather than 0..127
+                        result.controllerDefaults[name.substring (8).getIntValue()] = value.getDoubleValue() * 127.0;
                     break;
 
                 case Level::global:  set (global, name, value);  break;

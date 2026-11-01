@@ -265,6 +265,30 @@ namespace
             for (const auto& g : getArray (art, "chokes", where))
                 result.chokes.addIfNotAlreadyThere (g.toString());
 
+        auto unitValue = [&] (const char* key) -> std::optional<float>
+        {
+            if (art[key].isVoid())
+                return std::nullopt;
+
+            const auto v = (float) getNumber (art, key, where, -1.0);
+
+            if (v < 0.0f || v > 1.0f)
+                fail (where, "\"" + juce::String (key) + "\" must be within 0..1");
+
+            return v;
+        };
+
+        result.openness = unitValue ("openness");
+        result.position = unitValue ("position");
+
+        if (const auto stroke = getString (art, "stroke", where, false); stroke.isNotEmpty())
+        {
+            result.stroke = articulations::strokeFromKey (stroke.toStdString());
+
+            if (! result.stroke.has_value())
+                fail (where, "\"stroke\" must be \"tip\" or \"shank\"");
+        }
+
         std::optional<ChannelMap> map;
 
         if (! art["channelMap"].isVoid())

@@ -1,0 +1,319 @@
+{
+  "comment": "Import mapping for SM Drums 1.2 (the Sforzando/SFZ edition). That edition has the stereo mix of each hit only (the multi-mic recordings are in the Kontakt and Reaper editions), so the kit has one stereo mic that feeds every drum's channel. The main snare is the real 1965 Ludwig (Snare65 Reg); the 1967 snare and the processed 'hybrid' snare are second and third snares. The sample paths use Windows separators, which the SFZ reader accepts.",
+  "format": "sfz",
+  "matches": [
+    "SM_Drums_kit.sfz",
+    "Deeply Sampled Free Drums.bank.xml"
+  ],
+  "pack": {
+    "id": "sm-drums",
+    "name": "SM Drums"
+  },
+  "author": "Scott McLean (recording), Tod Stillwell (editing), D. Smolken (SFZ programming)",
+  "sourceUrl": "https://smmdrums.wordpress.com/",
+  "license": {
+    "name": "Free to use in productions (no licence text)",
+    "url": "https://smmdrums.wordpress.com/",
+    "shareAlike": false,
+    "files": []
+  },
+  "licenseNote": "SM Drums comes without a licence file. Its manual says Scott McLean shares the kit \"with the world to use in their productions\": use it in your music, but the samples and this conversion aren't licensed for passing on.",
+  "credits": "SM Drums: a 1960s Ludwig Oyster Blue Pearl kit engineered and recorded by Scott McLean, sample editing by Tod Stillwell, SFZ programming by D. Smolken. Cymbals: Zildjian A series and a custom-cut Wuhan china.",
+  "description": "A 1960s Ludwig Oyster Blue Pearl kit with Zildjian cymbals: warm, vintage and deeply sampled, in its stereo mix.",
+  "audienceView": true,
+  "mics": [
+    {
+      "id": "kit",
+      "name": "Kit (stereo)",
+      "role": "overheads",
+      "channels": 2,
+      "samples": [
+        "*"
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "id": "kick",
+      "name": "Kick 22\"",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 36
+        }
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare 1965",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 64
+        },
+        {
+          "id": "rimshot",
+          "name": "Rimshot",
+          "key": 65
+        },
+        {
+          "id": "sidestick",
+          "name": "Sidestick",
+          "key": 37
+        },
+        {
+          "id": "muted",
+          "name": "No ring",
+          "key": 52
+        }
+      ]
+    },
+    {
+      "id": "snare2",
+      "name": "Snare 1967",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 53
+        }
+      ]
+    },
+    {
+      "id": "snare_hybrid",
+      "name": "Snare Hybrid",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 38
+        },
+        {
+          "id": "rimshot",
+          "name": "Rimshot",
+          "key": 39
+        },
+        {
+          "id": "center_2",
+          "name": "Center 2",
+          "key": 40
+        },
+        {
+          "id": "center_3",
+          "name": "Center 3",
+          "key": 41
+        }
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat 14\"",
+      "role": "hihat",
+      "articulations": [
+        {
+          "id": "closed",
+          "name": "Closed",
+          "key": 42,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "pedal",
+          "name": "Pedal",
+          "key": 50,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "quarter_open",
+          "name": "Loose",
+          "key": 44,
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "open",
+          "name": "Open",
+          "key": 46,
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "closed_open",
+          "name": "Closed to open",
+          "key": 51,
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "splash",
+          "name": "Foot splash",
+          "key": 49,
+          "chokeGroup": "hihat_open"
+        }
+      ]
+    },
+    {
+      "id": "tom1",
+      "name": "Tom 12\"",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 48
+        }
+      ]
+    },
+    {
+      "id": "tom2",
+      "name": "Tom 12\" II",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 47
+        }
+      ]
+    },
+    {
+      "id": "tom3",
+      "name": "Tom 13\"",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 45
+        }
+      ]
+    },
+    {
+      "id": "floor",
+      "name": "Floor Tom 14\"",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 43
+        }
+      ]
+    },
+    {
+      "id": "crash1",
+      "name": "Crash 16\"",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 56
+        }
+      ]
+    },
+    {
+      "id": "crash2",
+      "name": "Crash 17\"",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 57
+        }
+      ]
+    },
+    {
+      "id": "crash3",
+      "name": "Crash 15\"",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 55
+        }
+      ]
+    },
+    {
+      "id": "crash4",
+      "name": "Crash 13\"",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 54
+        }
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride 20\" Ping",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 62
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 63
+        }
+      ]
+    },
+    {
+      "id": "ride2",
+      "name": "Ride 17\" Thin",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 60
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 61
+        }
+      ]
+    },
+    {
+      "id": "china",
+      "name": "China 15\"",
+      "role": "china",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 58
+        }
+      ]
+    }
+  ],
+  "kits": [
+    {
+      "file": "Programs/SM_Drums_kit.sfz",
+      "id": "sm-drums",
+      "name": "SM Drums",
+      "tags": [
+        "acoustic",
+        "vintage",
+        "rock",
+        "stereo"
+      ]
+    }
+  ],
+  "levelDb": -6,
+  "levelComment": "-6 dB: the samples are normalised, so hard hits otherwise peak at -0.5 dBFS before anything is mixed."
+}

@@ -5,6 +5,7 @@
 #include "InfoPanels.h"
 #include "KitBrowser.h"
 #include "KitPage.h"
+#include "MidiPanel.h"
 #include "MixerPage.h"
 
 namespace lithium
@@ -30,6 +31,7 @@ private:
     ComingSoonPage groovesPage, fxPage;
     AboutPanel aboutPanel;
     SettingsPanel settingsPanel;
+    MidiPanel midiPanel;
     KitBrowser browser;
 };
 

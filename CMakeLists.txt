@@ -57,6 +57,7 @@ target_sources(LithiumDrums PRIVATE
     src/Parameters.cpp
     src/Settings.cpp
     src/KitLibrary.cpp
+    src/MidiMapLibrary.cpp
     src/importer/Importer.cpp
     src/importer/KitWriter.cpp
     src/importer/DrumGizmoImporter.cpp
@@ -64,6 +65,7 @@ target_sources(LithiumDrums PRIVATE
     src/importer/SfzImporter.cpp
     src/engine/KitManifest.cpp
     src/engine/MidiMap.cpp
+    src/engine/MidiMapping.cpp
     src/engine/InMemorySampleSource.cpp
     src/engine/StreamCache.cpp
     src/engine/StreamingSampleSource.cpp
@@ -88,7 +90,9 @@ target_sources(LithiumDrums PRIVATE
     src/ui/EditPage.cpp
     src/ui/MixerPage.cpp
     src/ui/KitBrowser.cpp
-    src/ui/InfoPanels.cpp)
+    src/ui/InfoPanels.cpp
+    src/ui/MidiPanel.cpp
+    src/ui/MidiKeyboard.cpp)
 
 target_include_directories(LithiumDrums PRIVATE src)
 
@@ -114,9 +118,13 @@ juce_add_binary_data(LithiumAssets
         assets/kit-renders/tom2.png
         assets/kit-renders/floor.png
         assets/kit-renders/crash.png
+        assets/kit-renders/crash2.png
         assets/kit-renders/ride.png
         assets/kit-renders/china.png
-        assets/midi-maps/general-midi.json)
+        assets/midi-maps/lithium-standard.json
+        assets/midi-maps/general-midi.json
+        assets/midi-maps/roland-vdrums.json
+        assets/midi-maps/alesis.json)
 
 # The importer's built-in mappings for known kits.
 juce_add_binary_data(LithiumImportMaps
@@ -127,7 +135,11 @@ juce_add_binary_data(LithiumImportMaps
         assets/import-maps/MuldjordKit.json
         assets/import-maps/AVLDrumkits.json
         assets/import-maps/SalamanderDrumkit.json
-        assets/import-maps/VirtuosityDrums.json)
+        assets/import-maps/VirtuosityDrums.json
+        assets/import-maps/CrocellKit.json
+        assets/import-maps/BigRustyDrums.json
+        assets/import-maps/SMDrums.json
+        assets/import-maps/NakedDrums.json)
 
 target_compile_definitions(LithiumDrums
     PUBLIC
@@ -228,7 +240,7 @@ target_link_libraries(LithiumRoomGen PRIVATE
 if(LITHIUM_BUILD_TESTS)
     # The tests link the plugin's shared-code library (the processor, engine
     # and UI, compiled once) rather than recompiling the sources.
-    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp)
+    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp)
     target_include_directories(LithiumDrumsTests PRIVATE src)
     target_compile_definitions(LithiumDrumsTests PRIVATE
         LITHIUM_TEST_KIT_DIR="${LITHIUM_TEST_KIT_DIR}"

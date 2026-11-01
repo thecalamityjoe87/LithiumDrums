@@ -65,11 +65,12 @@ constexpr std::optional<PieceRole> roleFromKey (std::string_view key) noexcept
 }
 
 //==============================================================================
-// The nine pieces in the pre-rendered kit (assets/kit-renders). A loaded kit's
+// The ten pieces in the pre-rendered kit (assets/kit-renders). A loaded kit's
 // pieces are assigned to these slots by role: the first kick to the kick
-// slot, the first two rack toms to tom1 and tom2, and so on.
-enum class StageSlot : std::uint8_t { kick, snare, hihat, tom1, tom2, floorTom, crash, ride, china };
-inline constexpr int numStageSlots = 9;
+// slot, the first two rack toms to tom1 and tom2, the first two crashes (not
+// counting splashes) to crash and crash2, and so on.
+enum class StageSlot : std::uint8_t { kick, snare, hihat, tom1, tom2, floorTom, crash, crash2, ride, china };
+inline constexpr int numStageSlots = 10;
 
 struct SlotInfo
 {
@@ -87,6 +88,7 @@ inline constexpr std::array<SlotInfo, numStageSlots> slotInfos {{
     { StageSlot::tom2,     "tom2",  PieceRole::tom,      1 },
     { StageSlot::floorTom, "floor", PieceRole::floorTom, 0 },
     { StageSlot::crash,    "crash", PieceRole::crash,    0 },
+    { StageSlot::crash2,   "crash2", PieceRole::crash,   1 },
     { StageSlot::ride,     "ride",  PieceRole::ride,     0 },
     { StageSlot::china,    "china", PieceRole::china,    0 },
 }};

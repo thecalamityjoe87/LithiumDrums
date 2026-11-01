@@ -83,12 +83,12 @@ namespace
             crossfade ("xfin_locc", "xfin_hicc", true);
             crossfade ("xfout_locc", "xfout_hicc", false);
 
-            // amplitude_onccN scales from (100 - N)% at CC 0 up to 100% at CC 127.
-            if (const auto n = ccNumber (name, "amplitude_oncc"); n >= 0)
-            {
-                const auto depth = value.getDoubleValue() / 100.0;
-                gain *= (1.0 - depth) + depth * controller (cc, n) / 127.0;
-            }
+            // amplitude_onccN (and ARIA's amplitude_ccN) is a multiplier that
+            // rises from 0 at CC 0 to N% at CC 127, as ARIA plays it: library
+            // mixers use it as a fader (Naked Drums sets 200% with the
+            // controller at its middle for unity; at 0 the mic is off).
+            if (const auto n = std::max (ccNumber (name, "amplitude_oncc"), ccNumber (name, "amplitude_cc")); n >= 0)
+                gain *= value.getDoubleValue() / 100.0 * controller (cc, n) / 127.0;
 
             if (const auto n = ccNumber (name, "volume_oncc"); n >= 0)
                 controllerGainDb += value.getDoubleValue() * controller (cc, n) / 127.0;
@@ -905,7 +905,9 @@ bool isSfzSource (const juce::File& source)
     if (source.existsAsFile())
         return source.hasFileExtension ("sfz");
 
-    return ! findSfzFiles (source, 2).isEmpty();
+    // As deep as importSfz() looks: some libraries keep their programs three
+    // folders down (Naked Drums: "Wilkinson Audio/Naked Drums/Stereo").
+    return ! findSfzFiles (source, 3).isEmpty();
 }
 
 juce::Result importSfz (const Options& options, std::vector<ImportedKit>& results)

@@ -42,7 +42,7 @@ struct Instrument
 {
     juce::File file;
     std::vector<Region> regions;
-    std::map<int, double> controllerDefaults;        // <control> set_ccN values
+    std::map<int, double> controllerDefaults;        // <control> set_ccN (and set_hdccN, scaled to 0..127) values
     juce::StringArray warnings;
 };
 

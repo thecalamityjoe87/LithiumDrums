@@ -8,6 +8,7 @@ namespace
     const juce::Identifier kitsFolderKey { "kitsFolder" };
     const juce::Identifier streamingKey { "streaming" };
     const juce::Identifier preloadKey { "preloadFrames" };
+    const juce::Identifier midiMapKey { "defaultMidiMap" };
 
     constexpr std::array<std::pair<StreamingMode, const char*>, 3> modeNames {{
         { StreamingMode::automatic, "auto" },
@@ -87,6 +88,26 @@ void Settings::setPreloadFrames (int frames)
 {
     file->setValue (preloadKey.toString(), frames);
     file->saveIfNeeded();
+}
+
+juce::String Settings::getDefaultMidiMap() const
+{
+    return file->getValue (midiMapKey.toString());
+}
+
+void Settings::setDefaultMidiMap (const juce::String& json)
+{
+    file->setValue (midiMapKey.toString(), json);
+    file->saveIfNeeded();
+}
+
+juce::File Settings::getMidiMapsFolder()
+{
+    if (const auto env = juce::SystemStats::getEnvironmentVariable ("LITHIUM_MIDI_MAPS_FOLDER", {});
+        env.isNotEmpty() && juce::File::isAbsolutePath (env))
+        return juce::File (env);
+
+    return getDefaultKitsFolder().getSiblingFile ("MIDI Maps");
 }
 
 juce::File Settings::getDefaultCacheFolder()

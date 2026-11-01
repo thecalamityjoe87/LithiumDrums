@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, 'layers')
 DST = os.path.join(HERE, 'kit-renders')
 STAGE_1X = (1280, 520)
-DRAW_ORDER = ['base', 'china', 'ride', 'crash', 'hihat', 'floor', 'kick', 'tom2', 'tom1', 'snare']
+DRAW_ORDER = ['base', 'china', 'ride', 'crash2', 'crash', 'hihat', 'floor', 'kick', 'tom2', 'tom1', 'snare']
 
 pieces = {}
 render_scale = None

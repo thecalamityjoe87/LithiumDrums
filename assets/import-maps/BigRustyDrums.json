@@ -1,0 +1,506 @@
+{
+  "comment": "Import mapping for Karoryfer's Big Rusty Drums (v1.100, SFZ). The full-kit program is evaluated at its own default controller settings (its mix), with sticks selected (CC25-28 at 0); the snare and 22\" floor tom brushes are read at the brush setting (CC25/CC26 at 80). The hi-hat's openness is a controller on one key (CC4); its quarter-open, half-open and open steps become articulations of their own. Each kit piece's close mic ('cl', 'kick', 'top', 'btm') becomes a mic; 'sn' is the snare wires buzzing under the other drums, recorded by the bottom snare mic. Mechanical noises, stir and flutter techniques and percussive clicks aren't imported.",
+  "format": "sfz",
+  "matches": [
+    "Big Rusty Drums.bank.xml",
+    "01-full.sfz"
+  ],
+  "pack": {
+    "id": "karoryfer-big-rusty-drums",
+    "name": "Big Rusty Drums"
+  },
+  "author": "Karoryfer Lecolds",
+  "sourceUrl": "https://github.com/sfzinstruments/karoryfer.big-rusty-drums",
+  "license": {
+    "name": "CC0 1.0",
+    "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "shareAlike": false,
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "credits": "Big Rusty Drums by Karoryfer Lecolds: a vintage Polish drum kit, drums, hardware and heads hand-made by Zygmunt Szpaderski. Dedicated to the public domain (CC0); credited here with thanks.",
+  "description": "A vintage Polish kit with a 24\" kick and four huge toms, hand-built by Zygmunt Szpaderski: big, loose and rocky.",
+  "cc": {
+    "25": 0,
+    "26": 0,
+    "27": 0,
+    "28": 0
+  },
+  "audienceView": true,
+  "levelDb": -6,
+  "mics": [
+    {
+      "id": "kick",
+      "name": "Kick",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/kick_24*/*/kick/*"
+      ]
+    },
+    {
+      "id": "snare_top",
+      "name": "Snare Top",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/snare_14/*/top/*"
+      ]
+    },
+    {
+      "id": "snare_bottom",
+      "name": "Snare Btm",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/snare_14/*/btm/*",
+        "*/sn/*"
+      ]
+    },
+    {
+      "id": "tom1",
+      "name": "Tom 14",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/tom_14/*/cl/*"
+      ]
+    },
+    {
+      "id": "tom2",
+      "name": "Tom 15",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/tom_15/*/cl/*"
+      ]
+    },
+    {
+      "id": "floor1",
+      "name": "Floor 18",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/tom_18/*/cl/*"
+      ]
+    },
+    {
+      "id": "floor2",
+      "name": "Floor 22",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/tom_22/*/cl/*"
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/hihat_14/*/cl/*"
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/ride_22/*/cl/*"
+      ]
+    },
+    {
+      "id": "ride_sizzle",
+      "name": "Sizzle Ride",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/ride_sizzle_19/*/cl/*"
+      ]
+    },
+    {
+      "id": "crash",
+      "name": "Crash",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/crash_17/*/cl/*"
+      ]
+    },
+    {
+      "id": "crash_sizzle",
+      "name": "Sizzle Crash",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/crash_sizzle_17/*/cl/*"
+      ]
+    },
+    {
+      "id": "china",
+      "name": "China",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/china_18/*/cl/*"
+      ]
+    },
+    {
+      "id": "stack",
+      "name": "Stack",
+      "role": "close",
+      "channels": 1,
+      "samples": [
+        "*Samples/stack_3_layer/*/cl/*"
+      ]
+    },
+    {
+      "id": "overheads",
+      "name": "Overheads",
+      "role": "overheads",
+      "channels": 2,
+      "samples": [
+        "*/oh/*"
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "id": "kick",
+      "name": "Kick 24\"",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 36
+        }
+      ]
+    },
+    {
+      "id": "kick_undamped",
+      "name": "Kick Undamped",
+      "role": "kick",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 35
+        }
+      ]
+    },
+    {
+      "id": "snare",
+      "name": "Snare 14\"",
+      "role": "snare",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 38
+        },
+        {
+          "id": "edge",
+          "name": "Edge",
+          "key": 39
+        },
+        {
+          "id": "rimshot",
+          "name": "Rimshot",
+          "key": 40
+        },
+        {
+          "id": "sidestick",
+          "name": "Sidestick",
+          "key": 37
+        },
+        {
+          "id": "brush",
+          "name": "Brush",
+          "key": 38,
+          "note": 105,
+          "cc": {
+            "25": 80
+          },
+          "samples": [
+            "*/brush/*"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-Hat 14\"",
+      "role": "hihat",
+      "articulations": [
+        {
+          "id": "closed",
+          "name": "Closed",
+          "key": 42,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "pedal",
+          "name": "Pedal",
+          "key": 44,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "closed_edge",
+          "name": "Closed edge",
+          "key": 54,
+          "chokes": [
+            "hihat_open"
+          ]
+        },
+        {
+          "id": "quarter_open",
+          "name": "Quarter open",
+          "key": 46,
+          "note": 97,
+          "cc": {
+            "4": 64
+          },
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "half_open",
+          "name": "Half open",
+          "key": 46,
+          "note": 98,
+          "cc": {
+            "4": 90
+          },
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "open",
+          "name": "Open",
+          "key": 46,
+          "cc": {
+            "4": 115
+          },
+          "chokeGroup": "hihat_open"
+        },
+        {
+          "id": "splash",
+          "name": "Foot splash",
+          "key": 56,
+          "chokeGroup": "hihat_open"
+        }
+      ]
+    },
+    {
+      "id": "tom1",
+      "name": "Tom 14\"",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 47
+        }
+      ]
+    },
+    {
+      "id": "tom2",
+      "name": "Tom 15\"",
+      "role": "tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 45
+        }
+      ]
+    },
+    {
+      "id": "floor1",
+      "name": "Floor Tom 18\"",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 43
+        }
+      ]
+    },
+    {
+      "id": "floor2",
+      "name": "Floor Tom 22\"",
+      "role": "floor_tom",
+      "articulations": [
+        {
+          "id": "center",
+          "name": "Center",
+          "key": 41
+        },
+        {
+          "id": "brush",
+          "name": "Brush",
+          "key": 41,
+          "note": 99,
+          "cc": {
+            "26": 80
+          },
+          "samples": [
+            "*/brush/*"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crash",
+      "name": "Crash 17\"",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 49
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 50
+        }
+      ]
+    },
+    {
+      "id": "crash_sizzle",
+      "name": "Sizzle Crash 17\"",
+      "role": "crash",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 65
+        },
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 64
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 67
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 69
+        }
+      ]
+    },
+    {
+      "id": "ride",
+      "name": "Ride 22\"",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 51
+        },
+        {
+          "id": "edge",
+          "name": "Crash (edge)",
+          "key": 52
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 53
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 55
+        }
+      ]
+    },
+    {
+      "id": "ride_sizzle",
+      "name": "Sizzle Ride 19\"",
+      "role": "ride",
+      "articulations": [
+        {
+          "id": "bow",
+          "name": "Bow",
+          "key": 60
+        },
+        {
+          "id": "edge",
+          "name": "Crash (edge)",
+          "key": 61
+        },
+        {
+          "id": "bell",
+          "name": "Bell",
+          "key": 62
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 63
+        }
+      ]
+    },
+    {
+      "id": "china",
+      "name": "China 18\"",
+      "role": "china",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Hit",
+          "key": 57
+        },
+        {
+          "id": "choke",
+          "name": "Choked",
+          "key": 59
+        }
+      ]
+    },
+    {
+      "id": "stack",
+      "name": "Stack",
+      "role": "other",
+      "articulations": [
+        {
+          "id": "hit",
+          "name": "Edge",
+          "key": 72
+        },
+        {
+          "id": "mid",
+          "name": "Middle",
+          "key": 71
+        }
+      ]
+    }
+  ],
+  "kits": [
+    {
+      "file": "Programs/01-full.sfz",
+      "id": "big-rusty",
+      "name": "Big Rusty",
+      "tags": [
+        "acoustic",
+        "rock",
+        "vintage",
+        "multi-mic"
+      ]
+    }
+  ]
+}

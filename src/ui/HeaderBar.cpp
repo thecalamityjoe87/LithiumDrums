@@ -2,6 +2,8 @@
 
 #include "Theme.h"
 
+#include <numeric>
+
 namespace lithium
 {
 
@@ -10,10 +12,16 @@ namespace
     constexpr float wordmarkSize = 21.0f;
     constexpr float wordmarkTracking = 0.14f;
     constexpr float tabTracking = 0.1f;
-    constexpr int readoutWidth = 78;
-    constexpr int numReadouts = 4;
+    // CPU, RAM, DISK and POLY: each as wide as its longest value ("100%",
+    // "1023 MB", "123 MB/s", "64" in 14 px IBM Plex Mono), with a clear gap
+    // between them and before the buttons.
+    constexpr std::array<int, 4> readoutWidths { 44, 64, 80, 40 };
+    constexpr int readoutGap = 20;
+    constexpr int readoutsToButtons = 28;
     constexpr double dropoutHighlightMs = 4000.0;   // how long the disk readout stays red after a dropout
     constexpr int iconSize = 30;
+    constexpr int numIcons = 3;
+    constexpr double midiLightMs = 120.0;   // how long the MIDI light stays on after a note
 
     juce::String formatBytes (std::size_t bytes)
     {
@@ -135,10 +143,75 @@ private:
 };
 
 //==============================================================================
+/** Opens the MIDI panel. Its ring lights up as notes come in, so it doubles
+    as a MIDI activity light: the first thing to check when an e-kit seems
+    to do nothing. */
+class HeaderBar::MidiButton final : public juce::Button,
+                                    private juce::Timer
+{
+public:
+    explicit MidiButton (const EngineFeedback& f) : juce::Button ("MIDI mapping"), feedback (f)
+    {
+        setTooltip ("MIDI mapping and e-kit setup. Lights up when notes come in.");
+        seen = feedback.lastNote.load();
+        startTimerHz (25);
+    }
+
+    void paintButton (juce::Graphics& g, bool isMouseOver, bool isDown) override
+    {
+        using namespace theme;
+        const auto bounds = getLocalBounds().toFloat().reduced (1.0f);
+        const auto lit = juce::Time::getMillisecondCounterHiRes() < litUntil;
+
+        g.setColour (isDown ? colours::raisedHigh : (isMouseOver ? colours::raised : colours::panel));
+        g.fillEllipse (bounds);
+        g.setColour (lit || isMouseOver ? colours::accent : colours::borderStrong);
+        g.drawEllipse (bounds, lit ? 2.0f : 1.0f);
+
+        // A five-pin DIN socket: a ring with a key notch, pins in a half circle.
+        const auto c = bounds.getCentre();
+        g.setColour (lit ? colours::accent : (isMouseOver ? colours::text : colours::textMuted));
+        g.drawEllipse (juce::Rectangle<float> (15.0f, 15.0f).withCentre (c), 1.4f);
+        g.fillRect (juce::Rectangle<float> (3.0f, 2.6f).withCentre ({ c.x, c.y - 6.6f }));
+
+        for (const auto degrees : { 90.0f, 135.0f, 180.0f, 225.0f, 270.0f })
+        {
+            const auto a = juce::degreesToRadians (degrees);
+            g.fillEllipse (juce::Rectangle<float> (2.2f, 2.2f).withCentre ({ c.x + 4.0f * std::sin (a), c.y - 4.0f * std::cos (a) }));
+        }
+    }
+
+private:
+    void timerCallback() override
+    {
+        const auto now = juce::Time::getMillisecondCounterHiRes();
+
+        if (const auto bits = feedback.lastNote.load (std::memory_order_relaxed); bits != seen)
+        {
+            seen = bits;
+            litUntil = now + midiLightMs;
+            wasLit = true;
+            repaint();
+        }
+        else if (wasLit && now >= litUntil)
+        {
+            wasLit = false;
+            repaint();
+        }
+    }
+
+    const EngineFeedback& feedback;
+    std::uint32_t seen = 0;
+    double litUntil = 0.0;
+    bool wasLit = false;
+};
+
+//==============================================================================
 HeaderBar::HeaderBar (LithiumDrumsProcessor& p)
     : processor (p),
       aboutButton (std::make_unique<IconButton> ("About and credits", IconButton::Icon::info)),
-      settingsButton (std::make_unique<IconButton> ("Settings", IconButton::Icon::gear))
+      settingsButton (std::make_unique<IconButton> ("Settings", IconButton::Icon::gear)),
+      midiButton (std::make_unique<MidiButton> (p.getFeedback()))
 {
     const std::pair<const char*, Tab> tabNames[] { { "Kit", Tab::kit }, { "Edit", Tab::edit }, { "Mixer", Tab::mixer },
                                                    { "Grooves", Tab::grooves }, { "FX", Tab::fx } };
@@ -167,8 +240,10 @@ HeaderBar::HeaderBar (LithiumDrumsProcessor& p)
 
     aboutButton->onClick = [this] { if (onShowAbout) onShowAbout(); };
     settingsButton->onClick = [this] { if (onShowSettings) onShowSettings(); };
-    addAndMakeVisible (*aboutButton);
+    midiButton->onClick = [this] { if (onShowMidi) onShowMidi(); };
+    addAndMakeVisible (*midiButton);
     addAndMakeVisible (*settingsButton);
+    addAndMakeVisible (*aboutButton);
 
     processor.addChangeListener (this);
     refreshKitBox();
@@ -342,21 +417,32 @@ float HeaderBar::getWordmarkRight() const
 
 juce::Rectangle<int> HeaderBar::getReadoutArea() const
 {
-    return getLocalBounds().withTrimmedRight (20 + 2 * iconSize + 8 + 16).removeFromRight (readoutWidth * numReadouts);
+    const auto width = std::accumulate (readoutWidths.begin(), readoutWidths.end(), 0) + readoutGap * ((int) readoutWidths.size() - 1);
+    return getLocalBounds().withTrimmedRight (20 + numIcons * iconSize + (numIcons - 1) * 8 + readoutsToButtons).removeFromRight (width);
+}
+
+juce::Rectangle<int> HeaderBar::getReadoutBounds (int index) const
+{
+    auto area = getReadoutArea();
+
+    for (int i = 0; i < index; ++i)
+        area.removeFromLeft (readoutWidths[(size_t) i] + readoutGap);
+
+    return area.withWidth (readoutWidths[(size_t) index]);
 }
 
 juce::String HeaderBar::getTooltip()
 {
-    const auto area = getReadoutArea();
     const auto mouse = getMouseXYRelative();
+    int readout = 0;
 
-    if (! area.contains (mouse))
-        return {};
+    while (readout < (int) readoutWidths.size() && ! getReadoutBounds (readout).expanded (readoutGap / 2, 0).contains (mouse))
+        ++readout;
 
     const auto info = processor.getKitInfo();
     const auto& stats = processor.getStreamStats();
 
-    switch ((mouse.x - area.getX()) / readoutWidth)
+    switch (readout)
     {
         case 0:
             return "Audio processing load";
@@ -383,8 +469,12 @@ juce::String HeaderBar::getTooltip()
             return text;
         }
 
+        case 3:
+            return "Polyphony: how many sounds are playing right now, out of " + juce::String (DrumEngine::numVoices)
+                   + ".\nEvery hit is one, and a ringing cymbal keeps its own until it fades.";
+
         default:
-            return "Voices playing";
+            return {};
     }
 }
 
@@ -416,19 +506,19 @@ void HeaderBar::paint (juce::Graphics& g)
                      row.withTrimmedLeft (lithiumWidth + 6.0f), juce::Justification::centredLeft);
 
     // Readouts: a small label above a monospaced value.
-    auto area = getReadoutArea();
     const auto diskValue = streaming ? juce::String (diskBytesPerSecond / (1024.0 * 1024.0), diskBytesPerSecond < 10.0 * 1024 * 1024 ? 1 : 0) + " MB/s"
                                      : juce::String ("-");
     const std::tuple<juce::String, juce::String, juce::Colour> readouts[] {
         { "CPU", juce::String (cpuPercent) + "%", colours::text },
         { "RAM", formatBytes (sampleBytes), colours::text },     // sample data; muted mics are unloaded
         { "DISK", diskValue, recentDropouts ? colours::warning : colours::text },
-        { "VOICES", juce::String (voices), colours::text },
+        { "POLY", juce::String (voices), colours::text },
     };
 
-    for (const auto& [name, value, colour] : readouts)
+    for (const auto& [i, readout] : juce::enumerate (readouts))
     {
-        auto r = area.removeFromLeft (readoutWidth).toFloat().withSizeKeepingCentre ((float) readoutWidth, 34.0f);
+        const auto& [name, value, colour] = readout;
+        auto r = getReadoutBounds ((int) i).toFloat().withSizeKeepingCentre ((float) readoutWidths[(size_t) i], 34.0f);
         g.setColour (colours::textMuted);
         drawTrackedText (g, name, label (11.0f, Weight::semibold), 0.12f, r.removeFromTop (14.0f),
                          juce::Justification::centredRight);
@@ -462,10 +552,13 @@ void HeaderBar::resized()
     kitBox.setBounds (juce::Rectangle<int> (boxWidth, 32).withCentre (getLocalBounds().getCentre()));
     browseButton.setBounds (kitBox.getBounds().withX (kitBox.getRight() + 8).withWidth (72));
 
-    auto icons = getLocalBounds().withTrimmedRight (20).removeFromRight (2 * iconSize + 8);
-    settingsButton->setBounds (icons.removeFromRight (iconSize).withSizeKeepingCentre (iconSize, iconSize));
-    icons.removeFromRight (8);
-    aboutButton->setBounds (icons.removeFromRight (iconSize).withSizeKeepingCentre (iconSize, iconSize));
+    // MIDI | Settings | Info, left to right.
+    auto icons = getLocalBounds().withTrimmedRight (20).removeFromRight (numIcons * iconSize + (numIcons - 1) * 8);
+    midiButton->setBounds (icons.removeFromLeft (iconSize).withSizeKeepingCentre (iconSize, iconSize));
+    icons.removeFromLeft (8);
+    settingsButton->setBounds (icons.removeFromLeft (iconSize).withSizeKeepingCentre (iconSize, iconSize));
+    icons.removeFromLeft (8);
+    aboutButton->setBounds (icons.removeFromLeft (iconSize).withSizeKeepingCentre (iconSize, iconSize));
 }
 
 } // namespace lithium

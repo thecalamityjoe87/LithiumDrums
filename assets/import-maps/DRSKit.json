@@ -92,7 +92,7 @@
     ]},
     { "id": "ride", "name": "Ride", "role": "ride", "articulations": [
       { "instrument": "Ride_tip",            "id": "bow",        "name": "Bow" },
-      { "instrument": "Ride_shank",          "id": "shank",      "name": "Shank" },
+      { "instrument": "Ride_shank",          "id": "shank",      "name": "Crash (shank)" },
       { "instrument": "Ride_tip_bell",       "id": "bell",       "name": "Bell" },
       { "instrument": "Ride_shank_bell",     "id": "bell_shank", "name": "Bell shank" },
       { "instrument": "Ride_rest",           "id": "rest",       "name": "Rest" },

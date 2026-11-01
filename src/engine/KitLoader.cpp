@@ -2,6 +2,7 @@
 
 #include "DrumEngine.h"
 #include "KitManifest.h"
+#include "MidiMapping.h"
 #include "ParallelJobs.h"
 #include "StreamCache.h"
 
@@ -194,6 +195,80 @@ namespace
             options.phase->store (phase, std::memory_order_relaxed);
     }
 
+    /** Fills a piece's ladders from its articulations' traits (KitArticulationInfo::traits).
+
+        Each ladder is sorted by value, with one articulation per value (the
+        first in kit order). The shank (edge) ladder borrows tip steps at the
+        openness levels the kit has no shank recording of, so an edge hit with
+        the pedal half up still sounds half open. */
+    void buildLadders (PieceData& pd, KitPieceInfo& info)
+    {
+        auto build = [&] (Ladder& ladder, auto&& valueOf)
+        {
+            std::vector<std::pair<float, int>> steps;
+
+            for (size_t a = 0; a < info.articulations.size(); ++a)
+            {
+                const auto v = valueOf (info.articulations[a].traits);
+
+                if (v >= 0.0f && std::none_of (steps.begin(), steps.end(), [v] (const auto& s) { return std::abs (s.first - v) < 0.001f; }))
+                    steps.emplace_back (v, pd.firstArticulation + (int) a);
+            }
+
+            std::stable_sort (steps.begin(), steps.end(), [] (const auto& x, const auto& y) { return x.first < y.first; });
+            ladder.numSteps = std::min ((int) steps.size(), Ladder::maxSteps);
+
+            for (int i = 0; i < ladder.numSteps; ++i)
+            {
+                ladder.value[(size_t) i] = steps[(size_t) i].first;
+                ladder.articulation[(size_t) i] = steps[(size_t) i].second;
+            }
+        };
+
+        auto opennessOf = [] (HatStroke stroke)
+        {
+            return [stroke] (const ArticulationTraits& t) { return t.stroke == stroke ? t.openness : -1.0f; };
+        };
+
+        build (pd.hatLadders[0], opennessOf (HatStroke::tip));
+        build (pd.hatLadders[1], opennessOf (HatStroke::shank));
+
+        if (pd.hatLadders[1].numSteps > 0)
+        {
+            auto& edge = pd.hatLadders[1];
+            const auto& tip = pd.hatLadders[0];
+
+            for (int i = 0; i < tip.numSteps && edge.numSteps < Ladder::maxSteps; ++i)
+            {
+                const auto v = tip.value[(size_t) i];
+
+                if (std::none_of (edge.value.begin(), edge.value.begin() + edge.numSteps, [v] (float e) { return std::abs (e - v) < 0.001f; }))
+                {
+                    // Insert in order.
+                    auto j = edge.numSteps++;
+
+                    for (; j > 0 && edge.value[(size_t) j - 1] > v; --j)
+                    {
+                        edge.value[(size_t) j] = edge.value[(size_t) j - 1];
+                        edge.articulation[(size_t) j] = edge.articulation[(size_t) j - 1];
+                    }
+
+                    edge.value[(size_t) j] = v;
+                    edge.articulation[(size_t) j] = tip.articulation[(size_t) i];
+                }
+            }
+        }
+        else
+        {
+            pd.hatLadders[1] = pd.hatLadders[0];   // no edge recordings: edge hits use the bow's steps
+        }
+
+        build (pd.positionLadder, [] (const ArticulationTraits& t) { return t.position; });
+
+        info.hatSteps = { pd.hatLadders[0].numSteps, pd.hatLadders[1].numSteps };
+        info.positionSteps = pd.positionLadder.numSteps;
+    }
+
     /** Reads one packed little-endian 16- or 24-bit value, sign-extended. */
     int unpackInt (const std::byte* p, int bytes) noexcept
     {
@@ -299,7 +374,7 @@ bool KitLoader::decode (const LoadPlan& plan, MicMask mask, std::array<std::uniq
 }
 
 //==============================================================================
-std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap& generalMidi, KitInfo& info,
+std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap& midiMap, KitInfo& info,
                                          juce::String& error, const Options& options,
                                          std::shared_ptr<const LoadPlan>* planOut)
 {
@@ -374,7 +449,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         pd.defaultTune = pm.tuneSemitones;
         pd.defaultDecay = pm.decay;
 
-        KitPieceInfo pieceInfo { pm.id, pm.name, pm.role, {}, -1, pd.firstArticulation };
+        KitPieceInfo pieceInfo { pm.id, pm.name, pm.role, {}, pm.chokeNote, pd.firstArticulation };
 
         for (const auto& am : pm.articulations)
         {
@@ -382,15 +457,58 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
             artInfo.id = am.id;
             artInfo.name = am.name;
 
+            // Openness and strike position: the kit's own values, else what the name means.
+            const auto idString = am.id.toStdString();
+            auto& traits = artInfo.traits;
+            traits = articulations::defaultTraits (pm.role, idString);
+
+            if (am.openness.has_value())
+            {
+                traits.openness = *am.openness;
+                traits.stroke = am.stroke.value_or (traits.stroke == HatStroke::none ? HatStroke::tip : traits.stroke);
+            }
+            else if (am.stroke.has_value() && traits.openness >= 0.0f)
+            {
+                traits.stroke = *am.stroke;
+            }
+
+            if (am.position.has_value())
+                traits.position = *am.position;
+
+            if (pm.role != PieceRole::hihat)
+                traits.openness = -1.0f;
+
             Articulation a {};
             a.piece = (int) pi;
             a.firstZone = (int) kit->zones.size();
             a.numZones = (int) am.zones.size();
             a.chokeGroupMask = chokeGroups.maskFor (am.chokeGroup, info.warnings);
             a.chokesMask = 0;
+            a.openness = traits.openness;
+            a.stroke = traits.openness >= 0.0f ? traits.stroke : HatStroke::none;
 
             for (const auto& g : am.chokes)
                 a.chokesMask |= chokeGroups.maskFor (g, info.warnings);
+
+            // A cymbal keeps ringing when it's hit again, on the bow, the
+            // bell or the edge: the new hit adds to the old one. Some kits
+            // (SFZ kits with "group=N off_by=N" on every cymbal region) make
+            // each hit cut off the last, which sounds wrong as soon as you
+            // play the bell over a ringing bow. So on cymbals only a grab can
+            // silence the cymbal itself.
+            //
+            // The same kits make every hi-hat hit cut the last one, so
+            // repeated half-open hits chop each other off. Real hats only
+            // stop ringing when they close: a hi-hat hit only chokes its own
+            // hits that rang more open than it leaves the hats, so a closed
+            // hit or the pedal stops an open ring, and open hits ring on.
+            //
+            // Either way, chokes on other pieces apply as the kit says.
+            a.hatLevel = articulations::hatChokeLevel (idString, traits.openness);
+            a.selfChoke = pm.role == PieceRole::hihat                ? SelfChoke::moreOpen
+                        : ! lithium::info (pm.role).isCymbal         ? SelfChoke::all
+                        : articulations::isGrab (idString)           ? SelfChoke::all
+                                                                     : SelfChoke::none;
 
             for (const auto& zm : am.zones)
             {
@@ -417,6 +535,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
             kit->articulations.push_back (a);
         }
 
+        buildLadders (pd, pieceInfo);
         kit->pieces.push_back (pd);
         info.pieces.push_back (std::move (pieceInfo));
     }
@@ -654,85 +773,65 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     info.streamBufferBytes = plan->streamBufferBytes;
     info.streamCache = stream ? pack.getFolder() : juce::File();
 
-    // MIDI: the kit's own map if it has one, otherwise General MIDI resolved by role.
-    std::vector<int> mappedNotes;
+    // MIDI: the map the load was requested with (Lithium Standard, the kit's
+    // own map, General MIDI or an e-kit map), resolved against this kit.
+    info.kitMidiMap = manifest.midiMap;
 
-    auto articulationFor = [&] (int piece, const juce::String& id)
+    // Cymbals without a choke note of their own get a fixed one by role, the
+    // same on every kit: crashes 1-3 on 85-87, rides 1-2 on 88-89, chinas
+    // 1-2 on 90-91 and the splash on 92. Any more get the next free note up
+    // to 95. (A note that plays something never chokes; see DrumEngine.)
+    std::array<bool, 128> chokeTaken {};
+    std::array<int, numPieceRoles> cymbalsSeen {};
+    int splashesSeen = 0;
+
+    for (const auto& pd : kit->pieces)
+        if (juce::isPositiveAndBelow (pd.defaultChokeNote, 128))
+            chokeTaken[(size_t) pd.defaultChokeNote] = true;
+
+    for (size_t p = 0; p < kit->pieces.size(); ++p)
     {
-        const auto& pd = kit->pieces[(size_t) piece];
-        const auto& arts = manifest.pieces[(size_t) piece].articulations;
+        auto& pd = kit->pieces[p];
 
-        for (int a = 0; a < pd.numArticulations; ++a)
-            if (arts[(size_t) a].id == id)
-                return pd.firstArticulation + a;
-
-        return pd.firstArticulation;   // fall back to the piece's first articulation
-    };
-
-    if (! manifest.midiMap.empty())
-    {
-        for (const auto& e : manifest.midiMap)
-        {
-            kit->noteMap[(size_t) e.note].articulation = articulationFor (manifest.findPiece (e.piece), e.articulation);
-            mappedNotes.push_back (e.note);
-        }
-    }
-    else
-    {
-        for (const auto& e : generalMidi.entries)
-        {
-            int match = -1, seen = 0;
-
-            // The nth piece of the role, or the last one if the kit has fewer.
-            for (size_t p = 0; p < kit->pieces.size() && seen <= e.nth; ++p)
-            {
-                if (kit->pieces[p].role == e.role)
-                {
-                    match = (int) p;
-                    ++seen;
-                }
-            }
-
-            if (match >= 0)
-            {
-                kit->noteMap[(size_t) e.note].articulation = articulationFor (match, e.articulation);
-                mappedNotes.push_back (e.note);
-            }
-        }
-    }
-
-    // Cymbals without a choke note of their own get the next free notes from
-    // 85 up, above the General MIDI drum range.
-    int nextChokeNote = 85;
-
-    for (auto& pd : kit->pieces)
-        if (pd.defaultChokeNote >= 0)
-            mappedNotes.push_back (pd.defaultChokeNote);
-
-    for (auto& pd : kit->pieces)
-    {
         if (pd.defaultChokeNote >= 0 || ! lithium::info (pd.role).isCymbal)   // (the parameter named info shadows the function)
             continue;
 
-        while (nextChokeNote < 128 && std::find (mappedNotes.begin(), mappedNotes.end(), nextChokeNote) != mappedNotes.end())
-            ++nextChokeNote;
+        auto note = -1;
 
-        if (nextChokeNote < 128)
-            pd.defaultChokeNote = nextChokeNote++;
+        if (isSplash (info.pieces[p]))
+        {
+            note = splashesSeen++ == 0 ? 92 : -1;
+        }
+        else
+        {
+            const auto n = cymbalsSeen[(size_t) pd.role]++;
+
+            if (pd.role == PieceRole::crash && n < 3)       note = 85 + n;
+            else if (pd.role == PieceRole::ride && n < 2)   note = 88 + n;
+            else if (pd.role == PieceRole::china && n < 2)  note = 90 + n;
+        }
+
+        if (note < 0 || chokeTaken[(size_t) note])
+        {
+            note = -1;
+
+            for (int n = 93; n <= 95 && note < 0; ++n)
+                if (! chokeTaken[(size_t) n])
+                    note = n;
+        }
+
+        if (note >= 0)
+        {
+            pd.defaultChokeNote = note;
+            chokeTaken[(size_t) note] = true;
+        }
     }
 
     for (size_t p = 0; p < kit->pieces.size(); ++p)
         info.pieces[p].defaultChokeNote = kit->pieces[p].defaultChokeNote;
 
-    // Which notes play each articulation, for the Edit page.
-    for (int note = 0; note < 128; ++note)
-    {
-        if (const auto a = kit->noteMap[(size_t) note].articulation; a >= 0)
-        {
-            const auto& pd = kit->pieces[(size_t) kit->articulations[(size_t) a].piece];
-            info.pieces[(size_t) kit->articulations[(size_t) a].piece].articulations[(size_t) (a - pd.firstArticulation)].notes.add (note);
-        }
-    }
+    // Resolved after the choke notes are known, so spare notes keep clear of them.
+    kit->notes = resolveMidiMap (midiMap, info);
 
     kit->initialiseRoundRobins();
 
@@ -755,11 +854,15 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     }
 
     std::vector<PieceRole> roles;
+    std::vector<bool> splash;
 
-    for (const auto& p : kit->pieces)
-        roles.push_back (p.role);
+    for (size_t p = 0; p < kit->pieces.size(); ++p)
+    {
+        roles.push_back (kit->pieces[p].role);
+        splash.push_back (isSplash (info.pieces[p]));
+    }
 
-    info.slotPiece = assignStageSlots (roles);
+    info.slotPiece = assignStageSlots (roles, splash);
     info.bitsPerSample = layout->bytesPerSample * 8;
     info.sampleRate = manifest.sampleRate;
     info.memoryBytes = plan->bytesFor (allMics);
@@ -776,8 +879,8 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 }
 
 //==============================================================================
-KitLoader::KitLoader (KitHandoff& h, MidiMap map)
-    : juce::Thread ("Lithium kit loader"), handoff (h), generalMidi (std::move (map))
+KitLoader::KitLoader (KitHandoff& h)
+    : juce::Thread ("Lithium kit loader"), handoff (h)
 {
     startThread (juce::Thread::Priority::low);
 }
@@ -864,7 +967,7 @@ void KitLoader::loadRequested (const Request& r, std::uint64_t myGeneration)
     options.streamStats = r.streamStats;
     options.shouldAbort = [this, myGeneration] { return threadShouldExit() || generation.load() != myGeneration; };
 
-    auto kit = loadKit (r.folder, generalMidi, *info, error, options, &plan);
+    auto kit = loadKit (r.folder, r.midiMap, *info, error, options, &plan);
 
     loading = false;
 
@@ -875,6 +978,7 @@ void KitLoader::loadRequested (const Request& r, std::uint64_t myGeneration)
     {
         kit->serial = nextSerial++;
         kit->resetToken = r.resetToken;
+        info->serial = kit->serial;
 
         currentPlan = plan;
         currentSerial = kit->serial;

@@ -1,0 +1,37 @@
+{
+  "format": "lithium-midi-map",
+  "version": 1,
+  "id": "alesis",
+  "name": "Alesis",
+  "description": "The factory note map of Alesis kits (Nitro, Nitro Mesh, Turbo, Surge), plus the General MIDI ride bell (53) and edge (59) for modules with three-zone rides. Modules that send the hi-hat pedal on CC4, like the Strike, get continuous openness.",
+  "controllers": {
+    "hihatPedal": 4,
+    "pedalInverted": false,
+    "snarePosition": -1,
+    "ridePosition": -1,
+    "tomPosition": -1
+  },
+  "notes": [
+    {"note": 21, "role": "hihat", "articulation": "splash"},
+    {"note": 23, "role": "hihat", "articulation": "half_open", "follow": "pedal"},
+    {"note": 36, "role": "kick", "articulation": "hit"},
+    {"note": 38, "role": "snare", "articulation": "center"},
+    {"note": 39, "role": "toms", "nth": 3, "articulation": "rimshot"},
+    {"note": 40, "role": "snare", "articulation": "rimshot"},
+    {"note": 41, "role": "toms", "nth": 3, "articulation": "center"},
+    {"note": 42, "role": "hihat", "articulation": "closed", "follow": "pedal"},
+    {"note": 43, "role": "toms", "nth": 2, "articulation": "center"},
+    {"note": 44, "role": "hihat", "articulation": "pedal"},
+    {"note": 45, "role": "toms", "nth": 1, "articulation": "center"},
+    {"note": 46, "role": "hihat", "articulation": "open", "follow": "pedal"},
+    {"note": 47, "role": "toms", "nth": 1, "articulation": "rimshot"},
+    {"note": 48, "role": "toms", "articulation": "center"},
+    {"note": 49, "role": "crash", "articulation": "hit"},
+    {"note": 50, "role": "toms", "articulation": "rimshot"},
+    {"note": 51, "role": "ride", "articulation": "bow"},
+    {"note": 53, "role": "ride", "articulation": "bell"},
+    {"note": 57, "role": "crash", "nth": 1, "articulation": "hit"},
+    {"note": 58, "role": "toms", "nth": 2, "articulation": "rimshot"},
+    {"note": 59, "role": "ride", "articulation": "edge"}
+  ]
+}

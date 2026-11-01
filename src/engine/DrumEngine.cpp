@@ -13,11 +13,28 @@ namespace
     constexpr double hiHatChokeSeconds = 0.03;     // closing the hats
     constexpr double cymbalChokeSeconds = 0.07;    // grabbing a cymbal
     constexpr double stealFadeSeconds = 0.005;     // stolen voices are quiet already
+    constexpr double pedalDampSeconds = 0.08;      // partly closing the pedal on ringing hats
+
+    // A drum over its voice limit loses its oldest hit. That hit is mostly
+    // tail by then, but a cymbal's tail is still wash you'd hear vanish, so
+    // it goes slowly.
+    constexpr double pieceLimitFadeSeconds = 0.1;
     constexpr float maxDynamicsDb = 30.0f;         // the most the Dynamics control adds to or takes from a soft hit
 
     // Width of the crossfade around a zone boundary, as a fraction of the
     // narrower of the two zones.
     constexpr double crossfadeWidth = 0.35;
+
+    // Between two openness or position steps, the middle of the gap (this
+    // fraction of it) crossfades from one to the other; either side plays
+    // the nearer step alone. Mostly playing real recordings keeps the sound
+    // natural; the crossfade means a slowly moving pedal never jumps.
+    constexpr float stepCrossfadeWidth = 0.3f;
+
+    // Closing the pedal damps ringing hats that are this much more open
+    // than the pedal now is.
+    constexpr float pedalDampMargin = 0.4f;
+    constexpr float pedalClosed = 0.05f;
 }
 
 DrumEngine::DrumEngine (EngineFeedback& f) : feedback (f)
@@ -50,12 +67,147 @@ void DrumEngine::noteOn (Kit& kit, int note, int velocity, const EngineParams& p
     if (! juce::isPositiveAndBelow (note, 128))
         return;
 
-    for (size_t p = 0; p < kit.pieces.size(); ++p)
-        if (params.pieces[p].chokeNote == note)
-            chokePiece ((int) p, cymbalChokeSeconds);
+    noteCount = (noteCount + 1) & 0xffff;
+    feedback.lastNote.store (std::max (1u, noteCount) << 16 | (std::uint32_t) (velocity & 0x7f) << 8 | (std::uint32_t) note,
+                             std::memory_order_relaxed);
 
-    if (const auto target = kit.noteMap[(size_t) note].articulation; target >= 0)
-        trigger (kit, target, velocity, params);
+    const auto& target = kit.notes.targets[(size_t) note];
+
+    // A note that plays nothing can choke cymbals. One that plays something
+    // never does, so a kit's own map that uses 85-95 (Virtuosity's does)
+    // doesn't choke the cymbals whenever it plays a snare.
+    if (target.articulation < 0)
+    {
+        for (size_t p = 0; p < kit.pieces.size(); ++p)
+            if (params.pieces[p].chokeNote == note)
+                chokePiece ((int) p, cymbalChokeSeconds);
+
+        return;
+    }
+
+    // E-kit notes can follow a controller: a hi-hat hit takes its openness
+    // from the pedal, a snare or ride hit its strike position. Until that
+    // controller arrives, the note plays its own articulation.
+    const auto& art = kit.articulations[(size_t) target.articulation];
+    const auto& piece = kit.pieces[(size_t) art.piece];
+
+    if (target.follow == Follow::pedal && hatOpenness >= 0.0f)
+        playLadder (kit, piece.hatLadder (art.stroke), hatOpenness, velocity, params);
+    else if (target.follow == Follow::position && position[(size_t) target.source] >= 0.0f)
+        playLadder (kit, piece.positionLadder, position[(size_t) target.source], velocity, params);
+    else
+        trigger (kit, target.articulation, velocity, params);
+}
+
+void DrumEngine::playLadder (Kit& kit, const Ladder& ladder, float value, int velocity, const EngineParams& params) noexcept
+{
+    jassert (ladder.numSteps > 0);   // the resolver only sets follow where there are steps
+    const auto n = ladder.numSteps;
+    auto lower = 0, upper = 0;
+    auto t = 0.0f;   // 0 = lower alone .. 1 = upper alone
+
+    if (value >= ladder.value[(size_t) n - 1])
+    {
+        lower = upper = n - 1;
+    }
+    else if (value > ladder.value[0])
+    {
+        while (lower + 2 < n && value >= ladder.value[(size_t) lower + 1])
+            ++lower;
+
+        upper = lower + 1;
+        const auto x = (value - ladder.value[(size_t) lower]) / (ladder.value[(size_t) upper] - ladder.value[(size_t) lower]);
+        t = juce::jlimit (0.0f, 1.0f, (x - 0.5f * (1.0f - stepCrossfadeWidth)) / stepCrossfadeWidth);
+    }
+
+    const auto a = ladder.articulation[(size_t) lower];
+    const auto b = ladder.articulation[(size_t) upper];
+
+    if (t <= 0.0f || t >= 1.0f || a == b)
+    {
+        trigger (kit, t >= 1.0f ? b : a, velocity, params);
+        return;
+    }
+
+    // Both steps' chokes first, so a closed step (which chokes the open
+    // ones) doesn't cut off the more open step it's blended with.
+    applyChokes (kit, kit.articulations[(size_t) a]);
+    applyChokes (kit, kit.articulations[(size_t) b]);
+
+    // Equal-power, with the louder step last so it's the one the UI shows.
+    const auto angle = t * juce::MathConstants<float>::halfPi;
+    const auto first = t < 0.5f ? b : a, second = t < 0.5f ? a : b;
+    trigger (kit, first, velocity, params, t < 0.5f ? std::sin (angle) : std::cos (angle), false);
+    trigger (kit, second, velocity, params, t < 0.5f ? std::cos (angle) : std::sin (angle), false);
+}
+
+void DrumEngine::controlChange (Kit& kit, int controller, int value) noexcept
+{
+    const auto& c = kit.notes.controllers;
+    const auto v = (float) juce::jlimit (0, 127, value) / 127.0f;
+
+    if (controller == c.hihatPedal)
+    {
+        const auto openness = c.pedalInverted ? v : 1.0f - v;
+
+        if (hatOpenness >= 0.0f && openness < hatOpenness)
+            dampHats (kit, openness);
+
+        hatOpenness = openness;
+        feedback.hihatOpenness.store (openness, std::memory_order_relaxed);
+    }
+
+    for (size_t i = 0; i < c.position.size(); ++i)
+    {
+        if (controller == c.position[i])
+        {
+            position[i] = v;
+            feedback.position[i].store (v, std::memory_order_relaxed);
+        }
+    }
+}
+
+void DrumEngine::dampHats (const Kit& kit, float openness) noexcept
+{
+    // Closing the pedal on ringing hats damps them, like real hats: a voice
+    // played well more open than the pedal is now fades out, and once the
+    // pedal is shut every open step does, as fast as a closed hit chokes them.
+    const auto shut = openness < pedalClosed;
+
+    for (auto& v : voices)
+    {
+        if (! v.isActive() || v.isFadingOut())
+            continue;
+
+        const auto stepOpenness = kit.articulations[(size_t) v.getArticulation()].openness;
+
+        if (stepOpenness > (shut ? pedalClosed : openness + pedalDampMargin))
+            v.fadeOut (secondsToSamples (shut ? hiHatChokeSeconds : pedalDampSeconds));
+    }
+}
+
+void DrumEngine::applyChokes (const Kit& kit, const Articulation& art) noexcept
+{
+    if (art.chokesMask == 0)
+        return;
+
+    for (auto& v : voices)
+    {
+        if (! v.isActive() || (v.getChokeGroups() & art.chokesMask) == 0)
+            continue;
+
+        if (v.getPiece() == art.piece)
+        {
+            // How a hit treats its own piece depends on what the piece is (see SelfChoke).
+            if (art.selfChoke == SelfChoke::none)
+                continue;
+
+            if (art.selfChoke == SelfChoke::moreOpen && kit.articulations[(size_t) v.getArticulation()].hatLevel <= art.hatLevel)
+                continue;
+        }
+
+        v.fadeOut (secondsToSamples (hiHatChokeSeconds));
+    }
 }
 
 void DrumEngine::polyAftertouch (Kit& kit, int note, int pressure) noexcept
@@ -64,11 +216,12 @@ void DrumEngine::polyAftertouch (Kit& kit, int note, int pressure) noexcept
     if (! juce::isPositiveAndBelow (note, 128) || pressure < 64)
         return;
 
-    if (const auto target = kit.noteMap[(size_t) note].articulation; target >= 0)
+    if (const auto target = kit.notes.targets[(size_t) note].articulation; target >= 0)
         chokePiece (kit.articulations[(size_t) target].piece, cymbalChokeSeconds);
 }
 
-void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const EngineParams& params) noexcept
+void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const EngineParams& params,
+                          float gainScale, bool chokeOthers) noexcept
 {
     const auto& art = kit.articulations[(size_t) articulationIndex];
     velocity = juce::jlimit (1, 127, velocity);
@@ -82,10 +235,8 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
         feedback.pieceHits[p].fetch_add (1, std::memory_order_release);
     };
 
-    if (art.chokesMask != 0)
-        for (auto& v : voices)
-            if (v.isActive() && (v.getChokeGroups() & art.chokesMask) != 0)
-                v.fadeOut (secondsToSamples (hiHatChokeSeconds));
+    if (chokeOthers)
+        applyChokes (kit, art);
 
     // The Tune parameter is added to the kit's (or preset's) own tuning of the piece.
     const auto& piece = params.pieces[(size_t) art.piece];
@@ -99,7 +250,7 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
     // Dynamics then widens (or narrows) the whole range: a soft hit is
     // turned down (or up) by up to maxDynamicsDb, in proportion to how soft it is.
     const auto dynamicsDb = piece.dynamics * maxDynamicsDb * juce::jlimit (-1.0f, 0.0f, std::log10 ((float) velocity / 127.0f) / 2.1f);
-    const auto dynamicsGain = juce::Decibels::decibelsToGain (dynamicsDb);
+    const auto dynamicsGain = juce::Decibels::decibelsToGain (dynamicsDb) * gainScale;
 
     auto velocityGain = [velocity, dynamicsGain] (const Zone& z)
     {
@@ -250,7 +401,7 @@ Voice* DrumEngine::allocateVoice (int piece) noexcept
     }
 
     if (activeForPiece >= maxVoicesPerPiece && oldestForPiece != nullptr)
-        oldestForPiece->fadeOut (secondsToSamples (stealFadeSeconds * 4));
+        oldestForPiece->fadeOut (secondsToSamples (pieceLimitFadeSeconds));
     else if (active >= voiceStealThreshold && quietest != nullptr)
         quietest->fadeOut (secondsToSamples (stealFadeSeconds));
 
