@@ -1,6 +1,7 @@
 // Headless tests for the engine, loader, processor and state.
 //
 //   LithiumDrumsTests                 run all tests
+//   LithiumDrumsTests --only <words>  run the tests whose name contains them, e.g. --only Groove
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
 //                                     [--mixer-channel piece:<n> | mic:<n> | reverb]
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
@@ -11,6 +12,10 @@
 //                                     check every installed kit and preset against every built-in MIDI map:
 //                                     what each map reaches, what only spare notes reach, and (unless
 //                                     --no-play) that every articulation makes a sound
+//   LithiumDrumsTests --groove-audit
+//                                     resolve every installed groove against every installed kit and preset:
+//                                     hits a kit can't play, how the hi-hat spreads over its openness steps,
+//                                     and that dragged MIDI plays the same hits in each built-in map
 //   LithiumDrumsTests --measure-kit <kit folder> [--map <map id>] [--stream] [--preload <frames>] [--stress <seconds> [--full-mix]] [--cold]
 //                                     load a real kit, report its RAM use and play every mapped note.
 //                                     --stream streams it from the stream cache (building the cache if needed),
@@ -29,6 +34,8 @@
 #include "engine/KitLoader.h"
 #include "engine/Mixer.h"
 #include "engine/StreamCache.h"
+#include "engine/MidiMapping.h"
+#include "grooves/GrooveMidi.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -158,6 +165,122 @@ private:
 };
 
 //==============================================================================
+static int grooveAudit()
+{
+    using namespace lithium;
+
+    const juce::SharedResourcePointer<Settings> settings;
+    const auto kits = kitlibrary::scan (settings->getKitsFolder());
+    const auto grooveLibrary = grooves::scan (Settings::getGroovesFolder());
+    int problems = 0;
+
+    // Every take, read once.
+    struct Take
+    {
+        grooves::Clip clip;
+        juce::String noteMap;
+    };
+
+    std::vector<Take> takes;
+
+    for (const auto& pack : grooveLibrary.packs)
+    {
+        for (const auto& g : pack.grooves)
+        {
+            std::vector<grooves::Hit> hits;
+
+            if (const auto r = grooves::readHits (g.file, pack.pedalController, pack.pedalClosedAt, hits); r.failed())
+            {
+                std::cout << "Can't read " << g.name << ": " << r.getErrorMessage() << std::endl;
+                ++problems;
+                continue;
+            }
+
+            takes.push_back ({ grooves::makeClip (g, hits, 0, g.bars, g.name), pack.noteMap });
+
+            for (const auto& f : g.fills)
+                if (grooves::readHits (f.file, pack.pedalController, pack.pedalClosedAt, hits).wasOk())
+                    takes.push_back ({ grooves::makeClip (g, hits, 0, f.bars, g.name + " " + f.name), pack.noteMap });
+        }
+    }
+
+    std::cout << "Groove audit: " << takes.size() << " takes against " << kits.kits.size() << " kits and presets" << std::endl;
+
+    for (const auto& entry : kits.kits)
+    {
+        KitLoader::Options options;
+        options.streaming = settings->getStreaming();
+        options.streamStats = std::make_shared<StreamStats>();
+
+        KitInfo info;
+        juce::String error;
+
+        if (KitLoader::loadKit (entry.folder, MidiMap::kitDefault(), info, error, options) == nullptr)
+        {
+            std::cout << entry.credits().name << ": FAILED TO LOAD: " << error << std::endl;
+            ++problems;
+            continue;
+        }
+
+        std::size_t recorded = 0, played = 0, mismatched = 0;
+        std::map<juce::String, int> hats;
+        std::vector<std::pair<MidiMap, NoteTable>> maps;
+
+        for (const auto& m : MidiMap::factoryMaps())
+            maps.push_back ({ m, resolveMidiMap (m, info) });
+
+        for (const auto& take : takes)
+        {
+            const auto packMap = MidiMap::factoryMap (take.noteMap);
+            const auto resolved = grooves::resolve (take.clip, packMap, info);
+            recorded += take.clip.hits.size();
+            played += resolved.size();
+
+            for (const auto& h : resolved)
+            {
+                const auto [p, a] = pieceAndArticulation (info, h.articulation);
+
+                if (info.pieces[(size_t) p].role == PieceRole::hihat)
+                    ++hats[info.pieces[(size_t) p].articulations[(size_t) a].id];
+            }
+
+            // Dragged MIDI, in each map, plays what the preview played.
+            for (const auto& [map, table] : maps)
+            {
+                const auto midi = grooves::toMidiFile (take.clip, packMap, &info, table);
+                size_t i = 0;
+
+                for (const auto* e : *midi.getTrack (0))
+                {
+                    if (! e->message.isNoteOn())
+                        continue;
+
+                    if (i >= resolved.size() || table.targets[(size_t) e->message.getNoteNumber()].articulation != resolved[i].articulation)
+                        ++mismatched;
+
+                    ++i;
+                }
+
+                mismatched += i < resolved.size() ? resolved.size() - i : 0;
+            }
+        }
+
+        juce::String hatText;
+
+        for (const auto& [id, n] : hats)
+            hatText << id << " " << juce::String (100.0 * n / std::max<std::size_t> (1, played), 1) << "%  ";
+
+        std::cout << "  " << entry.credits().name.paddedRight (' ', 28) << " plays " << juce::String (100.0 * (double) played / (double) std::max<std::size_t> (1, recorded), 2)
+                  << "% of hits" << (mismatched > 0 ? "  EXPORT MISMATCHES: " + juce::String ((int) mismatched) : juce::String())
+                  << "\n      hats: " << hatText << std::endl;
+
+        problems += mismatched > 0 ? 1 : 0;
+    }
+
+    std::cout << (problems == 0 ? "GROOVE AUDIT PASSED" : "GROOVE AUDIT FOUND PROBLEMS") << std::endl;
+    return problems == 0 ? 0 : 1;
+}
+
 static int sfzDump (const juce::StringArray& args)
 {
     const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--sfz-dump") + 1]);
@@ -841,6 +964,9 @@ int main (int argc, char* argv[])
     if (args.contains ("--midi-audit"))
         return midiAudit (args);
 
+    if (args.contains ("--groove-audit"))
+        return grooveAudit();
+
     if (args.contains ("--measure-kit"))
         return measureKit (juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--measure-kit") + 1]), args);
 
@@ -863,7 +989,22 @@ int main (int argc, char* argv[])
 
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);
-    runner.runTestsInCategory ("Lithium");
+
+    // --only <words>: just the tests whose name contains them ("Groove").
+    if (const auto only = args.indexOf ("--only"); only >= 0)
+    {
+        juce::Array<juce::UnitTest*> chosen;
+
+        for (auto* t : juce::UnitTest::getTestsInCategory ("Lithium"))
+            if (t->getName().containsIgnoreCase (args[only + 1]))
+                chosen.add (t);
+
+        runner.runTests (chosen);
+    }
+    else
+    {
+        runner.runTestsInCategory ("Lithium");
+    }
 
     int failures = 0;
 

@@ -52,6 +52,10 @@ public:
         kits folder. LITHIUM_MIDI_MAPS_FOLDER overrides it. */
     static juce::File getMidiMapsFolder();
 
+    /** Where groove packs live: a "Grooves" folder next to the default kits
+        folder. LITHIUM_GROOVES_FOLDER overrides it. */
+    static juce::File getGroovesFolder();
+
     /** The preload sizes offered in the settings, in frames. */
     static constexpr std::array<int, 4> preloadChoices { 8192, 16384, 32768, 65536 };
     static constexpr int defaultPreloadFrames = 16384;

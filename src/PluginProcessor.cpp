@@ -3,6 +3,7 @@
 #include "MidiMapLibrary.h"
 #include "PluginEditor.h"
 #include "engine/StreamCache.h"
+#include "grooves/GrooveMidi.h"
 
 namespace lithium
 {
@@ -14,6 +15,7 @@ namespace
     const juce::Identifier stateSelectedPiece { "selectedPiece" };
     const juce::Identifier stateMidiMap { "midiMap" };
     const juce::Identifier stateMidiMapModified { "midiMapModified" };
+    const juce::Identifier grooveTempo { "tempo" }, grooveCustomBpm { "customBpm" }, grooveSpeed { "speed" }, grooveLoop { "loop" };
 
     constexpr double kitSwapFadeSeconds = 0.01;
 
@@ -82,6 +84,7 @@ bool LithiumDrumsProcessor::isBusesLayoutSupported (const BusesLayout& layouts) 
 
 void LithiumDrumsProcessor::prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock)
 {
+    currentSampleRate = sampleRate;
     engine.prepare (sampleRate);
     mixer.prepare (sampleRate, std::max (64, maximumExpectedSamplesPerBlock));
     loadMeasurer.reset (sampleRate, maximumExpectedSamplesPerBlock);
@@ -177,12 +180,51 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
-    // Render up to each MIDI event, then apply it, so hits land on the exact sample.
+    // The groove preview's hits in this block. getPosition() fills in a
+    // struct on the stack; nothing here allocates.
+    GroovePlayer::Transport transport;
+
+    if (auto* host = getPlayHead())
+    {
+        if (const auto info = host->getPosition())
+        {
+            if (const auto bpm = info->getBpm())
+                transport.hostBpm = *bpm;
+
+            if (const auto ppq = info->getPpqPosition())
+                transport.hostPpq = *ppq;
+
+            transport.hostPlaying = info->getIsPlaying();
+        }
+    }
+
+    const auto numGrooveHits = groovePlayer.process (acceptNotes ? kit->serial : 0, transport, numSamples,
+                                                     currentSampleRate, grooveHits);
+
+    // Render up to each MIDI event (or groove hit), then apply it, so hits
+    // land on the exact sample.
     int position = 0;
+    int nextGrooveHit = 0;
+
+    auto playGrooveHitsBefore = [&] (int time)
+    {
+        for (; nextGrooveHit < numGrooveHits && grooveHits[(size_t) nextGrooveHit].sampleOffset < time; ++nextGrooveHit)
+        {
+            const auto& hit = grooveHits[(size_t) nextGrooveHit];
+            render (kit, position, hit.sampleOffset, mainOut, auxOuts);
+            position = hit.sampleOffset;
+
+            // The player only plays patterns made for this kit, but the
+            // check costs nothing and guards the index.
+            if (acceptNotes && juce::isPositiveAndBelow (hit.articulation, (int) kit->articulations.size()))
+                engine.trigger (*kit, hit.articulation, hit.velocity, engineParams);
+        }
+    };
 
     for (const auto metadata : midi)
     {
         const auto eventTime = juce::jlimit (0, numSamples, metadata.samplePosition);
+        playGrooveHitsBefore (eventTime);
         render (kit, position, eventTime, mainOut, auxOuts);
         position = eventTime;
 
@@ -203,6 +245,7 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             engine.controlChange (*kit, message.getControllerNumber(), message.getControllerValue());
     }
 
+    playGrooveHitsBefore (numSamples + 1);
     render (kit, position, numSamples, mainOut, auxOuts);
 }
 
@@ -405,6 +448,9 @@ void LithiumDrumsProcessor::applyLoadResult (const KitLoader::Result& result)
     // send it the map as it is now.
     sendNoteTable();
 
+    // A groove that's previewing carries on, on the new kit.
+    sendGroovePattern (false);
+
     // Slot parameters are named after the kit's pieces and mics; tell the
     // host to re-read the names.
     slotNames.set (info.get());
@@ -486,6 +532,59 @@ void LithiumDrumsProcessor::timerCallback()
 
     if (unsent)
         sendNoteTable();
+
+    groovePlayer.collectGarbage();
+
+    if (unsentGroovePattern != nullptr)
+        groovePlayer.send (unsentGroovePattern);
+}
+
+//==============================================================================
+void LithiumDrumsProcessor::previewGroove (std::shared_ptr<const grooves::Clip> clip, const juce::String& noteMapId, int clipId)
+{
+    grooveClip = std::move (clip);
+    grooveNoteMap = noteMapId;
+    grooveClipId = clipId;
+    sendGroovePattern (true);
+    groovePlayer.playing = grooveClip != nullptr;
+}
+
+void LithiumDrumsProcessor::sendGroovePattern (bool restart)
+{
+    const auto info = getKitInfo();
+
+    if (grooveClip == nullptr || info == nullptr)
+        return;
+
+    // Resolving allocates, so it happens here; the audio thread gets a
+    // finished pattern it only has to read.
+    auto pattern = std::make_unique<GroovePattern>();
+    pattern->lengthBeats = grooveClip->lengthBeats;
+    pattern->bpm = grooveClip->bpm;
+    pattern->kitSerial = info->serial;
+    pattern->clipId = grooveClipId;
+    pattern->restart = restart;
+
+    for (const auto& h : grooves::resolve (*grooveClip, MidiMap::factoryMap (grooveNoteMap), *info))
+    {
+        // Hits pushed ahead of the first bar line play at the end of the
+        // loop, just before it comes round again.
+        const auto beat = h.beat < 0.0 ? h.beat + pattern->lengthBeats : h.beat;
+        pattern->events.push_back ({ beat, (std::int16_t) h.articulation, (std::uint8_t) h.velocity });
+    }
+
+    std::stable_sort (pattern->events.begin(), pattern->events.end(),
+                      [] (const auto& a, const auto& b) { return a.beat < b.beat; });
+
+    // Only the newest pattern matters, so an unsent older one is simply replaced.
+    unsentGroovePattern = std::move (pattern);
+    groovePlayer.send (unsentGroovePattern);
+}
+
+juce::MidiFile LithiumDrumsProcessor::grooveToMidi (const grooves::Clip& clip, const juce::String& noteMapId) const
+{
+    const auto info = getKitInfo();
+    return grooves::toMidiFile (clip, MidiMap::factoryMap (noteMapId), info.get(), getNoteTable());
 }
 
 //==============================================================================
@@ -588,6 +687,13 @@ void LithiumDrumsProcessor::getStateInformation (juce::MemoryBlock& destData)
         std::scoped_lock lock (stateMutex);
         state.setProperty (stateMidiMap, midiMap.toJson(), nullptr);
         state.setProperty (stateMidiMapModified, midiMapModified, nullptr);
+
+        auto grooves = grooveState.createCopy();
+        grooves.setProperty (grooveTempo, (int) groovePlayer.tempoMode.load(), nullptr);
+        grooves.setProperty (grooveCustomBpm, groovePlayer.customBpm.load(), nullptr);
+        grooves.setProperty (grooveSpeed, groovePlayer.speed.load(), nullptr);
+        grooves.setProperty (grooveLoop, groovePlayer.loop.load(), nullptr);
+        state.appendChild (grooves, nullptr);
     }
 
     if (auto xml = state.createXml())
@@ -610,6 +716,22 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
 
     for (const auto& id : { stateKitFolder, stateKitId, stateSelectedPiece, stateMidiMap, stateMidiMapModified })
         state.removeProperty (id, nullptr);
+
+    // The Grooves page's state isn't a parameter; it's kept apart from them.
+    if (auto grooves = state.getChildWithName (grooveState.getType()); grooves.isValid())
+    {
+        state.removeChild (grooves, nullptr);
+        groovePlayer.tempoMode = (GrooveTempo) juce::jlimit (0, 2, (int) grooves.getProperty (grooveTempo, 0));
+        groovePlayer.customBpm = juce::jlimit (20.0f, 400.0f, (float) grooves.getProperty (grooveCustomBpm, 120.0f));
+        groovePlayer.speed = juce::jlimit (0.5f, 2.0f, (float) grooves.getProperty (grooveSpeed, 1.0f));
+        groovePlayer.loop = (bool) grooves.getProperty (grooveLoop, true);
+
+        for (const auto& id : { grooveTempo, grooveCustomBpm, grooveSpeed, grooveLoop })
+            grooves.removeProperty (id, nullptr);
+
+        std::scoped_lock lock (stateMutex);
+        grooveState.copyPropertiesFrom (grooves, nullptr);
+    }
 
     parameters.replaceState (state);
 

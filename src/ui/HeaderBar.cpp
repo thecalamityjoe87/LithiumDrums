@@ -246,12 +246,14 @@ HeaderBar::HeaderBar (LithiumDrumsProcessor& p)
     addAndMakeVisible (*aboutButton);
 
     processor.addChangeListener (this);
+    installer->addChangeListener (this);
     refreshKitBox();
     startTimerHz (4);
 }
 
 HeaderBar::~HeaderBar()
 {
+    installer->removeChangeListener (this);
     processor.removeChangeListener (this);
 }
 
@@ -286,7 +288,26 @@ void HeaderBar::refreshKitBox()
         kitBox.addItem (kits[i].credits().name, (int) i + 1);
     }
 
-    if (! kits.empty())
+    // Catalog packs that aren't installed, greyed: Browse downloads them.
+    auto missingId = missingItemId;
+
+    for (const auto& c : packs::catalog())
+    {
+        if (c.type != packs::CatalogPack::Type::kits
+            || std::any_of (library.packs.begin(), library.packs.end(), [&] (const auto& p) { return p.id == c.id; }))
+            continue;
+
+        if (missingId == missingItemId)
+            kitBox.addSectionHeading ("Not installed");
+
+        kitBox.addItem (c.name + "  (" + packs::formatSize (c.downloadSize()) + ")", missingId);
+        kitBox.setItemEnabled (missingId++, false);
+    }
+
+    if (missingId != missingItemId)
+        kitBox.addItem ("Download kits...", browseItemId + 1);
+
+    if (! kits.empty() || missingId != missingItemId)
         kitBox.addSeparator();
 
     kitBox.addItem ("Browse kits...", browseItemId);
@@ -335,14 +356,14 @@ void HeaderBar::kitBoxChanged()
 {
     const auto id = kitBox.getSelectedId();
 
-    if (id == refreshItemId || id == settingsItemId || id == browseItemId)
+    if (id == refreshItemId || id == settingsItemId || id == browseItemId || id == browseItemId + 1)
     {
         refreshKitBox();   // put the current kit's name back
 
         if (id == settingsItemId && onShowSettings)
             onShowSettings();
 
-        if (id == browseItemId && onShowBrowser)
+        if ((id == browseItemId || id == browseItemId + 1) && onShowBrowser)
             onShowBrowser();
     }
     else if (id >= 1 && id <= (int) library.kits.size())
@@ -352,8 +373,13 @@ void HeaderBar::kitBoxChanged()
     }
 }
 
-void HeaderBar::changeListenerCallback (juce::ChangeBroadcaster*)
+void HeaderBar::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
+    // A new instance with nothing installed loads a kit as soon as there is one.
+    if (source == &installer.get() && processor.getKitInfo() == nullptr && ! processor.isKitLoading())
+        if (const auto folder = kitlibrary::findDefaultKit (processor.getKitsFolder()); folder != juce::File())
+            processor.loadKit (folder, true);
+
     refreshKitBox();
 }
 

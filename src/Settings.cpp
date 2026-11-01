@@ -110,6 +110,15 @@ juce::File Settings::getMidiMapsFolder()
     return getDefaultKitsFolder().getSiblingFile ("MIDI Maps");
 }
 
+juce::File Settings::getGroovesFolder()
+{
+    if (const auto env = juce::SystemStats::getEnvironmentVariable ("LITHIUM_GROOVES_FOLDER", {});
+        env.isNotEmpty() && juce::File::isAbsolutePath (env))
+        return juce::File (env);
+
+    return getDefaultKitsFolder().getSiblingFile ("Grooves");
+}
+
 juce::File Settings::getDefaultCacheFolder()
 {
     // A cache folder, not the data folder: the OS (and backup tools) know

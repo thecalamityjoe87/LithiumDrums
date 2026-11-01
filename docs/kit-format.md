@@ -325,7 +325,9 @@ pack still carries its attribution.
 
 # Importing
 
-`LithiumImport` converts a downloaded library into a content pack. It reads
+`LithiumImport` converts a downloaded library into a content pack. (The
+plugin's Download buttons fetch the libraries it knows and run the same
+importers; see [packs.md](packs.md).) It reads
 [DrumGizmo](https://drumgizmo.org) kits and SFZ instruments, and tells them
 apart by their files:
 

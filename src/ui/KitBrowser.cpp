@@ -1,6 +1,7 @@
 #include "KitBrowser.h"
 
 #include "Theme.h"
+#include "grooves/GrooveLibrary.h"
 
 namespace lithium
 {
@@ -41,6 +42,61 @@ namespace
         return r.getX() - 5.0f;
     }
 
+    using packs::Installer;
+
+    /** What an install is doing, in a few words. */
+    juce::String describe (const Installer::Status& s)
+    {
+        switch (s.phase)
+        {
+            case Installer::Phase::queued:      return "Waiting for the download before it";
+            case Installer::Phase::downloading:
+            {
+                juce::String text ("Downloading " + juce::String (juce::roundToInt (s.progress * 100.0)) + "%");
+
+                if (s.bytesTotal > 0)
+                    text << "  " << packs::formatSize (s.bytesDone) << " of " << packs::formatSize (s.bytesTotal);
+
+                if (s.bytesPerSecond > 0.0)
+                    text << "  " << packs::formatSize ((std::int64_t) s.bytesPerSecond) << "/s";
+
+                return text;
+            }
+            case Installer::Phase::unpacking:   return "Unpacking " + juce::String (juce::roundToInt (s.progress * 100.0)) + "%";
+            case Installer::Phase::importing:   return "Importing";
+            case Installer::Phase::done:        return "Installed";
+            case Installer::Phase::cancelled:   return "Cancelled";
+            case Installer::Phase::failed:      break;
+        }
+
+        return s.message;
+    }
+
+    /** The progress of an install as one number, for a bar: downloading is most of it. */
+    double overallProgress (const Installer::Status& s)
+    {
+        switch (s.phase)
+        {
+            case Installer::Phase::downloading: return 0.8 * s.progress;
+            case Installer::Phase::unpacking:   return 0.8 + 0.15 * s.progress;
+            case Installer::Phase::importing:   return 0.95;
+            case Installer::Phase::done:        return 1.0;
+            case Installer::Phase::queued:
+            case Installer::Phase::failed:
+            case Installer::Phase::cancelled:   break;
+        }
+
+        return 0.0;
+    }
+
+    void drawProgressBar (juce::Graphics& g, juce::Rectangle<float> r, double progress)
+    {
+        g.setColour (theme::colours::raisedHigh);
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        g.setColour (theme::colours::accent);
+        g.fillRoundedRectangle (r.withWidth (r.getWidth() * (float) juce::jlimit (0.0, 1.0, progress)), r.getHeight() * 0.5f);
+    }
+
     juce::String subtitleFor (const kitlibrary::Entry& e, const kitlibrary::Pack* pack)
     {
         if (e.summary.isPreset)
@@ -57,19 +113,19 @@ class KitBrowser::PackList final : public juce::Component
 public:
     std::function<void (int)> onSelect;
 
-    void setRows (const kitlibrary::Library& library)
+    void setRows (const kitlibrary::Library& library, const std::map<int, const packs::CatalogPack*>& missing)
     {
         rows.clear();
-        rows.push_back ({ allPacks, "All kits", (int) library.kits.size(), false });
+        rows.push_back ({ allPacks, "All kits", (int) library.kits.size(), false, false });
 
         for (size_t p = 0; p < library.packs.size(); ++p)
         {
             const auto n = (int) std::count_if (library.kits.begin(), library.kits.end(), [p] (const auto& k) { return k.pack == (int) p; });
-            rows.push_back ({ (int) p, library.packs[p].name, n, library.packs[p].shareAlike });
+            rows.push_back ({ (int) p, library.packs[p].name, n, library.packs[p].shareAlike, missing.count ((int) p) > 0 });
         }
 
         if (const auto loose = (int) std::count_if (library.kits.begin(), library.kits.end(), [] (const auto& k) { return k.pack < 0; }); loose > 0)
-            rows.push_back ({ loosePacks, "Other kits", loose, false });
+            rows.push_back ({ loosePacks, "Other kits", loose, false, false });
 
         repaint();
     }
@@ -107,14 +163,16 @@ public:
             }
 
             auto text = r.reduced (12.0f, 0.0f);
+            // A missing pack gets a download arrow instead of a count.
             g.setColour (colours::textMuted);
             g.setFont (mono (12.0f));
-            g.drawText (juce::String (row.count), text.removeFromRight (28.0f), juce::Justification::centredRight, false);
+            g.drawText (row.missing ? juce::String (juce::CharPointer_UTF8 ("\xe2\x86\x93")) : juce::String (row.count),
+                        text.removeFromRight (28.0f), juce::Justification::centredRight, false);
 
             if (row.shareAlike)
                 text.removeFromRight (drawBadge (g, "SA", text.getRight(), text.getCentreY(), colours::groupCymbals) > 0 ? 30.0f : 0.0f);
 
-            g.setColour (isSelected ? colours::text : colours::text.withAlpha (0.85f));
+            g.setColour (row.missing ? colours::textMuted.withAlpha (0.75f) : (isSelected ? colours::text : colours::text.withAlpha (0.85f)));
             g.setFont (body (14.0f, isSelected ? Weight::semibold : Weight::regular));
             g.drawText (row.name, text, juce::Justification::centredLeft, true);
         }
@@ -136,6 +194,7 @@ private:
         juce::String name;
         int count;
         bool shareAlike;
+        bool missing;     // not installed: shown greyed, for downloading
     };
 
     static constexpr int top = 26, rowHeight = 34;
@@ -198,10 +257,18 @@ public:
 class KitBrowser::KitCard final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    KitCard (const kitlibrary::Entry& e, const kitlibrary::Pack* p, int i) : entry (e), pack (p), index (i)
+    KitCard (const kitlibrary::Entry& e, const kitlibrary::Pack* p, int i, const packs::CatalogPack* missingPack)
+        : entry (e), missing (missingPack), pack (p), index (i)
     {
         setRepaintsOnMouseActivity (true);
-        setTooltip (e.folder.getFullPathName());
+        setTooltip (missing != nullptr ? "Not installed: select it to download " + missing->name : e.folder.getFullPathName());
+    }
+
+    /** For a kit that isn't installed: how its pack's install is going. */
+    void setInstallStatus (std::optional<Installer::Status> s)
+    {
+        status = std::move (s);
+        repaint();
     }
 
     std::function<void (int)> onClick, onDoubleClick;
@@ -221,6 +288,13 @@ public:
         using namespace theme;
 
         const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+
+        if (missing != nullptr)
+        {
+            paintMissing (g, bounds);
+            return;
+        }
+
         g.setColour (selected ? colours::raisedHigh : (isMouseOver() ? colours::raised.brighter (0.03f) : colours::raised));
         g.fillRoundedRectangle (bounds, cornerRadius + 2.0f);
         g.setColour (selected ? colours::accent : (isMouseOver() ? colours::borderStrong : colours::border));
@@ -269,11 +343,61 @@ public:
     void mouseDoubleClick (const juce::MouseEvent&) override   { if (onDoubleClick) onDoubleClick (index); }
 
     const kitlibrary::Entry& entry;
+    const packs::CatalogPack* const missing;    // its pack, if it isn't installed
 
 private:
+    /** Greyed out: the kit's name, NOT INSTALLED, and its pack's download size or progress. */
+    void paintMissing (juce::Graphics& g, juce::Rectangle<float> bounds)
+    {
+        using namespace theme;
+
+        g.setColour (selected ? colours::raised : colours::panel);
+        g.fillRoundedRectangle (bounds, cornerRadius + 2.0f);
+
+        // A dashed outline marks it as a placeholder.
+        juce::Path outline;
+        outline.addRoundedRectangle (bounds, cornerRadius + 2.0f);
+        const float dashes[] { 4.0f, 3.0f };
+        juce::PathStrokeType (selected ? 1.5f : 1.0f).createDashedStroke (outline, outline, dashes, 2);
+        g.setColour (selected ? colours::accent : (isMouseOver() ? colours::borderStrong : colours::border));
+        g.fillPath (outline);
+
+        auto area = getLocalBounds().toFloat().reduced (14.0f, 12.0f);
+        auto top = area.removeFromTop (18.0f);
+        drawBadge (g, "NOT INSTALLED", top.getRight(), top.getCentreY(), colours::textMuted);
+
+        area.removeFromTop (6.0f);
+        g.setColour (colours::text.withAlpha (0.5f));
+        g.setFont (body (16.0f, Weight::semibold));
+        g.drawText (entry.credits().name, area.removeFromTop (22.0f), juce::Justification::centredLeft, true);
+
+        g.setColour (colours::textMuted.withAlpha (0.7f));
+        g.setFont (body (12.5f));
+        g.drawText (subtitleFor (entry, pack), area.removeFromTop (18.0f), juce::Justification::centredLeft, true);
+
+        auto bottom = area.removeFromBottom (16.0f);
+
+        if (status.has_value() && status->isActive())
+        {
+            g.setColour (colours::accent);
+            g.setFont (mono (11.0f));
+            g.drawText (juce::String (juce::roundToInt (overallProgress (*status) * 100.0)) + "%", bottom.removeFromRight (36.0f),
+                        juce::Justification::centredRight, false);
+            drawProgressBar (g, bottom.withSizeKeepingCentre (bottom.getWidth() - 6.0f, 4.0f).withX (bottom.getX()), overallProgress (*status));
+            return;
+        }
+
+        const auto failed = status.has_value() && status->phase == Installer::Phase::failed;
+        g.setColour (failed ? colours::warning : colours::accent.withAlpha (0.85f));
+        g.setFont (mono (11.5f));
+        g.drawText (failed ? juce::String ("Download failed") : juce::String (juce::CharPointer_UTF8 ("\xe2\x86\x93 ")) + "Download  " + packs::formatSize (missing->downloadSize()),
+                    bottom, juce::Justification::centredLeft, true);
+    }
+
     const kitlibrary::Pack* pack;
     const int index;
     bool selected = false, loaded = false;
+    std::optional<Installer::Status> status;
 };
 
 //==============================================================================
@@ -298,16 +422,28 @@ public:
 
     std::function<void()> onLoad;
 
-    void show (const kitlibrary::Entry* e, const kitlibrary::Pack* p, bool isLoaded)
+    void show (const kitlibrary::Entry* e, const kitlibrary::Pack* p, bool isLoaded,
+               const packs::CatalogPack* missingPack = nullptr, std::optional<Installer::Status> installStatus = {})
     {
         entry = e;
         pack = p;
         loaded = isLoaded;
+        missing = missingPack;
+        status = std::move (installStatus);
 
         const auto has = entry != nullptr;
         loadButton.setVisible (has);
         loadButton.setEnabled (has && ! loaded);
         loadButton.setButtonText (loaded ? "Loaded" : "Load kit");
+
+        // A pack that isn't installed: Download, or Cancel while it installs.
+        if (missing != nullptr)
+        {
+            const auto active = status.has_value() && status->isActive();
+            const auto failed = status.has_value() && status->phase == Installer::Phase::failed;
+            loadButton.setEnabled (true);
+            loadButton.setButtonText (active ? "Cancel" : (failed ? "Try again" : "Download  " + packs::formatSize (missing->downloadSize())));
+        }
 
         if (has)
         {
@@ -361,9 +497,13 @@ public:
         // Readouts, as in the header.
         area.removeFromTop (12);
         auto readouts = area.removeFromTop (36);
-        const std::pair<juce::String, juce::String> values[] {
-            { "PIECES", juce::String (s.numPieces) }, { "MICS", juce::String (s.numMics) }, { "RAM", formatBytes (s.ramBytes) },
-        };
+        const auto values = missing != nullptr
+            ? std::array<std::pair<juce::String, juce::String>, 3> { { { "DOWNLOAD", packs::formatSize (missing->downloadSize()) },
+                                                                        { "ON DISK", packs::formatSize (missing->unpackedSize) },
+                                                                        { "KITS", juce::String (missing->kits.size() + missing->presets.size()) } } }
+            : std::array<std::pair<juce::String, juce::String>, 3> { { { "PIECES", juce::String (s.numPieces) },
+                                                                        { "MICS", juce::String (s.numMics) },
+                                                                        { "RAM", formatBytes (s.ramBytes) } } };
 
         const auto readoutWidth = readouts.getWidth() / 3;
 
@@ -426,6 +566,30 @@ public:
                               "Music made with it isn't affected.",
                               area.removeFromTop (44), juce::Justification::topLeft, 3, 1.0f);
         }
+
+        // Above the button: what the download is doing, or what went wrong.
+        if (missing != nullptr)
+        {
+            auto line = statusArea.toFloat();
+
+            if (status.has_value() && status->isActive())
+            {
+                drawProgressBar (g, line.removeFromTop (6.0f), overallProgress (*status));
+                line.removeFromTop (4.0f);
+                g.setColour (colours::text.withAlpha (0.85f));
+                g.setFont (body (12.5f));
+                g.drawFittedText (describe (*status), line.toNearestInt(), juce::Justification::topLeft, 2, 0.9f);
+            }
+            else
+            {
+                const auto failed = status.has_value() && status->phase == Installer::Phase::failed;
+                g.setColour (failed ? colours::warning : colours::textMuted);
+                g.setFont (body (12.5f));
+                g.drawFittedText (failed ? status->message
+                                         : "Not installed. Download fetches " + missing->name + " from its authors' site and installs it.",
+                                  line.toNearestInt(), juce::Justification::bottomLeft, 3, 0.9f);
+            }
+        }
     }
 
     void resized() override
@@ -433,6 +597,8 @@ public:
         auto area = getLocalBounds().reduced (18, 16);
         loadButton.setBounds (area.removeFromBottom (36));
         area.removeFromBottom (10);
+        statusArea = area.removeFromBottom (missing != nullptr ? 46 : 0);
+        area.removeFromBottom (missing != nullptr ? 8 : 0);
         auto links = area.removeFromBottom (22);
         licenseLink.setBounds (links.removeFromLeft (130));
         links.removeFromLeft (10);
@@ -443,6 +609,9 @@ private:
     const kitlibrary::Entry* entry = nullptr;
     const kitlibrary::Pack* pack = nullptr;
     bool loaded = false;
+    const packs::CatalogPack* missing = nullptr;
+    std::optional<Installer::Status> status;
+    juce::Rectangle<int> statusArea;
     juce::HyperlinkButton sourceLink, licenseLink;
     juce::TextButton loadButton { "Load kit" };
 };
@@ -499,11 +668,91 @@ KitBrowser::KitBrowser (LithiumDrumsProcessor& p)
     addAndMakeVisible (*details);
 
     processor.addChangeListener (this);
+    installer->addChangeListener (this);
 }
 
 KitBrowser::~KitBrowser()
 {
+    installer->removeChangeListener (this);
     processor.removeChangeListener (this);
+}
+
+void KitBrowser::addMissingPacks()
+{
+    // Catalog packs that aren't in the kits folder become packs of
+    // placeholder entries, one per kit and preset they'd install, so they
+    // show (greyed) wherever installed ones do.
+    missingPacks.clear();
+
+    for (const auto& c : packs::catalog())
+    {
+        if (c.type != packs::CatalogPack::Type::kits)
+            continue;
+
+        if (std::any_of (library.packs.begin(), library.packs.end(), [&] (const auto& p) { return p.id == c.id; }))
+            continue;
+
+        kitlibrary::Pack pack;
+        pack.id = c.id;
+        pack.name = c.name;
+        pack.author = c.author;
+        pack.sourceUrl = c.homepage;
+        pack.description = c.description;
+        pack.licenseName = c.licenseName;
+        pack.licenseUrl = c.licenseUrl;
+        pack.shareAlike = c.shareAlike;
+
+        const auto packIndex = (int) library.packs.size();
+        library.packs.push_back (pack);
+        missingPacks[packIndex] = &c;
+
+        auto add = [&] (const juce::String& name, bool isPreset)
+        {
+            kitlibrary::Entry e;
+            e.pack = packIndex;
+            e.summary.isPreset = isPreset;
+            auto& credits = e.summary.credits;
+            credits.name = name;
+            credits.author = c.author;
+            credits.sourceUrl = c.homepage;
+            credits.licenseName = c.licenseName;
+            credits.licenseUrl = c.licenseUrl;
+            credits.shareAlike = c.shareAlike;
+            credits.description = c.description;
+            credits.basedOn = isPreset && ! c.kits.isEmpty() ? c.kits[0] : juce::String();
+            library.kits.push_back (std::move (e));
+        };
+
+        for (const auto& k : c.kits)
+            add (k, false);
+
+        for (const auto& k : c.presets)
+            add (k, true);
+    }
+}
+
+const packs::CatalogPack* KitBrowser::missingPackOf (const kitlibrary::Entry& e) const
+{
+    const auto it = missingPacks.find (e.pack);
+    return it != missingPacks.end() ? it->second : nullptr;
+}
+
+void KitBrowser::updateInstallStatus()
+{
+    for (auto& card : cards)
+        if (card->missing != nullptr)
+            card->setInstallStatus (installer->getStatus (card->missing->id));
+
+    select (selected);
+}
+
+void KitBrowser::timerCallback()
+{
+    // Progress is polled while something installs; phases arrive as change messages.
+    updateInstallStatus();
+
+    if (! installer->isBusy())
+        stopTimer();
 }
 
 void KitBrowser::refresh()
@@ -511,16 +760,17 @@ void KitBrowser::refresh()
     // Cards refer to entries in `library`, so they go before it's replaced.
     cards.clear();
     library = kitlibrary::scan (processor.getKitsFolder());
+    addMissingPacks();
 
     if (packFilter >= (int) library.packs.size())
         packFilter = allPacks;
 
-    packList->setRows (library);
+    packList->setRows (library, missingPacks);
     packList->setSelected (packFilter);
 
     for (size_t i = 0; i < library.kits.size(); ++i)
     {
-        auto card = std::make_unique<KitCard> (library.kits[i], library.packOf (library.kits[i]), (int) i);
+        auto card = std::make_unique<KitCard> (library.kits[i], library.packOf (library.kits[i]), (int) i, missingPackOf (library.kits[i]));
         card->onClick = [this] (int index) { select (index); };
         card->onDoubleClick = [this] (int index) { load (index); };
         grid->addChildComponent (*card);
@@ -531,11 +781,21 @@ void KitBrowser::refresh()
     const auto loadedFolder = processor.getKitFolder();
 
     for (size_t i = 0; i < library.kits.size(); ++i)
-        if (library.kits[i].folder == loadedFolder)
+        if (library.kits[i].folder == loadedFolder && missingPackOf (library.kits[i]) == nullptr)
             selected = (int) i;
 
+    // After an install, the kit that was selected (a placeholder then) stays selected.
+    for (size_t i = 0; i < library.kits.size() && ! reselectName.isEmpty(); ++i)
+        if (library.kits[i].credits().name == reselectName)
+            selected = (int) i;
+
+    reselectName = {};
     applyFilter();
+    updateInstallStatus();
     search.grabKeyboardFocus();
+
+    if (installer->isBusy())
+        startTimerHz (8);
 }
 
 bool KitBrowser::passesFilter (const kitlibrary::Entry& e) const
@@ -584,7 +844,9 @@ void KitBrowser::select (int entry)
         cards[i]->setState ((int) i == selected, cards[i]->entry.folder == loadedFolder);
 
     const auto* e = juce::isPositiveAndBelow (selected, (int) library.kits.size()) ? &library.kits[(size_t) selected] : nullptr;
-    details->show (e, e != nullptr ? library.packOf (*e) : nullptr, e != nullptr && e->folder == loadedFolder);
+    const auto* missing = e != nullptr ? missingPackOf (*e) : nullptr;
+    details->show (e, e != nullptr ? library.packOf (*e) : nullptr, e != nullptr && missing == nullptr && e->folder == loadedFolder,
+                   missing, missing != nullptr ? installer->getStatus (missing->id) : std::nullopt);
 
     if (e != nullptr && cards[(size_t) selected]->isVisible())
     {
@@ -620,6 +882,19 @@ void KitBrowser::load (int entry)
     if (! juce::isPositiveAndBelow (entry, (int) library.kits.size()))
         return;
 
+    // A kit that isn't installed: download its pack, or stop downloading it.
+    if (const auto* missing = missingPackOf (library.kits[(size_t) entry]))
+    {
+        if (const auto status = installer->getStatus (missing->id); status.has_value() && status->isActive())
+            installer->cancel (missing->id);
+        else
+            installer->install (missing->id, processor.getKitsFolder(), Settings::getGroovesFolder());
+
+        startTimerHz (8);
+        updateInstallStatus();
+        return;
+    }
+
     // Choosing a kit here starts it with neutral settings, as from the menu.
     processor.loadKit (library.kits[(size_t) entry].folder, true);
 
@@ -627,10 +902,39 @@ void KitBrowser::load (int entry)
         onClose();
 }
 
-void KitBrowser::changeListenerCallback (juce::ChangeBroadcaster*)
+void KitBrowser::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
-    if (isVisible())
-        select (selected);   // the loaded kit may have changed
+    if (! isVisible())
+        return;
+
+    if (source == &installer.get())
+    {
+        // A pack that has just been installed turns from placeholders into kits.
+        const auto finished = std::any_of (missingPacks.begin(), missingPacks.end(), [this] (const auto& m)
+        {
+            const auto status = installer->getStatus (m.second->id);
+            return status.has_value() && status->phase == packs::Installer::Phase::done;
+        });
+
+        if (finished)
+        {
+            if (juce::isPositiveAndBelow (selected, (int) library.kits.size()))
+                reselectName = library.kits[(size_t) selected].credits().name;
+
+            refresh();
+        }
+        else
+        {
+            updateInstallStatus();
+        }
+
+        if (installer->isBusy())
+            startTimerHz (8);
+
+        return;
+    }
+
+    select (selected);   // the loaded kit may have changed
 }
 
 bool KitBrowser::keyPressed (const juce::KeyPress& key)
@@ -654,8 +958,7 @@ void KitBrowser::paint (juce::Graphics& g)
         g.setColour (theme::colours::textMuted);
         g.setFont (theme::body (14.0f));
         g.drawFittedText (library.kits.empty()
-                              ? "No kits are installed yet. The README explains where to download kits and how to import "
-                                "them with LithiumImport; they'll show up here."
+                              ? "No kits are installed yet."
                               : "No kits match.",
                           emptyMessageArea, juce::Justification::centred, 3, 1.0f);
     }
@@ -714,9 +1017,11 @@ void KitBrowser::layoutGrid()
                 y += tileHeight + tileGap + 6;
 
             const auto* p = library.packOf (card->entry);
+            const auto* missing = missingPackOf (card->entry);
             grid->headings.push_back ({ { 0, y, width, sectionHeight - 6 },
                                         p != nullptr ? p->name : juce::String ("Other kits"),
-                                        p != nullptr ? p->licenseName : juce::String() });
+                                        (p != nullptr ? p->licenseName : juce::String())
+                                          + (missing != nullptr ? juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  not installed, ")) + packs::formatSize (missing->downloadSize()) : juce::String()) });
             y += sectionHeight;
             column = 0;
             lastPack = pack;

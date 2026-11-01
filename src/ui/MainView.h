@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditPage.h"
+#include "GroovesPage.h"
 #include "HeaderBar.h"
 #include "InfoPanels.h"
 #include "KitBrowser.h"
@@ -28,7 +29,8 @@ private:
     KitPage kitPage;
     EditPage editPage;
     MixerPage mixerPage;
-    ComingSoonPage groovesPage, fxPage;
+    GroovesPage groovesPage;
+    ComingSoonPage fxPage;
     AboutPanel aboutPanel;
     SettingsPanel settingsPanel;
     MidiPanel midiPanel;

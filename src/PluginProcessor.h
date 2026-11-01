@@ -4,11 +4,13 @@
 #include "Parameters.h"
 #include "SelectionModel.h"
 #include "engine/DrumEngine.h"
+#include "engine/GroovePlayer.h"
 #include "engine/KitHandoff.h"
 #include "engine/KitLoader.h"
 #include "engine/MidiMapping.h"
 #include "engine/Mixer.h"
 #include "engine/SpscQueue.h"
+#include "grooves/GrooveLibrary.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -27,9 +29,9 @@ namespace lithium
         deletes what the audio thread retires.
       - Everything else (UI, state, kit requests) is the message thread.
     The only ways the audio thread talks to anyone are lock-free: parameter
-    atomics, the KitHandoff, the audition and note table queues,
-    EngineFeedback, MixerFeedback and one atomic counter for kit-switch
-    resets. */
+    atomics, the KitHandoff, the audition and note table queues, the
+    GroovePlayer's queues and atomics, EngineFeedback, MixerFeedback and one
+    atomic counter for kit-switch resets. */
 class LithiumDrumsProcessor final : public juce::AudioProcessor,
                                     public juce::ChangeBroadcaster,
                                     private juce::AsyncUpdater,
@@ -156,6 +158,29 @@ public:
 
     static constexpr int auditionVelocity = 90;
 
+    //==============================================================================
+    // The groove preview (message thread). The Grooves page picks a clip;
+    // the processor resolves it against the current kit, and again whenever
+    // the kit changes, and the GroovePlayer plays it on the audio thread.
+
+    /** Plays a clip from the top, through the pack's note map. clipId is
+        anything the caller wants to recognise it by in the player's feedback. */
+    void previewGroove (std::shared_ptr<const grooves::Clip>, const juce::String& noteMapId, int clipId);
+    void stopGroove()                                                { groovePlayer.playing = false; }
+    bool isGroovePlaying() const noexcept                            { return groovePlayer.playing.load(); }
+
+    /** The settings atomics (loop, tempo, speed) and what's playing. */
+    GroovePlayer& getGroovePlayer() noexcept                         { return groovePlayer; }
+
+    /** A clip as a MIDI file, in the notes that play it with the current MIDI map and kit. */
+    juce::MidiFile grooveToMidi (const grooves::Clip&, const juce::String& noteMapId) const;
+
+    /** What the Grooves page shows (pack, groove, phrase), kept here so it
+        survives closing the editor and is saved with the project. Behind
+        the state lock, as hosts may save from other threads. */
+    juce::var getGrooveSetting (const juce::Identifier& id) const    { std::scoped_lock lock (stateMutex); return grooveState[id]; }
+    void setGrooveSetting (const juce::Identifier& id, const juce::var& v)  { std::scoped_lock lock (stateMutex); grooveState.setProperty (id, v, nullptr); }
+
 private:
     void requestKit (const juce::File& folder, bool resetMixer, bool force);
     void handleAsyncUpdate() override;
@@ -172,6 +197,7 @@ private:
     void editMidiMap (const std::function<void (MidiMap&, const KitInfo&)>&);
     void sendNoteTable();
     void applyNoteTables() noexcept;
+    void sendGroovePattern (bool restart);
 
     struct AuditionRequest
     {
@@ -221,6 +247,9 @@ private:
     std::shared_ptr<StreamStats> streamStats = std::make_shared<StreamStats>();
     std::atomic<bool> kitLoadPending { false };
     std::atomic<std::uint64_t> confirmedResetToken { 0 };   // see Kit::resetToken
+    GroovePlayer groovePlayer;
+    std::array<GroovePlayer::Hit, 256> grooveHits {};       // one block's worth, allocated up front
+    double currentSampleRate = 44100.0;                     // from prepareToPlay
 
     // Message thread, but some hosts save and restore state on other
     // threads, hence the mutex.
@@ -241,6 +270,13 @@ private:
     juce::String kitError;
     juce::ChangeBroadcaster midiMapBroadcaster;
     std::array<double, maxMics> mutedSince {};   // ms timestamps, 0 = not muted
+
+    // The clip being previewed, kept to resolve it again for a new kit.
+    std::shared_ptr<const grooves::Clip> grooveClip;
+    juce::String grooveNoteMap;
+    int grooveClipId = -1;
+    std::unique_ptr<GroovePattern> unsentGroovePattern;   // the queue was full; the timer tries again
+    juce::ValueTree grooveState { "grooves" };            // under stateMutex
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LithiumDrumsProcessor)
 };

@@ -241,8 +241,8 @@ void LithiumLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, 
 
 //==============================================================================
 void LithiumLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
-                                           float sliderPos, float, float, juce::Slider::SliderStyle style,
-                                           juce::Slider& slider)
+                                           float sliderPos, float minSliderPos, float maxSliderPos,
+                                           juce::Slider::SliderStyle style, juce::Slider& slider)
 {
     if (style == juce::Slider::LinearVertical)
     {
@@ -250,15 +250,30 @@ void LithiumLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
         return;
     }
 
-    if (style != juce::Slider::LinearHorizontal)
-    {
-        LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos, 0, 0, style, slider);
-        return;
-    }
-
     const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat();
     const auto track = bounds.withSizeKeepingCentre (bounds.getWidth(), 4.0f);
     const auto enabled = slider.isEnabled();
+
+    // A range (the Grooves page's tempo filter): the track filled between two thumbs.
+    if (style == juce::Slider::TwoValueHorizontal)
+    {
+        g.setColour (slider.findColour (juce::Slider::backgroundColourId));
+        g.fillRoundedRectangle (track, 2.0f);
+        g.setColour (slider.findColour (juce::Slider::trackColourId).withMultipliedAlpha (enabled ? 1.0f : 0.4f));
+        g.fillRoundedRectangle (track.withLeft (minSliderPos).withRight (maxSliderPos), 2.0f);
+        g.setColour (slider.findColour (juce::Slider::thumbColourId).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
+
+        for (const auto pos : { minSliderPos, maxSliderPos })
+            g.fillRoundedRectangle (juce::Rectangle<float> (6.0f, 14.0f).withCentre ({ pos, bounds.getCentreY() }), 2.0f);
+
+        return;
+    }
+
+    if (style != juce::Slider::LinearHorizontal)
+    {
+        LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
+        return;
+    }
 
     g.setColour (slider.findColour (juce::Slider::backgroundColourId));
     g.fillRoundedRectangle (track, 2.0f);

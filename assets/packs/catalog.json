@@ -1,0 +1,142 @@
+{
+  "format": "lithium-pack-catalog",
+  "version": 1,
+  "packs": [
+    {
+      "id": "drumgizmo-drskit",
+      "name": "DRSKit",
+      "type": "kits",
+      "author": "The DrumGizmo team (Deva and Lars Muldjord) with Jes Eiler of DRSDrums",
+      "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/" },
+      "homepage": "https://drumgizmo.org/wiki/doku.php?id=kits:drskit",
+      "description": "A handcrafted DRSDrums kit with Paiste cymbals, usable for everything from jazz to rock. 13 mic channels.",
+      "kits": ["DRSKit Full"],
+      "presets": ["DRSKit", "DRSKit Brushes", "DRSKit Minimal", "DRSKit No Brushes"],
+      "downloads": [ { "url": "https://drumgizmo.org/kits/DRSKit/DRSKit2_1.zip", "size": 2803397710 } ],
+      "unpackedSize": 4302568083
+    },
+    {
+      "id": "drumgizmo-muldjordkit",
+      "name": "MuldjordKit",
+      "type": "kits",
+      "author": "Lars Muldjord",
+      "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/" },
+      "homepage": "https://drumgizmo.org/wiki/doku.php?id=kits:muldjordkit",
+      "description": "A metal and rock kit with two kicks, three rack toms and a floor tom, two crashes, two rides and a china. 16 mic channels.",
+      "kits": ["MuldjordKit"],
+      "presets": ["MuldjordKit Dry", "MuldjordKit Four-Piece", "MuldjordKit Low"],
+      "downloads": [ { "url": "https://drumgizmo.org/kits/MuldjordKit/MuldjordKit3.zip", "size": 2536576789 } ],
+      "unpackedSize": 3875711217
+    },
+    {
+      "id": "drumgizmo-crocellkit",
+      "name": "CrocellKit",
+      "type": "kits",
+      "author": "Lars Muldjord (DrumGizmo)",
+      "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/" },
+      "homepage": "https://drumgizmo.org/wiki/doku.php?id=kits:crocellkit",
+      "description": "A big metal and rock kit with a double kick, four toms, three crashes, two splashes, two chinas and a ride.",
+      "kits": ["CrocellKit Full"],
+      "presets": ["CrocellKit", "CrocellKit Small", "CrocellKit Tiny"],
+      "downloads": [ { "url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit1_1.zip", "size": 5646502341 } ],
+      "unpackedSize": 9016575637,
+      "importFrom": "CrocellKit"
+    },
+    {
+      "id": "wilkinson-naked-drums",
+      "name": "Naked Drums",
+      "type": "kits",
+      "author": "Wilkinson Audio; SFZ conversion by kinwie",
+      "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/" },
+      "homepage": "https://github.com/sfzinstruments/WilkinsonAudio.NakedDrums",
+      "description": "A Yamaha Recording Custom kit made for metal and hard rock: 16 mic channels, 10 round-robins.",
+      "kits": ["Naked Drums"],
+      "presets": [],
+      "downloads": [ { "url": "https://codeload.github.com/sfzinstruments/WilkinsonAudio.NakedDrums/zip/refs/heads/master", "file": "NakedDrums.zip", "size": 0, "approximateSize": 2500000000 } ],
+      "unpackedSize": 2567517058
+    },
+    {
+      "id": "virtuosity-drums",
+      "name": "Virtuosity Drums",
+      "type": "kits",
+      "author": "Versilian Studios and Karoryfer Lecolds; performed by Austin McMahon",
+      "license": { "name": "CC0 1.0", "url": "https://creativecommons.org/publicdomain/zero/1.0/" },
+      "homepage": "https://versilian-studios.com/virtuosity-drums/",
+      "description": "A contemporary jazz kit with deep dynamics (up to 36 velocity layers) and six mic positions.",
+      "kits": ["Virtuosity Drums", "Virtuosity Snares Off"],
+      "presets": ["Virtuosity Close", "Virtuosity Ribbon", "Virtuosity Room", "Virtuosity Vintage"],
+      "downloads": [ { "url": "https://versilian-studios.com/Distro/Virtuosity_Drums_v0.925.zip", "size": 1227151376 } ],
+      "unpackedSize": 1488795308
+    },
+    {
+      "id": "karoryfer-big-rusty-drums",
+      "name": "Big Rusty Drums",
+      "type": "kits",
+      "author": "Karoryfer Lecolds",
+      "license": { "name": "CC0 1.0", "url": "https://creativecommons.org/publicdomain/zero/1.0/" },
+      "homepage": "https://github.com/sfzinstruments/karoryfer.big-rusty-drums",
+      "description": "A vintage Polish kit with a 24\" kick and four huge toms: big, loose and rocky.",
+      "kits": ["Big Rusty"],
+      "presets": [],
+      "downloads": [ { "url": "https://github.com/sfzinstruments/karoryfer.big-rusty-drums/releases/download/v1.100/Big_Rusty_Drums_1100.zip", "size": 619600370 } ],
+      "unpackedSize": 730921291
+    },
+    {
+      "id": "sm-drums",
+      "name": "SM Drums",
+      "type": "kits",
+      "author": "Scott McLean (recording), Tod Stillwell (editing), D. Smolken (SFZ programming)",
+      "license": { "name": "Free to use in productions (no licence text)", "url": "https://smmdrums.wordpress.com/" },
+      "homepage": "https://smmdrums.wordpress.com/for-sfz-sforzando/",
+      "description": "A 1960s Ludwig Oyster Blue Pearl kit with Zildjian cymbals: warm, vintage and deeply sampled, in its stereo mix.",
+      "kits": ["SM Drums"],
+      "presets": [],
+      "downloads": [ { "url": "https://drive.usercontent.google.com/download?id=1DHs_jQyNGfls6j3mvyO9F8DpK8vkySLa&export=download&confirm=t", "file": "SMDrums_Sforzando_1.2.zip", "size": 2409313871 } ],
+      "unpackedSize": 3667136334
+    },
+    {
+      "id": "basalt-kits",
+      "name": "Basalt Kits",
+      "type": "kits",
+      "author": "Glen MacArthur (AV Linux)",
+      "license": { "name": "CC BY-SA 3.0", "url": "https://creativecommons.org/licenses/by-sa/3.0/", "shareAlike": true },
+      "homepage": "https://www.bandshed.net/avldrumkits/",
+      "description": "Compact, characterful acoustic kits converted from Glen MacArthur's AVL Drumkits (renamed, as their licence asks of modified versions).",
+      "kits": ["Amber", "Amber Rods", "Cobblestone", "Garnet", "Onyx"],
+      "presets": [],
+      "downloads": [
+        { "url": "https://www.bandshed.net/sounds/AVLDrumkits_SFZ/BLACK_PEARL_2023_repack.zip", "size": 14176289 },
+        { "url": "https://www.bandshed.net/sounds/AVLDrumkits_SFZ/BLONDE_BOP_HR_SFZ.zip", "size": 16892964 },
+        { "url": "https://www.bandshed.net/sounds/AVLDrumkits_SFZ/BLONDE_BOP_SFZ.zip", "size": 18894879 },
+        { "url": "https://www.bandshed.net/sounds/AVLDrumkits_SFZ/BUSKMANS_HOLIDAY_SFZ.zip", "size": 21738818 },
+        { "url": "https://www.bandshed.net/sounds/AVLDrumkits_SFZ/RED_ZEPPELIN_2023_repack.zip", "size": 17853157 },
+        { "url": "https://www.bandshed.net/pdf/AVL-Drumkits%20CC-BY-SA%20License.pdf", "file": "AVL-Drumkits CC-BY-SA License.pdf", "size": 0 }
+      ],
+      "unpackedSize": 157057637
+    },
+    {
+      "id": "salamander-drumkit",
+      "name": "Salamander Drumkit",
+      "type": "kits",
+      "author": "Alexander Holm",
+      "license": { "name": "CC BY-SA 3.0", "url": "https://creativecommons.org/licenses/by-sa/3.0/", "shareAlike": true },
+      "homepage": "https://archive.org/details/SalamanderDrumkit",
+      "description": "A home-built birch kit with a rope-tuned snare and many samples per velocity, recorded through one pair of overheads.",
+      "kits": ["Salamander Drumkit"],
+      "presets": ["Salamander Alt", "Salamander Compact"],
+      "downloads": [ { "url": "http://download.linuxaudio.org/musical-instrument-libraries/sfz/salamander_drumkit_v1.tar.7z", "size": 359607308 } ],
+      "unpackedSize": 501996439
+    },
+    {
+      "id": "groove-midi-dataset",
+      "name": "Groove MIDI Dataset",
+      "type": "grooves",
+      "author": "Jon Gillick, Adam Roberts, Jesse Engel, Douglas Eck and David Bamman (Google Magenta)",
+      "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/" },
+      "homepage": "https://magenta.tensorflow.org/datasets/groove",
+      "description": "1,150 drum performances (503 grooves and 647 fills) by ten drummers, played on a Roland TD-11 to a metronome.",
+      "downloads": [ { "url": "https://storage.googleapis.com/magentadata/datasets/groove/groove-v1.0.0-midionly.zip", "size": 3260318 } ],
+      "unpackedSize": 5479882
+    }
+  ]
+}

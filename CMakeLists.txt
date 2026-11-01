@@ -14,6 +14,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(LITHIUM_BUILD_TESTS "Build the headless engine tests" ON)
 option(LITHIUM_COPY_PLUGINS "Copy built plugins to the user plugin folders (~/.vst3, ~/.clap)" OFF)
 
+# Keep builds from running the machine out of memory. Ninja otherwise runs a
+# compile per core, and JUCE's module files take 1-2 GB each to compile, so a
+# full rebuild on a machine with many cores and modest RAM can freeze it.
+# These pools allow one compile per 2.5 GB of RAM (and two links at a time).
+# Other generators ignore them.
+cmake_host_system_information(RESULT lithium_ram_mb QUERY TOTAL_PHYSICAL_MEMORY)
+math(EXPR lithium_compile_jobs "${lithium_ram_mb} / 2560")
+if(lithium_compile_jobs LESS 1)
+    set(lithium_compile_jobs 1)
+endif()
+set_property(GLOBAL APPEND PROPERTY JOB_POOLS lithium_compile=${lithium_compile_jobs} lithium_link=2)
+set(CMAKE_JOB_POOL_COMPILE lithium_compile)
+set(CMAKE_JOB_POOL_LINK lithium_link)
+
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
@@ -42,6 +56,7 @@ juce_add_plugin(LithiumDrums
     NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
     IS_MIDI_EFFECT              FALSE
+    NEEDS_CURL                  TRUE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     VST3_CATEGORIES             Instrument Drum Sampler
     AU_MAIN_TYPE                kAudioUnitType_MusicDevice
@@ -63,6 +78,11 @@ target_sources(LithiumDrums PRIVATE
     src/importer/DrumGizmoImporter.cpp
     src/importer/SfzParser.cpp
     src/importer/SfzImporter.cpp
+    src/grooves/GrooveLibrary.cpp
+    src/grooves/GrooveMidi.cpp
+    src/grooves/GrooveImporter.cpp
+    src/packs/Archive.cpp
+    src/packs/PackInstaller.cpp
     src/engine/KitManifest.cpp
     src/engine/MidiMap.cpp
     src/engine/MidiMapping.cpp
@@ -72,6 +92,7 @@ target_sources(LithiumDrums PRIVATE
     src/engine/KitLoader.cpp
     src/engine/Voice.cpp
     src/engine/DrumEngine.cpp
+    src/engine/GroovePlayer.cpp
     src/engine/Mixer.cpp
     src/engine/dsp/ChannelEq.cpp
     src/engine/dsp/Compressor.cpp
@@ -92,7 +113,8 @@ target_sources(LithiumDrums PRIVATE
     src/ui/KitBrowser.cpp
     src/ui/InfoPanels.cpp
     src/ui/MidiPanel.cpp
-    src/ui/MidiKeyboard.cpp)
+    src/ui/MidiKeyboard.cpp
+    src/ui/GroovesPage.cpp)
 
 target_include_directories(LithiumDrums PRIVATE src)
 
@@ -124,7 +146,8 @@ juce_add_binary_data(LithiumAssets
         assets/midi-maps/lithium-standard.json
         assets/midi-maps/general-midi.json
         assets/midi-maps/roland-vdrums.json
-        assets/midi-maps/alesis.json)
+        assets/midi-maps/alesis.json
+        assets/packs/catalog.json)
 
 # The importer's built-in mappings for known kits.
 juce_add_binary_data(LithiumImportMaps
@@ -144,7 +167,6 @@ juce_add_binary_data(LithiumImportMaps
 target_compile_definitions(LithiumDrums
     PUBLIC
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_USE_FLAC=1
         JUCE_USE_OGGVORBIS=0
@@ -158,6 +180,7 @@ target_link_libraries(LithiumDrums
     PRIVATE
         LithiumAssets
         LithiumImportMaps
+        LithiumLzma
     PUBLIC
         juce::juce_audio_utils
         juce::juce_audio_formats
@@ -165,13 +188,14 @@ target_link_libraries(LithiumDrums
         juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------
-# Kit importer (DrumGizmo and SFZ)
+# Kit and groove importer (DrumGizmo, SFZ, and the Groove MIDI Dataset)
 
 # A small command-line tool. It compiles the importer and settings sources
 # itself (rather than linking the plugin), so it only needs the core audio
 # modules. KitManifest is there so the importer can check what it wrote by
 # parsing it back.
-juce_add_console_app(LithiumImport PRODUCT_NAME "LithiumImport")
+# It also downloads and installs packs (--install), hence curl.
+juce_add_console_app(LithiumImport PRODUCT_NAME "LithiumImport" NEEDS_CURL TRUE)
 target_sources(LithiumImport PRIVATE
     tools/importer/ImportMain.cpp
     src/importer/Importer.cpp
@@ -179,13 +203,19 @@ target_sources(LithiumImport PRIVATE
     src/importer/DrumGizmoImporter.cpp
     src/importer/SfzParser.cpp
     src/importer/SfzImporter.cpp
+    src/grooves/GrooveLibrary.cpp
+    src/grooves/GrooveImporter.cpp
+    src/packs/Archive.cpp
+    src/packs/PackInstaller.cpp
     src/engine/KitManifest.cpp
     src/Settings.cpp)
 target_include_directories(LithiumImport PRIVATE src)
 target_compile_definitions(LithiumImport PRIVATE
-    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_USE_FLAC=1 JUCE_USE_OGGVORBIS=0)
+    JUCE_WEB_BROWSER=0 JUCE_USE_FLAC=1 JUCE_USE_OGGVORBIS=0)
 target_link_libraries(LithiumImport PRIVATE
     LithiumImportMaps
+    LithiumAssets
+    LithiumLzma
     juce::juce_audio_formats
     juce::juce_data_structures
     juce::juce_events
@@ -240,7 +270,7 @@ target_link_libraries(LithiumRoomGen PRIVATE
 if(LITHIUM_BUILD_TESTS)
     # The tests link the plugin's shared-code library (the processor, engine
     # and UI, compiled once) rather than recompiling the sources.
-    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp)
+    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp tests/GrooveTests.cpp tests/PackTests.cpp)
     target_include_directories(LithiumDrumsTests PRIVATE src)
     target_compile_definitions(LithiumDrumsTests PRIVATE
         LITHIUM_TEST_KIT_DIR="${LITHIUM_TEST_KIT_DIR}"

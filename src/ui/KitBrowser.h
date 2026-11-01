@@ -1,6 +1,9 @@
 #pragma once
 
 #include "InfoPanels.h"
+#include "packs/PackInstaller.h"
+
+#include <map>
 
 namespace lithium
 {
@@ -9,9 +12,13 @@ namespace lithium
     by content pack, with search, a kits/presets filter, and a details pane
     with the selected kit's credits. Opened from the header's Browse button.
 
+    Packs in the LithiumPacks catalog that aren't installed are there too,
+    greyed out, with their kits as cards; the details pane downloads and
+    installs one (packs::Installer), and the cards show how far it's got.
+
     It reads the kits folder each time it opens (kitlibrary::scan reads only
     kit.json and pack.json files), so it always shows what's installed now. */
-class KitBrowser final : public OverlayPanel, private juce::ChangeListener
+class KitBrowser final : public OverlayPanel, private juce::ChangeListener, private juce::Timer
 {
 public:
     explicit KitBrowser (LithiumDrumsProcessor&);
@@ -39,9 +46,17 @@ private:
     void moveSelection (int delta);
     void load (int entry);
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void timerCallback() override;
+    void addMissingPacks();
+    const packs::CatalogPack* missingPackOf (const kitlibrary::Entry&) const;
+    void updateInstallStatus();
 
     LithiumDrumsProcessor& processor;
     kitlibrary::Library library;
+    juce::SharedResourcePointer<packs::Installer> installer;
+
+    // Library packs that stand for catalog packs not installed yet, by pack index.
+    std::map<int, const packs::CatalogPack*> missingPacks;
 
     juce::TextEditor search;
     juce::TextButton allButton { "All" }, kitsButton { "Kits" }, presetsButton { "Presets" };
@@ -56,6 +71,7 @@ private:
     int packFilter = allPacks;                       // allPacks, loosePacks or a pack index
     TypeFilter typeFilter = TypeFilter::all;
     int selected = -1;                               // index into library.kits
+    juce::String reselectName;                       // a kit to select after the next refresh
     int columns = 3;
 };
 

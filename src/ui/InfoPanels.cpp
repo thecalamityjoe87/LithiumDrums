@@ -2,6 +2,7 @@
 
 #include "Theme.h"
 #include "engine/StreamCache.h"
+#include "grooves/GrooveLibrary.h"
 
 namespace lithium
 {
@@ -174,7 +175,7 @@ void AboutPanel::refresh()
 
             g.setColour (colours::text);
             g.setFont (body (14.0f));
-            g.drawFittedText ("Lithium Drums " LITHIUM_VERSION_STRING ". The kits below are recordings released under "
+            g.drawFittedText ("Lithium Drums " LITHIUM_VERSION_STRING ". The kits and grooves below are recordings released under "
                               "open licences by their authors. Credit them as shown when you publish music made with them.",
                               area.removeFromTop (40), juce::Justification::topLeft, 2, 1.0f);
 
@@ -241,6 +242,20 @@ void AboutPanel::refresh()
         };
 
         cards.push_back (std::make_unique<Empty>());
+    }
+
+    // Groove packs need crediting too: the grooves dragged into a project are their drummers' playing.
+    for (const auto& pack : grooves::scan (Settings::getGroovesFolder()).packs)
+    {
+        int fills = 0;
+
+        for (const auto& g : pack.grooves)
+            fills += (int) g.fills.size();
+
+        cards.push_back (std::make_unique<KitCard> (KitCard::Content {
+            pack.name, "Grooves: " + juce::String ((int) pack.grooves.size()) + " grooves and " + juce::String (fills) + " fills",
+            pack.author, pack.credits.isNotEmpty() ? pack.credits : pack.description, pack.licenseName, pack.licenseUrl,
+            pack.sourceUrl, pack.licenseFile, pack.licenseName.containsIgnoreCase ("-SA") }));
     }
 
     for (auto& c : cards)

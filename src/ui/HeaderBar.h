@@ -2,6 +2,7 @@
 
 #include "KitLibrary.h"
 #include "PluginProcessor.h"
+#include "packs/PackInstaller.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -54,6 +55,7 @@ private:
     std::unique_ptr<IconButton> aboutButton, settingsButton;
     std::unique_ptr<MidiButton> midiButton;
     kitlibrary::Library library;
+    juce::SharedResourcePointer<packs::Installer> installer;
 
     int cpuPercent = 0, voices = 0;
     std::size_t sampleBytes = 0;
@@ -66,7 +68,8 @@ private:
     double diskBytesPerSecond = 0.0;
     bool streaming = false, recentDropouts = false;
 
-    static constexpr int refreshItemId = 10000, settingsItemId = 10001, browseItemId = 10002;
+    static constexpr int refreshItemId = 10000, settingsItemId = 10001, browseItemId = 10002;   // and 10003: "Download kits..."
+    static constexpr int missingItemId = 20000;   // the greyed packs that aren't installed
 };
 
 } // namespace lithium

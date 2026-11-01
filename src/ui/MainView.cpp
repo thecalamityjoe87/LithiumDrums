@@ -10,7 +10,7 @@ MainView::MainView (LithiumDrumsProcessor& p)
       kitPage (p),
       editPage (p),
       mixerPage (p),
-      groovesPage ("Grooves", "Browse MIDI grooves, preview them in tempo and drag them into your host."),
+      groovesPage (p),
       fxPage ("FX", "Master bus effects."),
       aboutPanel (p),
       settingsPanel (p),

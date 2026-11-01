@@ -84,6 +84,10 @@ Library scan (const juce::File& kitsFolder)
 
     for (const auto& folder : folders)
     {
+        // ".downloads" holds packs being installed (see packs::Installer).
+        if (folder.getFileName().startsWithChar ('.'))
+            continue;
+
         Pack pack;
 
         if (! readPack (folder, pack))

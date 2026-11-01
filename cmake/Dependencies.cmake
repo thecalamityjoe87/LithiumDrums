@@ -28,4 +28,25 @@ FetchContent_Declare(clap_juce_extensions
     GIT_PROGRESS   TRUE
     SYSTEM)
 
-FetchContent_MakeAvailable(JUCE clap_juce_extensions)
+# The LZMA SDK, for unpacking .7z downloads (the Salamander Drumkit is only
+# published as one). It is the C part of 7-Zip, by Igor Pavlov, and in the
+# public domain. Only its sources are fetched (the repository has no CMake
+# build of its own; SOURCE_SUBDIR points at nothing so none is looked for),
+# and the few decoder files needed are built into a small library below.
+FetchContent_Declare(lzma_sdk
+    GIT_REPOSITORY https://github.com/ip7z/7zip.git
+    GIT_TAG        26.04
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
+    SOURCE_SUBDIR  no-cmake-build)
+
+FetchContent_MakeAvailable(JUCE clap_juce_extensions lzma_sdk)
+
+set(lzma_c "${lzma_sdk_SOURCE_DIR}/C")
+add_library(LithiumLzma STATIC
+    ${lzma_c}/7zAlloc.c ${lzma_c}/7zArcIn.c ${lzma_c}/7zBuf.c ${lzma_c}/7zCrc.c ${lzma_c}/7zCrcOpt.c
+    ${lzma_c}/7zDec.c ${lzma_c}/7zStream.c ${lzma_c}/Alloc.c ${lzma_c}/Bcj2.c ${lzma_c}/Bra.c ${lzma_c}/Bra86.c
+    ${lzma_c}/BraIA64.c ${lzma_c}/CpuArch.c ${lzma_c}/Delta.c ${lzma_c}/Lzma2Dec.c ${lzma_c}/LzmaDec.c
+    ${lzma_c}/Ppmd7.c ${lzma_c}/Ppmd7Dec.c)
+target_include_directories(LithiumLzma SYSTEM PUBLIC "${lzma_c}")
+set_target_properties(LithiumLzma PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 99)
