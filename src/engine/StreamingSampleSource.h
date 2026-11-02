@@ -28,18 +28,21 @@ struct StreamStats
     std::atomic<int> activeStreams { 0 };              // audio thread
 };
 
-/** Where one sample's audio is in the stream cache's audio.bin. */
+/** Where one sample's audio is in a stream cache pack's audio.bin. */
 struct StreamRegion
 {
     std::array<std::int64_t, maxChannelsPerMic> offset {};   // byte offset of the sample's first frame, per channel
     int bytesPerSample = 3;
+    int pack = 0;                                            // index into StreamMap::dataFiles
 };
 
 /** Where every sample of a kit streams from. Immutable once built, and
-    shared by the kit and the loader (which fills preloads from it). */
+    shared by the kit and the loader (which fills preloads from it). A kit
+    streams from one cache pack per audio folder: its own, plus one for each
+    kit that a swapped-in piece comes from. */
 struct StreamMap
 {
-    juce::File dataFile;
+    std::vector<juce::File> dataFiles;
     std::vector<StreamRegion> regions;   // by SampleId
 };
 
@@ -95,9 +98,9 @@ public:
     /** Memory taken by the ring buffers of every slot. */
     static std::size_t bufferBytesFor (const std::array<int, maxMics>& micChannels, int numMics, int streamsPerMic) noexcept;
 
-    /** False if the cache file couldn't be opened. */
-    bool isValid() const noexcept                           { return file != nullptr; }
-    const juce::File& getDataFile() const noexcept          { return map->dataFile; }
+    /** False if a cache file couldn't be opened. */
+    bool isValid() const noexcept                           { return valid; }
+    const std::vector<juce::File>& getDataFiles() const noexcept   { return map->dataFiles; }
 
     bool isStreaming() const noexcept override              { return true; }
     std::size_t getMemoryUsage() const noexcept override;
@@ -165,8 +168,9 @@ private:
     std::vector<int> freeSlots;
     std::array<int, maxMics> numFree {};
 
-    // Disk thread only.
-    std::unique_ptr<juce::FileInputStream> file;
+    // Disk thread only (after the constructor opens them).
+    std::vector<std::unique_ptr<juce::FileInputStream>> files;   // by StreamRegion::pack
+    bool valid = true;
     std::vector<std::byte> readBuffer;
     std::vector<Candidate> candidates;
 

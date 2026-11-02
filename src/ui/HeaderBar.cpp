@@ -1,5 +1,8 @@
 #include "HeaderBar.h"
 
+#include "LithiumLookAndFeel.h"
+#include "ModelPicker.h"
+#include "PresetPanel.h"
 #include "Theme.h"
 
 #include <numeric>
@@ -16,8 +19,9 @@ namespace
     // "1023 MB", "123 MB/s", "64" in 14 px IBM Plex Mono), with a clear gap
     // between them and before the buttons.
     constexpr std::array<int, 4> readoutWidths { 44, 64, 80, 40 };
-    constexpr int readoutGap = 20;
-    constexpr int readoutsToButtons = 28;
+    constexpr int readoutGap = 16;
+    constexpr int readoutsToButtons = 24;
+    constexpr int presetBoxWidth = 210, arrowWidth = 24, browseWidth = 66;
     constexpr double dropoutHighlightMs = 4000.0;   // how long the disk readout stays red after a dropout
     constexpr int iconSize = 30;
     constexpr int numIcons = 3;
@@ -207,8 +211,76 @@ private:
 };
 
 //==============================================================================
+/** The preset box: the preset's name (with an asterisk once it's been
+    changed) over the kit it plays. Clicking it opens the menu of presets
+    and kits. */
+class HeaderBar::PresetBox final : public juce::Button
+{
+public:
+    PresetBox() : juce::Button ("Presets and kits") {}
+
+    void setLines (const juce::String& top, const juce::String& bottom, bool isModified, bool topDimmed)
+    {
+        if (top != title || bottom != subtitle || isModified != modified || topDimmed != dimmed)
+        {
+            title = top;
+            subtitle = bottom;
+            modified = isModified;
+            dimmed = topDimmed;
+            repaint();
+        }
+    }
+
+    void paintButton (juce::Graphics& g, bool isMouseOver, bool isDown) override
+    {
+        using namespace theme;
+        const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+
+        g.setColour (isDown ? colours::raisedHigh.brighter (0.05f) : (isMouseOver ? colours::raisedHigh : colours::raised));
+        g.fillRoundedRectangle (bounds, cornerRadius);
+        g.setColour (isMouseOver ? colours::borderStrong : colours::border);
+        g.drawRoundedRectangle (bounds, cornerRadius, 1.0f);
+
+        if (hasKeyboardFocus (false))
+            LithiumLookAndFeel::drawFocusRing (g, bounds, cornerRadius);
+
+        // The chevron, as on the drop-downs.
+        const auto cx = bounds.getRight() - 14.0f, cy = bounds.getCentreY();
+        juce::Path chevron;
+        chevron.startNewSubPath (cx - 4.0f, cy - 2.0f);
+        chevron.lineTo (cx, cy + 2.0f);
+        chevron.lineTo (cx + 4.0f, cy - 2.0f);
+        g.setColour (colours::textMuted);
+        g.strokePath (chevron, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Two lines; long names end in an ellipsis (the tooltip has them whole).
+        auto lines = bounds.reduced (10.0f, 3.0f).withTrimmedRight (18.0f);
+        const auto mark = modified ? juce::String (" *") : juce::String();
+        const auto titleFont = body (13.5f, Weight::semibold);
+        auto top = lines.removeFromTop (lines.getHeight() * 0.55f);
+
+        g.setFont (titleFont);
+        const auto markWidth = juce::GlyphArrangement::getStringWidth (titleFont, mark);
+        const auto titleWidth = std::min (juce::GlyphArrangement::getStringWidth (titleFont, title) + 1.0f, top.getWidth() - markWidth);
+        g.setColour (dimmed ? colours::textMuted : colours::text);
+        g.drawText (title, top.removeFromLeft (titleWidth), juce::Justification::bottomLeft, true);
+        g.setColour (colours::accent);
+        g.drawText (mark, top, juce::Justification::bottomLeft, false);
+
+        g.setColour (colours::textMuted);
+        g.setFont (body (11.5f));
+        g.drawText (subtitle, lines, juce::Justification::topLeft, true);
+    }
+
+private:
+    juce::String title, subtitle;
+    bool modified = false, dimmed = false;
+};
+
+//==============================================================================
 HeaderBar::HeaderBar (LithiumDrumsProcessor& p)
     : processor (p),
+      presetBox (std::make_unique<PresetBox>()),
       aboutButton (std::make_unique<IconButton> ("About and credits", IconButton::Icon::info)),
       settingsButton (std::make_unique<IconButton> ("Settings", IconButton::Icon::gear)),
       midiButton (std::make_unique<MidiButton> (p.getFeedback()))
@@ -230,11 +302,15 @@ HeaderBar::HeaderBar (LithiumDrumsProcessor& p)
 
     tabs.front()->setToggleState (true, juce::dontSendNotification);
 
-    kitBox.setTooltip ("Kit");
-    kitBox.onChange = [this] { kitBoxChanged(); };
-    addAndMakeVisible (kitBox);
+    presetBox->onClick = [this] { showPresetMenu(); };
+    addAndMakeVisible (*presetBox);
 
-    browseButton.setTooltip ("Browse every installed kit and preset");
+    previousPreset.onClick = [this] { stepPreset (-1); };
+    nextPreset.onClick = [this] { stepPreset (1); };
+    addAndMakeVisible (previousPreset);
+    addAndMakeVisible (nextPreset);
+
+    browseButton.setTooltip ("Browse every installed kit and kit preset, and download more");
     browseButton.onClick = [this] { if (onShowBrowser) onShowBrowser(); };
     addAndMakeVisible (browseButton);
 
@@ -267,110 +343,246 @@ void HeaderBar::setTab (Tab t)
 //==============================================================================
 void HeaderBar::refreshKitBox()
 {
-    const auto current = processor.getKitFolder();
     library = kitlibrary::scan (processor.getKitsFolder());
-    const auto& kits = library.kits;
+    updatePresetBox();
+}
 
-    kitBox.clear (juce::dontSendNotification);
-
-    // Grouped by content pack, each pack's kits before its presets.
-    int lastPack = std::numeric_limits<int>::min();
-
-    for (size_t i = 0; i < kits.size(); ++i)
-    {
-        if (kits[i].pack != lastPack)
-        {
-            const auto* pack = library.packOf (kits[i]);
-            kitBox.addSectionHeading (pack != nullptr ? pack->name : juce::String ("Other kits"));
-            lastPack = kits[i].pack;
-        }
-
-        kitBox.addItem (kits[i].credits().name, (int) i + 1);
-    }
-
-    // Catalog packs that aren't installed, greyed: Browse downloads them.
-    auto missingId = missingItemId;
-
-    for (const auto& c : packs::catalog())
-    {
-        if (c.type != packs::CatalogPack::Type::kits
-            || std::any_of (library.packs.begin(), library.packs.end(), [&] (const auto& p) { return p.id == c.id; }))
-            continue;
-
-        if (missingId == missingItemId)
-            kitBox.addSectionHeading ("Not installed");
-
-        kitBox.addItem (c.name + "  (" + packs::formatSize (c.downloadSize()) + ")", missingId);
-        kitBox.setItemEnabled (missingId++, false);
-    }
-
-    if (missingId != missingItemId)
-        kitBox.addItem ("Download kits...", browseItemId + 1);
-
-    if (! kits.empty() || missingId != missingItemId)
-        kitBox.addSeparator();
-
-    kitBox.addItem ("Browse kits...", browseItemId);
-    kitBox.addItem ("Refresh kit list", refreshItemId);
-    kitBox.addItem ("Kits folder...", settingsItemId);
-
+void HeaderBar::updatePresetBox()
+{
+    const auto current = processor.getKitFolder();
     const auto info = processor.getKitInfo();
-    auto currentName = current.getFileName();
+    auto kitName = current.getFileName();
 
-    for (size_t i = 0; i < kits.size(); ++i)
-        if (kits[i].folder == current)
-            currentName = kits[i].credits().name;
+    if (const auto* entry = library.find (current))
+        kitName = entry->credits().name;
+
+    // Top line: the preset, or the kit when there's no preset. Bottom line:
+    // the kit, or what's happening to it.
+    const auto presetFile = processor.getPresetFile();
+    auto top = presetFile != juce::File() ? presets::nameOf (presetFile) : kitName;
+    juce::String bottom = presetFile != juce::File() ? kitName : juce::String ("No preset");
+    auto dimmed = false;
 
     if (processor.isKitLoading())
     {
         // Decoding a big kit into the stream cache takes a while the first
         // time, so say so.
         const auto caching = processor.getKitLoadPhase() == LoadPhase::caching;
-        kitBox.setText ((caching ? "Caching " : "Loading ") + currentName + "...", juce::dontSendNotification);
+        bottom = (caching ? "Caching " : "Loading ") + kitName + "...";
     }
     else if (processor.getKitError().isNotEmpty() && (info == nullptr || info->folder != current))
     {
-        kitBox.setText ("Kit failed to load", juce::dontSendNotification);
+        bottom = "Kit failed to load: hover for why";
     }
-    else
+    else if (current == juce::File())
     {
-        for (size_t i = 0; i < kits.size(); ++i)
-            if (kits[i].folder == current)
-                kitBox.setSelectedId ((int) i + 1, juce::dontSendNotification);
-
-        if (current == juce::File())
-            kitBox.setText (kits.empty() ? "No kits installed" : "Choose a kit", juce::dontSendNotification);
+        top = library.kits.empty() ? "No kits installed" : "Choose a kit";
+        bottom = library.kits.empty() ? "Press Browse to download one" : juce::String();
+        dimmed = true;
     }
+
+    presetBox->setLines (top, bottom, processor.isPresetModified(), dimmed);
 
     // The tooltip carries the details a kit author needs: load errors, or the
     // folder plus any warnings from kit.json.
-    auto tooltip = processor.getKitError().isNotEmpty() ? processor.getKitError() : current.getFullPathName();
+    auto tooltip = juce::String ("Presets and kits (click for the menu)\n");
+    tooltip << (processor.getKitError().isNotEmpty() ? processor.getKitError() : current.getFullPathName());
 
     if (info != nullptr && ! info->warnings.isEmpty())
         tooltip << "\n" << info->warnings.joinIntoString ("\n");
 
-    kitBox.setTooltip (tooltip);
+    presetBox->setTooltip (tooltip);
 }
 
-void HeaderBar::kitBoxChanged()
+void HeaderBar::showPresetMenu()
 {
-    const auto id = kitBox.getSelectedId();
+    library = kitlibrary::scan (processor.getKitsFolder());
 
-    if (id == refreshItemId || id == settingsItemId || id == browseItemId || id == browseItemId + 1)
+    PresetPanel::Callbacks callbacks;
+    auto safe = juce::Component::SafePointer (this);
+
+    callbacks.loadPreset = [safe] (const juce::File& f) { if (safe != nullptr) safe->loadPreset (f); };
+    callbacks.loadKit = [safe] (const juce::File& folder)
     {
-        refreshKitBox();   // put the current kit's name back
-
-        if (id == settingsItemId && onShowSettings)
-            onShowSettings();
-
-        if ((id == browseItemId || id == browseItemId + 1) && onShowBrowser)
-            onShowBrowser();
-    }
-    else if (id >= 1 && id <= (int) library.kits.size())
+        // Choosing a kit starts it with neutral settings and no preset.
+        if (safe != nullptr)
+        {
+            safe->processor.loadKit (folder, true);
+            safe->updatePresetBox();
+        }
+    };
+    callbacks.save = [safe]
     {
-        // Choosing a kit from the menu starts it with neutral settings.
-        processor.loadKit (library.kits[(size_t) id - 1].folder, true);
-    }
+        if (safe == nullptr)
+            return;
+
+        if (const auto r = safe->processor.savePreset (safe->processor.getPresetFile()); r.failed())
+            safe->report ("Couldn't save the preset", r.getErrorMessage());
+
+        safe->updatePresetBox();
+    };
+    callbacks.saveAs = [safe] { if (safe != nullptr) safe->savePresetAs(); };
+    callbacks.rename = [safe] { if (safe != nullptr) safe->renamePreset(); };
+    callbacks.remove = [safe] { if (safe != nullptr) safe->deletePreset(); };
+    callbacks.browse = [safe] { if (safe != nullptr && safe->onShowBrowser) safe->onShowBrowser(); };
+
+    // In a call-out pointing at the box; the call-out owns the panel and
+    // deletes it when it closes (a click outside, Escape, or a choice).
+    if (auto* parent = findOverlayParent (*presetBox))
+        juce::CallOutBox::launchAsynchronously (std::make_unique<PresetPanel> (processor, library, std::move (callbacks)),
+                                                parent->getLocalArea (presetBox.get(), presetBox->getLocalBounds()), parent);
+}
+
+void HeaderBar::loadPreset (const juce::File& file)
+{
+    if (const auto r = processor.loadPreset (file); r.failed())
+        report ("Couldn't load \"" + presets::nameOf (file) + "\"", r.getErrorMessage());
+
+    updatePresetBox();
+}
+
+void HeaderBar::stepPreset (int delta)
+{
+    const auto all = presets::scan();
+
+    if (all.empty())
+        return report ("No presets yet", "Save the current sound with Save as... in the preset menu, and it will be here to step through.");
+
+    const auto current = processor.getPresetFile();
+    int index = -1;
+
+    for (size_t i = 0; i < all.size(); ++i)
+        if (all[i].file == current)
+            index = (int) i;
+
+    const auto n = (int) all.size();
+    const auto next = index < 0 ? (delta > 0 ? 0 : n - 1) : (index + delta + n) % n;
+    loadPreset (all[(size_t) next].file);
+}
+
+void HeaderBar::savePresetAs()
+{
+    if (! onPrompt)
+        return;
+
+    const auto current = processor.getPresetFile();
+    PromptPanel::Request request;
+    request.title = "Save preset";
+    request.message = "A preset keeps the kit, its swapped pieces and every setting of the mixer and the pieces.";
+    request.okText = "Save";
+    request.withTextField = true;
+    request.text = current != juce::File() ? presets::nameOf (current) : (processor.getKitInfo() != nullptr ? processor.getKitInfo()->credits.name : juce::String());
+    request.onOk = [safe = juce::Component::SafePointer (this)] (const juce::String& name)
+    {
+        if (safe == nullptr)
+            return;
+
+        const auto file = presets::userFileFor (name);
+
+        if (file == juce::File())
+            return safe->report ("Couldn't save the preset", "That name can't be used for a file. Try letters and numbers.");
+
+        auto save = [safe, file]
+        {
+            if (safe == nullptr)
+                return;
+
+            if (const auto r = safe->processor.savePreset (file); r.failed())
+                safe->report ("Couldn't save the preset", r.getErrorMessage());
+
+            safe->updatePresetBox();
+        };
+
+        if (! file.existsAsFile() || file == safe->processor.getPresetFile())
+            return save();
+
+        // Asked from inside the first prompt's callback, after it has closed.
+        PromptPanel::Request confirm;
+        confirm.title = "Replace preset";
+        confirm.message = "There's already a preset called \"" + presets::nameOf (file) + "\". Replace it with the current sound?";
+        confirm.okText = "Replace";
+        confirm.destructive = true;
+        confirm.onOk = [save] (const juce::String&) { save(); };
+        safe->onPrompt (confirm);
+    };
+
+    onPrompt (request);
+}
+
+void HeaderBar::renamePreset()
+{
+    const auto file = processor.getPresetFile();
+
+    if (! onPrompt || ! file.existsAsFile())
+        return;
+
+    PromptPanel::Request request;
+    request.title = "Rename preset";
+    request.message = "The preset's new name:";
+    request.okText = "Rename";
+    request.withTextField = true;
+    request.text = presets::nameOf (file);
+    request.onOk = [safe = juce::Component::SafePointer (this), file] (const juce::String& name)
+    {
+        if (safe == nullptr)
+            return;
+
+        const auto target = presets::userFileFor (name);
+
+        if (target == juce::File() || target == file)
+            return;
+
+        if (target.exists())
+            return safe->report ("Couldn't rename the preset", "There's already a preset called \"" + presets::nameOf (target) + "\".");
+
+        if (! file.moveFileTo (target))
+            return safe->report ("Couldn't rename the preset", "The file couldn't be renamed: " + file.getFullPathName());
+
+        safe->processor.setPresetFile (target);
+        safe->updatePresetBox();
+    };
+
+    onPrompt (request);
+}
+
+void HeaderBar::deletePreset()
+{
+    const auto file = processor.getPresetFile();
+
+    if (! onPrompt || ! file.existsAsFile())
+        return;
+
+    PromptPanel::Request request;
+    request.title = "Delete preset";
+    request.message = "Delete \"" + presets::nameOf (file) + "\"? It goes to the trash, so you can still get it back from there. "
+                      "What's playing now stays as it is.";
+    request.okText = "Delete";
+    request.destructive = true;
+    request.onOk = [safe = juce::Component::SafePointer (this), file] (const juce::String&)
+    {
+        if (safe == nullptr)
+            return;
+
+        if (! file.moveToTrash() && ! file.deleteFile())
+            return safe->report ("Couldn't delete the preset", "The file couldn't be removed: " + file.getFullPathName());
+
+        safe->processor.setPresetFile ({});
+        safe->updatePresetBox();
+    };
+
+    onPrompt (request);
+}
+
+void HeaderBar::report (const juce::String& title, const juce::String& message)
+{
+    if (! onPrompt)
+        return;
+
+    PromptPanel::Request request;
+    request.title = title;
+    request.message = message;
+    request.cancellable = false;
+    onPrompt (request);
 }
 
 void HeaderBar::changeListenerCallback (juce::ChangeBroadcaster* source)
@@ -410,6 +622,9 @@ void HeaderBar::timerCallback()
     streaming = info != nullptr && info->streaming;
     recentDropouts = now - lastDropoutTime < dropoutHighlightMs;
 
+    // The asterisk comes and goes as settings change.
+    updatePresetBox();
+
     // Repainting four numbers is cheap; just do it every tick.
     cpuPercent = newCpu;
     voices = newVoices;
@@ -426,11 +641,7 @@ void HeaderBar::timerCallback()
         repaint (getProgressArea());
     }
 
-    if (loading && newPhase != loadPhase)
-    {
-        loadPhase = newPhase;
-        refreshKitBox();     // "Caching..." rather than "Loading..."
-    }
+    loadPhase = newPhase;
 }
 
 //==============================================================================
@@ -506,8 +717,8 @@ juce::String HeaderBar::getTooltip()
 
 juce::Rectangle<int> HeaderBar::getProgressArea() const
 {
-    // A thin bar just under the kit menu.
-    return kitBox.getBounds().withY (kitBox.getBottom() + 3).withHeight (3).reduced (6, 0);
+    // A thin bar just under the preset box.
+    return presetBox->getBounds().withY (presetBox->getBottom() + 3).withHeight (3).reduced (6, 0);
 }
 
 void HeaderBar::paint (juce::Graphics& g)
@@ -574,9 +785,21 @@ void HeaderBar::resized()
         x += w;
     }
 
-    const auto boxWidth = 220;
-    kitBox.setBounds (juce::Rectangle<int> (boxWidth, 32).withCentre (getLocalBounds().getCentre()));
-    browseButton.setBounds (kitBox.getBounds().withX (kitBox.getRight() + 8).withWidth (72));
+    // ‹ [preset box] ›  Browse, between the tabs and the readouts, all the
+    // same height.
+    using namespace theme;
+    const auto boxHeight = 36;
+    auto middle = juce::Rectangle<int> (x + space::lg, (getHeight() - boxHeight) / 2,
+                                        getReadoutArea().getX() - space::lg - (x + space::lg), boxHeight);
+    const auto groupWidth = arrowWidth * 2 + presetBoxWidth + space::xs * 2 + space::sm + browseWidth;
+    middle = middle.withSizeKeepingCentre (std::min (groupWidth, middle.getWidth()), boxHeight);
+    previousPreset.setBounds (middle.removeFromLeft (arrowWidth));
+    middle.removeFromLeft (space::xs);
+    browseButton.setBounds (middle.removeFromRight (browseWidth));
+    middle.removeFromRight (space::sm);
+    nextPreset.setBounds (middle.removeFromRight (arrowWidth));
+    middle.removeFromRight (space::xs);
+    presetBox->setBounds (middle);
 
     // MIDI | Settings | Info, left to right.
     auto icons = getLocalBounds().withTrimmedRight (20).removeFromRight (numIcons * iconSize + (numIcons - 1) * 8);

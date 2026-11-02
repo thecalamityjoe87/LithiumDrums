@@ -22,6 +22,9 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    /** Asks something over the whole UI (see PromptPanel). */
+    void showPrompt (PromptPanel::Request);
+
 private:
     void showPanel (OverlayPanel*);
 
@@ -35,6 +38,7 @@ private:
     SettingsPanel settingsPanel;
     MidiPanel midiPanel;
     KitBrowser browser;
+    PromptPanel prompt;
 };
 
 } // namespace lithium

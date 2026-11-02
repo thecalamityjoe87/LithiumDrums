@@ -1,5 +1,7 @@
 #include "Parameters.h"
 
+#include <map>
+
 namespace lithium::params
 {
 
@@ -415,6 +417,46 @@ void resetForKit (juce::AudioProcessorValueTreeState& state, const KitInfo& info
     // ... except the choke notes, which come from the kit.
     for (int i = 0; i < maxPieces; ++i)
         set (state, pieceParamId (i, "choke_note"), i < (int) info.pieces.size() ? (float) info.pieces[(size_t) i].defaultChokeNote : -1.0f);
+}
+
+void movePieces (juce::AudioProcessorValueTreeState& state, const KitInfo& info, const std::vector<int>& from)
+{
+    // "piece3_volume" -> 2 and "volume"; -1 for anything else.
+    auto split = [] (const juce::String& id) -> std::pair<int, juce::String>
+    {
+        if (! id.startsWith ("piece") || ! id.containsChar ('_'))
+            return { -1, {} };
+
+        return { id.substring (5).upToFirstOccurrenceOf ("_", false, false).getIntValue() - 1,
+                 id.fromFirstOccurrenceOf ("_", false, false) };
+    };
+
+    // Every piece parameter's value first, so moves can't read values
+    // already overwritten by other moves.
+    std::map<std::pair<int, juce::String>, float> before;
+
+    for (auto* p : state.processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
+            if (const auto [piece, name] = split (ranged->getParameterID()); piece >= 0)
+                before[{ piece, name }] = ranged->getValue();
+
+    for (auto* p : state.processor.getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p);
+        const auto [piece, name] = ranged != nullptr ? split (ranged->getParameterID()) : std::pair<int, juce::String> { -1, {} };
+
+        if (piece < 0)
+            continue;
+
+        const auto old = piece < (int) from.size() ? from[(size_t) piece] : -1;
+
+        if (const auto value = before.find ({ old, name }); old >= 0 && value != before.end())
+            ranged->setValueNotifyingHost (value->second);
+        else if (name == "choke_note")
+            set (state, ranged->getParameterID(), piece < (int) info.pieces.size() ? (float) info.pieces[(size_t) piece].defaultChokeNote : -1.0f);
+        else
+            setToDefault (*ranged);
+    }
 }
 
 void resetEq (juce::AudioProcessorValueTreeState& state, ChannelId channel)

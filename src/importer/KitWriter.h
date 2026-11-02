@@ -130,6 +130,9 @@ std::pair<juce::String, juce::String> detectLicense (const juce::String& text);
     equal to the given one. Void if none. */
 juce::var findBuiltInMapping (const juce::StringArray& candidates, const juce::String& format);
 
+/** Every built-in mapping of a format. */
+std::vector<juce::var> builtInMappings (const juce::String& format);
+
 /** The presets a mapping file lists ("presets"), for those whose base kit
     is among the kits being imported. */
 std::vector<PresetModel> presetsFromMapping (const juce::var& mapping, const std::vector<KitModel>& kits);

@@ -31,12 +31,52 @@ protected:
     juce::Rectangle<int> getContentArea() const;
     virtual void layoutContent (juce::Rectangle<int>) {}
 
-private:
     juce::Rectangle<int> getCardBounds() const;
+    void setTitle (juce::String t)                  { title = std::move (t); repaint(); }
+    juce::TextButton& getCloseButton() noexcept     { return closeButton; }
 
-    const juce::String title;
+private:
+    juce::String title;
     const int cardWidth, cardHeight;
     juce::TextButton closeButton { "Close" };
+};
+
+/** A small question over the UI: a message, an optional text field, and
+    OK and Cancel (or just OK, for a message). Used for naming, renaming and
+    deleting presets, and for saying what went wrong. */
+class PromptPanel final : public OverlayPanel
+{
+public:
+    struct Request
+    {
+        juce::String title, message;
+        juce::String okText = "OK";
+        bool withTextField = false;
+        juce::String text;                   // the text field's starting text
+        bool cancellable = true;
+        bool destructive = false;            // OK in the warning colour (Delete)
+        std::function<void (const juce::String& text)> onOk;
+    };
+
+    PromptPanel();
+
+    /** Shows a request. MainView makes it visible and gives it the focus. */
+    void show (Request);
+
+    void paint (juce::Graphics&) override;
+    bool keyPressed (const juce::KeyPress&) override;
+
+    /** Called when it should be hidden (OK or Cancel). */
+    std::function<void()> onFinished;
+
+private:
+    void layoutContent (juce::Rectangle<int>) override;
+    void finish (bool ok);
+
+    Request request;
+    juce::TextEditor field;
+    juce::TextButton okButton;
+    juce::Rectangle<int> messageArea;
 };
 
 /** About and credits: the attribution and licence of every installed kit,

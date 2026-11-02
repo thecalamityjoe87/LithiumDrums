@@ -18,12 +18,91 @@ namespace
 }
 
 //==============================================================================
-Knob::Knob (juce::String n, Style s) : name (std::move (n)), style (s)
+ControlSlider::ControlSlider()
+{
+    setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    setSliderSnapsToMousePosition (false);
+    setScrollWheelEnabled (true);
+    setWantsKeyboardFocus (true);
+    setMouseClickGrabsKeyboardFocus (false);
+}
+
+void ControlSlider::mouseDown (const juce::MouseEvent& e)
+{
+    lastDragPosition = e.position;
+    juce::Slider::mouseDown (e);   // starts the gesture (and the host's automation touch)
+}
+
+void ControlSlider::mouseDrag (const juce::MouseEvent& e)
+{
+    // Two-value sliders (the Grooves page's tempo range) keep JUCE's handling.
+    if (! isEnabled() || getSliderStyle() == TwoValueHorizontal || getSliderStyle() == TwoValueVertical)
+    {
+        juce::Slider::mouseDrag (e);
+        return;
+    }
+
+    // Relative to the last position rather than the drag's start, so
+    // pressing or releasing Shift mid-drag never makes the value jump.
+    const auto delta = e.position - lastDragPosition;
+    lastDragPosition = e.position;
+
+    const auto style = getSliderStyle();
+    const auto pixels = style == LinearHorizontal ? (double) delta.x
+                      : style == LinearVertical   ? (double) -delta.y
+                                                  : (double) (delta.x - delta.y);   // rotary: right or up turns it up
+    const auto travel = style == LinearVertical   ? std::max (40.0, (double) getHeight() - 16.0)
+                      : style == LinearHorizontal ? std::max (40.0, (double) getWidth() - 12.0)
+                                                  : pixelsForFullRange;
+    const auto step = pixels / (travel * (e.mods.isShiftDown() ? fineFactor : 1.0));
+    const auto proportion = juce::jlimit (0.0, 1.0, valueToProportionOfLength (getValue()) + step);
+
+    setValue (proportionOfLengthToValue (proportion), juce::sendNotificationSync);
+}
+
+void ControlSlider::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    if (! isEnabled() || getSliderStyle() == TwoValueHorizontal || getSliderStyle() == TwoValueVertical)
+    {
+        juce::Slider::mouseWheelMove (e, wheel);
+        return;
+    }
+
+    // A notch moves every control by 2% of its range (0.2% with Shift).
+    const auto amount = std::abs (wheel.deltaX) > std::abs (wheel.deltaY) ? -wheel.deltaX : wheel.deltaY;
+
+    if (juce::approximatelyEqual (amount, 0.0f))
+        return;
+
+    const auto notches = (double) amount * (wheel.isReversed ? -1.0 : 1.0) / 0.25;   // JUCE reports about 0.25 per notch
+    const auto step = juce::jlimit (-0.2, 0.2, notches * 0.02 / (e.mods.isShiftDown() ? fineFactor : 1.0));
+    const auto proportion = juce::jlimit (0.0, 1.0, valueToProportionOfLength (getValue()) + step);
+
+    // Wrapped as a gesture, so the host records it as one automation move.
+    const ScopedDragNotification gesture (*this);
+    setValue (proportionOfLengthToValue (proportion), juce::sendNotificationSync);
+}
+
+void enableKeyboardNavigation (juce::Component& root)
+{
+    for (auto* child : root.getChildren())
+    {
+        if (dynamic_cast<juce::Button*> (child) != nullptr || dynamic_cast<juce::Slider*> (child) != nullptr
+            || dynamic_cast<juce::ComboBox*> (child) != nullptr)
+        {
+            child->setWantsKeyboardFocus (true);
+            child->setMouseClickGrabsKeyboardFocus (false);
+        }
+
+        enableKeyboardNavigation (*child);
+    }
+}
+
+//==============================================================================
+Knob::Knob (juce::String n, Style s, Size z) : name (std::move (n)), style (s), dialSize (z)
 {
     slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     slider.setRotaryParameters (juce::degreesToRadians (225.0f), juce::degreesToRadians (495.0f), true);
-    slider.setMouseDragSensitivity (180);
     slider.setPopupDisplayEnabled (style == Style::compact, false, nullptr);
     slider.onValueChange = [this] { repaint(); };
     addAndMakeVisible (slider);
@@ -61,15 +140,20 @@ void Knob::paint (juce::Graphics& g)
     if (style == Style::compact)
         return;
 
-    auto area = getLocalBounds().toFloat();
-    g.setColour (colours::textMuted);
-    drawTrackedText (g, name.toUpperCase(), label (11.0f), 0.08f, area.removeFromTop (14.0f), juce::Justification::centred);
+    // The name sits just above the dial and the value just below it, so the
+    // three read as one control however tall the knob's box is.
+    const auto dial = slider.getBounds().toFloat();
+    const auto width = (float) getWidth();
+    g.setColour (isEnabled() ? colours::textMuted : colours::textMuted.withMultipliedAlpha (0.6f));
+    drawTrackedText (g, name.toUpperCase(), label (type::caption), 0.08f, { 0.0f, dial.getY() - 15.0f, width, 14.0f },
+                     juce::Justification::centred);
 
     // The attachment formats the value the way the parameter does.
     // Narrow knobs (a row of EQ bands) get a smaller value font, so "2.50 kHz" fits.
-    g.setColour (colours::text);
-    g.setFont (mono (getWidth() < 56 ? 10.0f : 11.0f));
-    g.drawText (slider.getTextFromValue (slider.getValue()), area.removeFromBottom (14.0f), juce::Justification::centred, false);
+    g.setColour (isEnabled() ? colours::text : colours::textMuted);
+    g.setFont (mono (getWidth() < 56 ? 10.0f : type::caption));
+    g.drawText (slider.getTextFromValue (slider.getValue()), juce::Rectangle<float> (0.0f, dial.getBottom() + 1.0f, width, 14.0f),
+                juce::Justification::centred, false);
 }
 
 void Knob::resized()
@@ -82,8 +166,39 @@ void Knob::resized()
         area.removeFromBottom (15);
     }
 
-    const auto size = std::min (area.getWidth(), area.getHeight());
+    // A fixed dial size from the theme (smaller only if the box is), so
+    // knobs of a kind match wherever they are.
+    const auto wanted = style == Style::compact ? theme::size::knobCompact
+                      : dialSize == Size::large ? theme::size::knobLarge
+                                                : theme::size::knob;
+    const auto size = std::min ({ wanted, area.getWidth(), area.getHeight() });
     slider.setBounds (area.withSizeKeepingCentre (size, size));
+}
+
+//==============================================================================
+ChevronButton::ChevronButton (const juce::String& tooltip, Direction d) : juce::Button (tooltip), direction (d)
+{
+    setTooltip (tooltip);
+}
+
+void ChevronButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isDown)
+{
+    getLookAndFeel().drawButtonBackground (g, *this, {}, isMouseOver, isDown);
+
+    const auto c = getLocalBounds().toFloat().getCentre();
+    const auto r = 3.5f;
+    juce::Path chevron;
+
+    switch (direction)
+    {
+        case Direction::left:   chevron.startNewSubPath (c.x + r * 0.5f, c.y - r); chevron.lineTo (c.x - r * 0.5f, c.y); chevron.lineTo (c.x + r * 0.5f, c.y + r); break;
+        case Direction::right:  chevron.startNewSubPath (c.x - r * 0.5f, c.y - r); chevron.lineTo (c.x + r * 0.5f, c.y); chevron.lineTo (c.x - r * 0.5f, c.y + r); break;
+        case Direction::down:   chevron.startNewSubPath (c.x - r, c.y - r * 0.5f); chevron.lineTo (c.x, c.y + r * 0.5f); chevron.lineTo (c.x + r, c.y - r * 0.5f); break;
+    }
+
+    const auto colour = isMouseOver ? theme::colours::text : theme::colours::textMuted;
+    g.setColour (isEnabled() ? colour : colour.withMultipliedAlpha (0.4f));
+    g.strokePath (chevron, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 //==============================================================================
@@ -133,20 +248,26 @@ void LevelMeter::push (float left, float right)
 {
     const auto now = juce::Time::getMillisecondCounterHiRes();
     const std::array<float, 2> peaks { left, right };
+    auto changed = false;
 
     for (size_t ch = 0; ch < (size_t) channels; ++ch)
     {
         const auto db = toDb (peaks[ch]);
-        levelDb[ch] = std::max (db, levelDb[ch] - meterFallDbPerSecond * refreshSeconds);
+        const auto level = std::max (db, levelDb[ch] - meterFallDbPerSecond * refreshSeconds);
+        changed = changed || ! juce::exactlyEqual (level, levelDb[ch]);
+        levelDb[ch] = level;
 
         if (db >= holdDb[ch] || now > holdUntil[ch])
         {
+            changed = changed || ! juce::exactlyEqual (db, holdDb[ch]);
             holdDb[ch] = db;
             holdUntil[ch] = now + peakHoldMs;
         }
     }
 
-    repaint();
+    // A silent meter (most of them, most of the time) doesn't repaint at all.
+    if (changed)
+        repaint();
 }
 
 void LevelMeter::paint (juce::Graphics& g)
@@ -159,7 +280,7 @@ void LevelMeter::paint (juce::Graphics& g)
 
     const auto gap = channels > 1 ? 2.0f : 0.0f;
     const auto barWidth = (bounds.getWidth() - gap) / (float) channels;
-    auto yFor = [&] (float db) { return juce::jmap (juce::jlimit (minDb, maxDb, db), minDb, maxDb, bounds.getBottom(), bounds.getY()); };
+    auto yFor = [&] (float db) { return bounds.getBottom() - proportionOf (db) * bounds.getHeight(); };
 
     for (int ch = 0; ch < channels; ++ch)
     {
@@ -199,8 +320,13 @@ void LevelMeter::paint (juce::Graphics& g)
 void ReductionMeter::push (float reductionDb)
 {
     // Rises at once, falls back gently so short bursts stay readable.
-    shownDb = std::max (reductionDb, shownDb - meterFallDbPerSecond * refreshSeconds);
-    repaint();
+    const auto shown = std::max (0.0f, std::max (reductionDb, shownDb - meterFallDbPerSecond * refreshSeconds));
+
+    if (! juce::exactlyEqual (shown, shownDb))
+    {
+        shownDb = shown;
+        repaint();
+    }
 }
 
 void ReductionMeter::paint (juce::Graphics& g)

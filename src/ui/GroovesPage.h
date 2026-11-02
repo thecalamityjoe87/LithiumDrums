@@ -14,10 +14,11 @@ namespace lithium
 
     Styles run across the top as chips; the grooves (whole recorded takes)
     are listed on the left with search, type and tempo filters; the selected
-    groove's phrases and fills are tiles on the right. Clicking a tile plays
-    it, in time with the host; dragging it (or the handle in the transport
-    bar) drops it into the host as a MIDI file, in the notes of the current
-    MIDI map.
+    groove's phrases and fills are cards on the right, with the selected
+    card's every hit in a detail pane under them. Clicking a card (or the
+    detail pane) plays it, in time with the host; dragging it (or the handle
+    in the transport bar) drops it into the host as a MIDI file, in the notes
+    of the current MIDI map.
 
     The groove library is read from the grooves folder the first time the
     tab is shown, and again with Rescan. With no grooves installed, the
@@ -47,6 +48,7 @@ private:
     class StyleChips;
     class GrooveList;
     class TileGrid;
+    class DetailPane;
     class TempoField;
     class DragHandle;
 
@@ -65,6 +67,8 @@ private:
     void selectPart (Part, bool play);
     void togglePlay();
     void updateTransportButtons();
+    void showDetail();
+    std::array<std::optional<PieceRole>, 128> roleTable() const;
 
     const grooves::Pack* selectedPack() const;
     const grooves::Groove* selectedGroove() const;
@@ -103,6 +107,7 @@ private:
     std::unique_ptr<GrooveList> list;
     juce::Viewport tileView;
     std::unique_ptr<TileGrid> tiles;
+    std::unique_ptr<DetailPane> detail;
 
     // Transport.
     juce::TextButton playButton { "Play" }, loopButton { "Loop" };

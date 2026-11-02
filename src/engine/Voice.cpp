@@ -73,6 +73,7 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
         s.busChannel = mic.busChannel;
         s.role = mic.role;
         s.direct = mic.direct;
+        s.sourceGain = kit.pieces[(size_t) p].micGain[(size_t) m];
         s.numFrames = kit.samples->getNumFrames (id);
         s.tone = {};
         longestStream = std::max (longestStream, s.numFrames);
@@ -96,9 +97,12 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
 std::array<float, 2> Voice::targetGains (const MicStream& s, const VoiceRenderContext& ctx) const noexcept
 {
     if (s.direct)
-        return ctx.directGains[(size_t) piece][(size_t) s.mic];
+    {
+        const auto& g = ctx.directGains[(size_t) piece][(size_t) s.mic];
+        return { g[0] * s.sourceGain, g[1] * s.sourceGain };
+    }
 
-    const auto g = ctx.roleGains[(size_t) piece][(size_t) s.role];
+    const auto g = ctx.roleGains[(size_t) piece][(size_t) s.role] * s.sourceGain;
     return { g, g };
 }
 

@@ -8,7 +8,14 @@ namespace lithium
 
 /** One fader strip in the Mixer page's bank: a drum's channel, an overhead
     or room mic's channel, a close mic's trim, the reverb return or the
-    master. Clicking a channel (or the reverb) shows it in the inspector. */
+    master. Clicking a channel (or the reverb) shows it in the inspector.
+
+    Every strip is the same fixed stack, top to bottom: name and colour dot;
+    the insert switches (EQ, compressor, transient, saturation); the reverb
+    send and pan; the fader beside its meter, with a dB scale and readout;
+    then mute, solo and the output. Strips without some of these leave
+    their rows empty, so every fader in the bank lines up. The fader's
+    travel is fixed by the theme (theme::size::faderTravel), never stretched. */
 class MixerStrip final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -24,21 +31,26 @@ public:
     void setSelected (bool);
     void pushLevels (float left, float right);
 
+    /** The height the stack needs: the bank is this tall. */
+    static int getContentHeight();
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
 
 private:
     juce::Rectangle<int> getReadoutArea() const;
+    bool hasInserts() const noexcept     { return kind == Kind::piece || kind == Kind::mic; }
 
     juce::String name, tag;
     juce::Colour dot;
     bool selected = false, silent = false;
 
-    juce::Slider fader;
+    ControlSlider fader;
     LevelMeter meter;
-    Knob pan { {}, Knob::Style::compact };
-    ParamToggle eq { "EQ", "EQ on/off" }, comp { "Comp", "Compressor on/off" };
+    Knob send { {}, Knob::Style::compact }, pan { {}, Knob::Style::compact };
+    ParamToggle eq { "EQ", "EQ on/off" }, comp { "Cmp", "Compressor on/off" };
+    ParamToggle transient { "Trn", "Transient shaper on/off" }, saturation { "Sat", "Saturation on/off" };
     ParamToggle mute { "M", "Mute" }, solo { "S", "Solo" };
     ParamCombo output;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> faderAttachment;   // after the fader it uses

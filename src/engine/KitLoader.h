@@ -3,6 +3,7 @@
 #include "Kit.h"
 #include "KitHandoff.h"
 #include "MidiMap.h"
+#include "PieceSwap.h"
 #include "StreamingSampleSource.h"
 #include "StreamingSettings.h"
 
@@ -32,12 +33,15 @@ struct LoadPlan
 
     struct File
     {
-        juce::String path;                    // relative to the audio folder
+        juce::String path;                    // relative to its audio folder
+        int source = 0;                       // which audio folder: an index into folders
         int numChannels = 0;
         std::vector<Target> targets;
     };
 
-    juce::File folder;                        // the audio folder: the kit's own, or a preset's base kit
+    // The audio folders: [0] is the kit's own (or a preset's base kit's),
+    // then those of the kits that swapped-in pieces come from.
+    std::vector<juce::File> folders;
     std::shared_ptr<const SampleLayout> layout;
     std::vector<File> files;
     int numMics = 0;
@@ -70,6 +74,8 @@ struct KitLoadOptions
 
     StreamingSettings streaming;
     std::shared_ptr<StreamStats> streamStats;   // where a streaming kit counts its reads and dropouts
+
+    PieceSwaps swaps;                           // pieces to play with other kits' recordings (loadKit() only)
 };
 
 /** Loads kits on a background thread and publishes them through a KitHandoff.
@@ -90,6 +96,7 @@ public:
         StreamingSettings streaming;
         std::shared_ptr<StreamStats> streamStats;
         MidiMap midiMap = MidiMap::lithiumStandard();   // the map the kit starts with
+        PieceSwaps swaps;
     };
 
     struct Result
@@ -98,6 +105,7 @@ public:
         std::shared_ptr<const KitInfo> info;   // null on failure
         juce::String error;
         std::uint64_t resetToken = 0;
+        PieceSwaps swaps;                      // the swaps it was loaded with
     };
 
     explicit KitLoader (KitHandoff&);

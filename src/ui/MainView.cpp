@@ -22,6 +22,8 @@ MainView::MainView (LithiumDrumsProcessor& p)
     header.onShowSettings = [this] { showPanel (&settingsPanel); };
     header.onShowBrowser = [this] { showPanel (&browser); };
     header.onShowMidi = [this] { showPanel (&midiPanel); };
+    header.onPrompt = [this] (PromptPanel::Request r) { showPrompt (std::move (r)); };
+    prompt.onFinished = [this] { prompt.setVisible (false); };
     kitPage.onEditPiece = [this] { header.setTab (Tab::edit); };
 
     aboutPanel.onClose = [this] { showPanel (nullptr); };
@@ -40,8 +42,21 @@ MainView::MainView (LithiumDrumsProcessor& p)
     addChildComponent (settingsPanel);
     addChildComponent (midiPanel);
     addChildComponent (browser);
+    addChildComponent (prompt);          // over everything, even the other panels
+
+    // Tab moves through the controls, with a visible outline (a mouse click
+    // doesn't take the focus, so the outline only shows from the keyboard).
+    enableKeyboardNavigation (*this);
 
     showTab (Tab::kit);
+}
+
+void MainView::showPrompt (PromptPanel::Request request)
+{
+    prompt.show (std::move (request));
+    prompt.setVisible (true);
+    prompt.toFront (false);
+    prompt.grabKeyboardFocus();
 }
 
 void MainView::showPanel (OverlayPanel* panel)
@@ -92,6 +107,7 @@ void MainView::resized()
     settingsPanel.setBounds (getLocalBounds());
     midiPanel.setBounds (getLocalBounds());
     browser.setBounds (getLocalBounds());
+    prompt.setBounds (getLocalBounds());
 }
 
 } // namespace lithium

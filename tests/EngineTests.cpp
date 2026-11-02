@@ -1570,7 +1570,7 @@ public:
             expect (k.info.memoryBytes - k.info.streamBufferBytes < k.info.fullMemoryBytes / 2,
                     "preloads should be a fraction of the kit");
 
-            const auto pack = streamcache::Pack::open (testCache(), k.plan->folder);
+            const auto pack = streamcache::Pack::open (testCache(), k.plan->folders.front());
             const auto dataSize = pack.getDataFile().getSize();
             expect (dataSize > 0);
 
@@ -1770,20 +1770,20 @@ public:
             if (first.kit != nullptr)
             {
                 const auto path = first.plan->files.front().path;   // a copy: the plan goes away below
-                const auto pack = streamcache::Pack::open (cache, first.plan->folder);
+                const auto pack = streamcache::Pack::open (cache, first.plan->folders.front());
                 const auto size = pack.getDataFile().getSize();
                 const auto entryBytes = pack.find (path)->offsetOf (pack.find (path)->numChannels, 0) - pack.find (path)->offset;
 
                 // Touch one file: it no longer matches its entry.
-                const auto touched = first.plan->folder.getChildFile (path);
+                const auto touched = first.plan->folders.front().getChildFile (path);
                 expect (touched.setLastModificationTime (touched.getLastModificationTime() + juce::RelativeTime::seconds (10)));
-                expect (streamcache::Pack::open (cache, first.plan->folder).find (path) == nullptr);
+                expect (streamcache::Pack::open (cache, first.plan->folders.front()).find (path) == nullptr);
 
                 first = {};   // close the old kit's cache file before appending to it
                 auto second = loadStreaming (kitCopy, cache);
                 expect (second.kit != nullptr, second.error);
 
-                const auto updated = streamcache::Pack::open (cache, second.plan->folder);
+                const auto updated = streamcache::Pack::open (cache, second.plan->folders.front());
                 expect (updated.find (path) != nullptr);
                 expectEquals (updated.getDataFile().getSize(), size + entryBytes);
 
@@ -2242,31 +2242,39 @@ public:
 
         LithiumDrumsProcessor processor;
         KitStage stage (processor);
-        stage.setBounds (0, 0, 1280, 520);
+        stage.setBounds (0, 0, 1280, 744);
 
-        // Points in 1x stage coordinates, found from the renders' alpha channels.
-        expect (stage.getSlotAt ({ 676.7f, 407.3f }) == StageSlot::kick);
-        expect (stage.getSlotAt ({ 771.3f, 286.0f }) == StageSlot::snare);
-        expect (stage.getSlotAt ({ 862.0f, 176.0f }) == StageSlot::hihat);
-        expect (stage.getSlotAt ({ 786.7f, 122.0f }) == StageSlot::crash);
-        expect (stage.getSlotAt ({ 563.3f, 119.3f }) == StageSlot::crash2);
-        expect (stage.getSlotAt ({ 474.0f, 183.3f }) == StageSlot::ride);
-        expect (stage.getSlotAt ({ 376.0f, 91.3f }) == StageSlot::china);
-        expect (stage.getSlotAt ({ 724.7f, 247.3f }) == StageSlot::tom1);
-        expect (stage.getSlotAt ({ 620.7f, 242.0f }) == StageSlot::tom2);
-        expect (stage.getSlotAt ({ 511.3f, 332.0f }) == StageSlot::floorTom);
+        // Points in 1x stage coordinates, found from the renders' alpha
+        // channels. The stage was once rendered 520 high; the same camera in
+        // the 744-high frame puts everything 112 lower. The stage is then
+        // zoomed in on the kit.
+        auto at = [] (float x, float y)
+        {
+            return KitStage::kitCentre + (juce::Point<float> (x, y + 112.0f) - KitStage::kitCentre) * KitStage::kitZoom;
+        };
+
+        expect (stage.getSlotAt (at (676.7f, 407.3f)) == StageSlot::kick);
+        expect (stage.getSlotAt (at (771.3f, 286.0f)) == StageSlot::snare);
+        expect (stage.getSlotAt (at (862.0f, 176.0f)) == StageSlot::hihat);
+        expect (stage.getSlotAt (at (786.7f, 122.0f)) == StageSlot::crash);
+        expect (stage.getSlotAt (at (563.3f, 119.3f)) == StageSlot::crash2);
+        expect (stage.getSlotAt (at (474.0f, 183.3f)) == StageSlot::ride);
+        expect (stage.getSlotAt (at (376.0f, 91.3f)) == StageSlot::china);
+        expect (stage.getSlotAt (at (724.7f, 247.3f)) == StageSlot::tom1);
+        expect (stage.getSlotAt (at (620.7f, 242.0f)) == StageSlot::tom2);
+        expect (stage.getSlotAt (at (511.3f, 332.0f)) == StageSlot::floorTom);
 
         // Inside the snare's rectangle, but on a transparent pixel of the
         // snare: the click falls through to tom 1 behind it.
-        expect (stage.getSlotAt ({ 717.5f, 248.2f }) == StageSlot::tom1);
+        expect (stage.getSlotAt (at (717.5f, 248.2f)) == StageSlot::tom1);
 
         // Empty background, and the stands (base layer) aren't clickable.
         expect (! stage.getSlotAt ({ 100.0f, 100.0f }).has_value());
 
         // Hit testing follows the stage when the window is scaled.
-        stage.setBounds (0, 0, 1920, 780);
-        expect (stage.getSlotAt ({ 676.7f * 1.5f, 407.3f * 1.5f }) == StageSlot::kick);
-        stage.setBounds (0, 0, 1280, 520);
+        stage.setBounds (0, 0, 1920, 1116);
+        expect (stage.getSlotAt (at (676.7f, 407.3f) * 1.5f) == StageSlot::kick);
+        stage.setBounds (0, 0, 1280, 744);
 
         beginTest ("Slots map to the kit's pieces; empty slots can't be clicked");
 
@@ -2276,15 +2284,22 @@ public:
         const std::vector<PieceRole> roles { R::kick, R::snare, R::hihat, R::tom, R::floorTom, R::floorTom, R::crash, R::crash, R::ride };
 
         for (size_t i = 0; i < roles.size(); ++i)
-            info->pieces.push_back ({ "p" + juce::String ((int) i), "Piece", roles[i], { KitArticulationInfo { "hit", "Hit", {}, {} } }, -1 });
+        {
+            KitPieceInfo piece;
+            piece.id = "p" + juce::String ((int) i);
+            piece.name = "Piece";
+            piece.role = roles[i];
+            piece.articulations = { KitArticulationInfo { "hit", "Hit", {}, {} } };
+            info->pieces.push_back (piece);
+        }
 
         info->slotPiece = assignStageSlots (roles);
         stage.setKitInfo (info);
 
-        expect (stage.getPieceAt ({ 676.7f, 407.3f }) == 0);
-        expect (stage.getPieceAt ({ 511.3f, 332.0f }) == 4);
-        expect (! stage.getPieceAt ({ 620.7f, 242.0f }).has_value());   // tom2 slot: dimmed
-        expect (! stage.getPieceAt ({ 376.0f, 91.3f }).has_value());    // china slot: dimmed
+        expect (stage.getPieceAt (at (676.7f, 407.3f)) == 0);
+        expect (stage.getPieceAt (at (511.3f, 332.0f)) == 4);
+        expect (! stage.getPieceAt (at (620.7f, 242.0f)).has_value());   // tom2 slot: dimmed
+        expect (! stage.getPieceAt (at (376.0f, 91.3f)).has_value());    // china slot: dimmed
     }
 };
 

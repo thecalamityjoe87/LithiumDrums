@@ -86,7 +86,7 @@ void EqModule::resized()
 
     // One row of knobs if they fit side by side; otherwise two (the
     // shelves and high-pass, then the two mids), with a smaller curve.
-    constexpr int groupGap = 10, knobHeight = 62;
+    constexpr int groupGap = 10, knobHeight = 66;   // a dial of theme::size::knob plus its name and value
     const auto oneRow = (area.getWidth() - 4 * groupGap) / 11 >= 46;
     auto knobs = area.removeFromBottom (oneRow ? knobHeight : knobHeight * 2 + 4);
     area.removeFromBottom (6);

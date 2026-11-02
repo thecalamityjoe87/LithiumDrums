@@ -119,6 +119,34 @@ juce::File Settings::getGroovesFolder()
     return getDefaultKitsFolder().getSiblingFile ("Grooves");
 }
 
+juce::File Settings::getPresetsFolder()
+{
+    if (const auto env = juce::SystemStats::getEnvironmentVariable ("LITHIUM_PRESETS_FOLDER", {});
+        env.isNotEmpty() && juce::File::isAbsolutePath (env))
+        return juce::File (env);
+
+    return getDefaultKitsFolder().getSiblingFile ("Presets");
+}
+
+juce::File Settings::getFactoryPresetsFolder()
+{
+    if (const auto env = juce::SystemStats::getEnvironmentVariable ("LITHIUM_FACTORY_PRESETS_FOLDER", {});
+        env.isNotEmpty() && juce::File::isAbsolutePath (env))
+        return juce::File (env);
+
+   #if JUCE_MAC
+    // commonApplicationDataDirectory is /Library on macOS.
+    return juce::File::getSpecialLocation (juce::File::commonApplicationDataDirectory)
+               .getChildFile ("Application Support/Lithium Drums/Presets");
+   #elif JUCE_WINDOWS
+    // C:\ProgramData
+    return juce::File::getSpecialLocation (juce::File::commonApplicationDataDirectory)
+               .getChildFile ("Lithium Drums").getChildFile ("Presets");
+   #else
+    return juce::File ("/usr/share/lithium-drums/presets");
+   #endif
+}
+
 juce::File Settings::getDefaultCacheFolder()
 {
     // A cache folder, not the data folder: the OS (and backup tools) know

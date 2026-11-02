@@ -4,6 +4,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -35,19 +36,28 @@ public:
     /** The kit piece (index) shown at a point, if any. Dimmed slots don't count. */
     std::optional<int> getPieceAt (juce::Point<float>) const;
 
-    /** Called when the overlay card's "Edit piece" button is clicked. */
-    std::function<void()> onEditPiece;
-
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    /** How much the stage is zoomed in, and on what point (in 1x stage
+        coordinates): the kit, bigger, with the room's edges cut off. */
+    static constexpr float kitZoom = 1.15f;
+    static inline const juce::Point<float> kitCentre { 640.0f, 430.0f };
     void mouseMove (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
 
 private:
     struct Layer
     {
+        struct Look
+        {
+            juce::Image image, glow, flash;      // glow and flash are made from the image
+        };
+
         std::optional<StageSlot> slot;           // empty for the base layer (stands and floor)
-        juce::Image image, glow, flash;          // glow and flash are precomputed at load
+        juce::String renderKey;                  // "kick", "tom1", ...: its file name
+        juce::Image image, glow, flash;          // as it's drawn now: in the finish of its piece's kit
+        std::map<juce::String, Look> looks;      // by finish, made the first time it's needed
         juce::Rectangle<int> renderRect;         // in render pixels (layout.json)
         juce::Rectangle<float> bounds, glowBounds;   // in stage coordinates (1x)
         float flashLevel = 0.0f;
@@ -55,13 +65,11 @@ private:
         std::uint32_t lastHitCount = 0;
     };
 
-    class OverlayCard;
-
     void loadRenders();
+    void showFinishes();
     int pieceIn (const Layer&) const noexcept;
     Layer* layerFor (int piece);
     void startFlash (int piece);
-    void updateCard();
     void selectedPieceChanged (int piece) override;
     void timerCallback() override;
 
@@ -69,10 +77,11 @@ private:
     juce::Image room;                            // opaque backdrop, the full stage at render scale
     std::vector<Layer> layers;                   // back to front
     float renderScale = 1.5f;
+    float stageScale = 1.0f;                     // 1x stage coordinates to component coordinates
+    juce::Point<float> stageOrigin;              // where the stage's top left lands (negative when cropped)
     int glowPadding = 0;
     std::array<int, numStageSlots> slotPiece {};   // the kit piece in each slot, -1 for none
     std::shared_ptr<const KitInfo> kitInfo;
-    std::unique_ptr<OverlayCard> card;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KitStage)
 };

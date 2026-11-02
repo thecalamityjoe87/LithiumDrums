@@ -3,6 +3,7 @@
 #include "Articulations.h"
 #include "InMemorySampleSource.h"
 #include "KitSchema.h"
+#include "KitSlots.h"
 #include "MidiMap.h"
 
 #include <juce_core/juce_core.h>
@@ -79,6 +80,13 @@ struct Ladder
 
 struct PieceData
 {
+    static constexpr std::array<float, maxMics> unityGains() noexcept
+    {
+        std::array<float, maxMics> gains {};
+        gains.fill (1.0f);
+        return gains;
+    }
+
     PieceRole role = PieceRole::other;
     int firstArticulation = 0, numArticulations = 0;
     int defaultChokeNote = -1;
@@ -89,6 +97,12 @@ struct PieceData
     float defaultGain = 1.0f;    // linear
     float defaultTune = 0.0f;    // semitones
     float defaultDecay = 1.0f;   // 0..1, multiplies the Decay parameter
+
+    // A piece swapped in from another kit plays its own recordings, which
+    // may be at another sample rate, through this kit's mics: micGain puts
+    // each mic back at the level (and polarity) its own kit gave it.
+    double sampleRate = 44100.0;
+    std::array<float, maxMics> micGain = unityGains();
 
     // What the hi-hat pedal and the position controllers move between.
     std::array<Ladder, 2> hatLadders {};   // [0] tip (bow) hits, [1] shank (edge) hits
@@ -231,6 +245,19 @@ struct KitPieceInfo
     std::array<int, 2> hatSteps {};   // steps on the tip and shank openness ladders
     int positionSteps = 0;            // steps on the strike position ladder
 
+    // Piece swapping (see PieceSwap.h). swappedFrom is the kit the piece's
+    // recordings come from (empty for the kit's own); swapNotes says what
+    // didn't come along (mics this kit has no match for), or why a swap
+    // couldn't be made.
+    juce::String swappedFrom, swappedPiece;   // the kit, and the piece's name there
+
+    // The id of the kit whose recordings the piece plays: its own kit, a
+    // preset's base kit, or the kit it was swapped in from. The UI shows that
+    // kit's finish for it (see ui/KitArt.h).
+    juce::String recordedIn;
+    juce::StringArray swapNotes;
+    int slot = -1;                    // its place on the Kit tab's slots (see KitSlots.h)
+
     /** Whether an articulation of this piece can follow the hi-hat pedal or a position controller. */
     bool canFollow (int articulation, Follow f) const noexcept
     {
@@ -270,6 +297,7 @@ struct KitInfo
     std::vector<KitPieceInfo> pieces;
     std::vector<KitMicInfo> mics;
     std::array<int, numStageSlots> slotPiece {};   // the piece shown in each stage slot, -1 for none
+    kitslots::Owners slotOwners;                    // the kit's own piece in each Kit tab slot, before any swaps
     int bitsPerSample = 24;
     double sampleRate = 44100.0;
     std::size_t memoryBytes = 0;                    // with every mic loaded (for a streaming kit: preloads plus stream buffers)

@@ -1,6 +1,7 @@
 #include "Importer.h"
 
 #include "DrumGizmoImporter.h"
+#include "SampleFolderImporter.h"
 #include "SfzImporter.h"
 
 namespace lithium::importer
@@ -17,10 +18,14 @@ juce::Result importKits (const Options& options, std::vector<ImportedKit>& resul
     if (isDrumGizmoSource (options.source))
         return importDrumGizmo (options, results);
 
+    // Folders of plain samples are recognised by a known library's marker file.
+    if (isSampleFolderSource (options.source))
+        return importSampleFolder (options, results);
+
     if (isSfzSource (options.source))
         return importSfz (options, results);
 
-    return juce::Result::fail ("No DrumGizmo kit or SFZ instrument found at " + options.source.getFullPathName());
+    return juce::Result::fail ("No DrumGizmo kit, SFZ instrument or known sample library found at " + options.source.getFullPathName());
 }
 
 } // namespace lithium::importer

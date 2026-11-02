@@ -705,6 +705,7 @@ namespace
         result.folder = folder;
         result.id = id;
         result.isPreset = true;
+        result.baseId = baseId;
 
         if (! tags.isEmpty())
             result.tags = tags;
@@ -935,6 +936,15 @@ bool readKitSummary (const juce::File& folder, KitSummary& result)
         if (! result.isPreset)
         {
             parseCredits (root, folder, result.credits);
+
+            if (const auto* pieces = root["pieces"].getArray())
+            {
+                for (const auto& p : *pieces)
+                {
+                    const auto role = roleFromKey (p["role"].toString().toStdString());
+                    result.pieces.push_back ({ p["id"].toString(), p["name"].toString(), role.value_or (PieceRole::other) });
+                }
+            }
 
             if (result.numPieces <= 0)
                 if (const auto* a = root["pieces"].getArray())

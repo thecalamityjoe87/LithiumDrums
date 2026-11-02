@@ -227,6 +227,12 @@ sample in RAM and stream the rest from a cache that's built from the kit's
 audio the first time it streams. That needs nothing from the kit format; see
 [streaming.md](streaming.md).
 
+A file plays to its end, so every importer leaves out a recording more than
+six times as long as the median of its zone's others (and over 5 s), with a
+warning: that's a whole take left in a library by mistake, not one hit.
+Salamander's `kick_OH_P_1.wav` is one, 44 seconds with sixteen soft kicks in
+it; played as a soft kick, it went on playing kicks for most of a minute.
+
 ## Scaling to large libraries
 
 - `kit.json` describes structure, not audio, so it stays small: imported
@@ -276,6 +282,98 @@ DRSKit Full, and "MuldjordKit Low" is MuldjordKit tuned down.
 The credits and licence are always the base kit's: the About dialog and the
 kit browser show them for the preset, with "Preset of DRSKit Full". A preset of
 a share-alike kit is an adaptation of it too, so it belongs in the same pack.
+
+## Piece swapping
+
+Any piece of the loaded kit can play another installed kit's recordings of the
+same kind of drum: MuldjordKit's snare in DRSKit, say. Pick it from the piece's
+model button (on the Kit tab's selected-piece card and slots, and in the Edit
+tab's piece bar). A swap is a choice the user makes, not part of a kit: it's saved with
+the project and in presets, as the piece's id, the other kit's id and that
+kit's piece id. Nothing about it is written into either kit.
+
+The piece keeps its place in the kit: its id, name, role, choke note, stage
+slot, parameters and MIDI notes. Only its articulations change, to the other
+kit's, with the other kit's tuning, level and decay for the piece. A rack tom
+can be swapped for a floor tom and the other way round; every other role only
+for the same role. Swapping into a kit preset works too: the preset's base
+kit is the kit.
+
+Its recordings were made through the other kit's mics, so each of those mics
+is mapped onto one of this kit's, in this order:
+
+1. **The piece's own close mics** go to the swapped piece's own close mics: a
+   snare's top and bottom mics, a kick's inside and outside mics, a tom's mic.
+   A kit's own mics for a piece are worked out from names: a mic with the
+   piece's id (the Basalt kits have a mic per piece), otherwise the mics of the
+   same family (kick, snare, hi-hat, tom, ride, crash, china, from words in the
+   mic's id and name). Kits number their tom mics across rack and floor toms
+   (DRSKit's `tom2` is on its first floor tom), so tom mics are paired with the
+   toms in kit order when there are as many of each. Mics with the same
+   placement pair up (top with top, bottom with bottom, in with in); a second
+   top mic is left out rather than put on the bottom mic.
+2. **The other close mics**, which picked the piece up from across the kit,
+   go to the mic with the same id, otherwise to one of the same family and
+   placement, otherwise of the same family.
+3. **Overheads and room mics**, when "Ambience follows piece" is on (it is
+   unless switched off in the piece's model picker), go to this kit's overhead
+   and room mics: the same id first, then the same number of channels, then in
+   order. A stereo source on a mono mic plays its left channel; a mono source
+   on a stereo mic plays in the middle. With it off, only the close mics are
+   used, and the piece sits in this kit's room only through its own channel.
+4. **If nothing would be left to hear** (a kit recorded only as a stereo pair
+   meeting one with only close mics), the piece's main mic goes to the swapped
+   piece's own mic, otherwise to the kit's overheads, otherwise to its first mic.
+
+Each of this kit's mics takes at most one of the other kit's. Mics with
+nowhere to go are left out, and the model picker and the model button's
+tooltip list them ("Not used: Ride R"); nothing is ever routed to a mic it
+doesn't belong on to make it fit. The levels stay as the other kit set them:
+each mapped mic plays at its own kit's default level and polarity relative
+to the mic it lands on, so a reversed snare bottom mic stays reversed.
+
+The swapped piece's choke groups are its own (a hi-hat's closed hits still
+choke its open ones); it can't choke, or be choked by, the rest of this kit
+except through its choke note. Recordings at another sample rate (CrocellKit
+and Virtuosity are 48 kHz) play at the right pitch. The other kit's audio is
+read from its own folder, and when the kit streams, from that folder's own
+stream cache pack (see [streaming.md](streaming.md)).
+
+If the other kit isn't installed any more, the piece plays this kit's own
+recordings and its model picker says why; the swap is kept, so it comes back
+when the kit is installed again. `LithiumDrumsTests --swap-audit` tries every
+swap between the installed kits and reports where every mic goes.
+
+### Slots: filling and emptying
+
+The Kit tab's Slots view has the same 24 slots for every kit
+(`src/engine/KitSlots.cpp`), in a 6 × 4 grid: Kick, Snare, Snare 2, Hi-Hat,
+Tom 1-3, Floor Tom 1-2, Crash 1-3, Splash, Ride, China, and Extra 1-9. When a
+kit loads, each of its pieces goes, in kit order, to the first free slot of
+its kind (a rack tom to the next Tom, a crash whose id or name says splash to
+Splash), and anything with no named slot left (a second kick, a cowbell, a
+gong) to the next Extra. Every installed library fits; Basalt Cobblestone's
+nine percussion pieces fill all nine extras.
+
+An empty slot can be filled from any installed kit, and a full one emptied.
+Both are entries in the same swap list, saved the same way:
+
+- **Filling** a slot is a swap whose piece id is `slot-` and the slot's id
+  (`slot-tom3`). The new piece is added after the kit's own, named after the
+  slot (or, in an Extra, after the piece), and mapped onto the kit's mics as
+  above. In a named slot it plays as the slot's kind (a floor tom in Tom 3 is
+  a rack tom, for its MIDI notes and its place on the stage); in an Extra, as
+  what it is. A named slot takes the same kinds a swap does (rack and floor
+  toms for each other, any crash or splash for Crash and Splash); an Extra
+  takes anything.
+- **Emptying** a slot is an entry with the piece's id marked `removed`
+  instead of a source. The kit's own piece is remembered, so the model picker
+  can put it back.
+
+Slots are handed out from the kit as it is, before any of this, so filling or
+emptying one never moves another piece to a different slot. Pieces after a
+removed one move up in the kit's list; their mixer and shaping settings move
+with them (matched by piece id), and an added piece starts at the defaults.
 
 ## Content packs
 
@@ -560,6 +658,42 @@ An SFZ mapping adds these keys to the shared ones:
 Without a mapping, every `.sfz` in the folder becomes a kit, with one mic, one
 piece per key (named after its samples, its role guessed from the name), and
 the hi-hat keys gathered into one hi-hat piece.
+
+# Importing folders of samples
+
+Some libraries are just one-shot WAV files, one per hit, without an SFZ or
+DrumGizmo description: The Open Source Drum Kit is a folder per piece, its
+files numbered from the quietest hit to the loudest. A mapping with
+`"format": "samples"` describes such a library, and the importer recognises it
+by the mapping's `marker`, a file that's there in every copy of the library.
+
+```json
+{
+  "format": "samples",
+  "marker": "Plugin/Samples/kick/kick1.wav",
+  "root": "Plugin/Samples",
+  "mics": [ { "id": "kit", "name": "Kit (stereo)", "role": "overheads", "channels": 2, "volumeDb": -6 } ],
+  "kits": [ { "id": "open-source-drumkit", "name": "Open Source Drum Kit" } ],
+  "pieces": [
+    { "id": "snare", "name": "Snare", "role": "snare", "articulations": [
+      { "id": "center", "name": "Center", "files": ["snare/snare-top*.wav"], "exclude": ["snare/snare-top-*.wav"] }
+    ] }
+  ]
+}
+```
+
+- `files` and `exclude` are wildcards on file names, in folders relative to
+  `root`; `exclude` takes back what a broader pattern caught (`snare-top*`
+  would otherwise take the `snare-top-buttend` hits too).
+- Every file is one hit on the first mic: a stereo file on a stereo mic, a
+  mono one on a mono mic.
+- **Velocity zones.** Each file's peak level is measured, and the hits are
+  sorted from quietest to loudest and grouped into velocity zones exactly as
+  DrumGizmo power values are (see "From power values to velocity zones"),
+  with the same `--zones` and `--min-rr` options. The file names' numbering
+  isn't relied on.
+- `chokeGroup` and `chokes` work as in the other mappings; `midiMap` gives
+  the kit's own notes.
 
 # What an import writes
 

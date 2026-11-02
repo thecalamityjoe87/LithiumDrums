@@ -102,6 +102,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const SlotName
     settings. Message thread. */
 void resetForKit (juce::AudioProcessorValueTreeState&, const KitInfo&);
 
+/** After a reload that added or removed pieces (filling or emptying a Kit
+    tab slot), moves each piece's settings to its new place: from[n] is the
+    index piece n had before, or -1 for a new piece, which starts at the
+    defaults (with the kit's choke note). Places past the kit's last piece
+    are reset too. Message thread. */
+void movePieces (juce::AudioProcessorValueTreeState&, const KitInfo&, const std::vector<int>& from);
+
 /** Puts one part of a channel back to its defaults. Message thread. */
 void resetEq (juce::AudioProcessorValueTreeState&, ChannelId);
 void resetCompressor (juce::AudioProcessorValueTreeState&, ChannelId);

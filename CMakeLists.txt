@@ -73,11 +73,13 @@ target_sources(LithiumDrums PRIVATE
     src/Settings.cpp
     src/KitLibrary.cpp
     src/MidiMapLibrary.cpp
+    src/Presets.cpp
     src/importer/Importer.cpp
     src/importer/KitWriter.cpp
     src/importer/DrumGizmoImporter.cpp
     src/importer/SfzParser.cpp
     src/importer/SfzImporter.cpp
+    src/importer/SampleFolderImporter.cpp
     src/grooves/GrooveLibrary.cpp
     src/grooves/GrooveMidi.cpp
     src/grooves/GrooveImporter.cpp
@@ -90,6 +92,8 @@ target_sources(LithiumDrums PRIVATE
     src/engine/StreamCache.cpp
     src/engine/StreamingSampleSource.cpp
     src/engine/KitLoader.cpp
+    src/engine/PieceSwap.cpp
+    src/engine/KitSlots.cpp
     src/engine/Voice.cpp
     src/engine/DrumEngine.cpp
     src/engine/GroovePlayer.cpp
@@ -103,7 +107,10 @@ target_sources(LithiumDrums PRIVATE
     src/ui/HeaderBar.cpp
     src/ui/KitPage.cpp
     src/ui/KitStage.cpp
-    src/ui/PieceStrip.cpp
+    src/ui/KitArt.cpp
+    src/ui/ModelPicker.cpp
+    src/ui/PresetPanel.cpp
+    src/ui/SlotGrid.cpp
     src/ui/Controls.cpp
     src/ui/EqGraph.cpp
     src/ui/ChannelModules.cpp
@@ -117,6 +124,10 @@ target_sources(LithiumDrums PRIVATE
     src/ui/GroovesPage.cpp)
 
 target_include_directories(LithiumDrums PRIVATE src)
+
+# Each kit's own finish of the drums (assets/kit-finishes.json): stage layers
+# and slot pictures, finish-<kit id>-*.png. Picked up as they're added.
+file(GLOB lithium_finish_images CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/kit-renders/finish-*.png")
 
 juce_add_binary_data(LithiumAssets
     NAMESPACE   LithiumAssets
@@ -143,6 +154,21 @@ juce_add_binary_data(LithiumAssets
         assets/kit-renders/crash2.png
         assets/kit-renders/ride.png
         assets/kit-renders/china.png
+        assets/kit-renders/slot-kick.png
+        assets/kit-renders/slot-snare.png
+        assets/kit-renders/slot-hihat.png
+        assets/kit-renders/slot-tom1.png
+        assets/kit-renders/slot-tom2.png
+        assets/kit-renders/slot-floor.png
+        assets/kit-renders/slot-crash.png
+        assets/kit-renders/slot-crash2.png
+        assets/kit-renders/slot-ride.png
+        assets/kit-renders/slot-china.png
+        assets/kit-renders/slot-cowbell.png
+        assets/kit-renders/slot-chimes.png
+        assets/kit-renders/slot-splash.png
+        assets/kit-finishes.json
+        ${lithium_finish_images}
         assets/midi-maps/lithium-standard.json
         assets/midi-maps/general-midi.json
         assets/midi-maps/roland-vdrums.json
@@ -162,7 +188,8 @@ juce_add_binary_data(LithiumImportMaps
         assets/import-maps/CrocellKit.json
         assets/import-maps/BigRustyDrums.json
         assets/import-maps/SMDrums.json
-        assets/import-maps/NakedDrums.json)
+        assets/import-maps/NakedDrums.json
+        assets/import-maps/OpenSourceDrumKit.json)
 
 target_compile_definitions(LithiumDrums
     PUBLIC
@@ -203,6 +230,7 @@ target_sources(LithiumImport PRIVATE
     src/importer/DrumGizmoImporter.cpp
     src/importer/SfzParser.cpp
     src/importer/SfzImporter.cpp
+    src/importer/SampleFolderImporter.cpp
     src/grooves/GrooveLibrary.cpp
     src/grooves/GrooveImporter.cpp
     src/packs/Archive.cpp
@@ -270,7 +298,7 @@ target_link_libraries(LithiumRoomGen PRIVATE
 if(LITHIUM_BUILD_TESTS)
     # The tests link the plugin's shared-code library (the processor, engine
     # and UI, compiled once) rather than recompiling the sources.
-    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp tests/GrooveTests.cpp tests/PackTests.cpp)
+    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp tests/GrooveTests.cpp tests/PackTests.cpp tests/SwapTests.cpp)
     target_include_directories(LithiumDrumsTests PRIVATE src)
     target_compile_definitions(LithiumDrumsTests PRIVATE
         LITHIUM_TEST_KIT_DIR="${LITHIUM_TEST_KIT_DIR}"

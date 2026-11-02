@@ -7,7 +7,7 @@ SCALE = float(args.get('scale', '0.5'))
 SAMPLES = int(args.get('samples', '32'))
 MODE = args.get('mode', 'preview')  # preview | layers
 FINISH = tuple(float(c) for c in args.get('finish', '0.22,0.012,0.02').split(','))
-STAGE_W, STAGE_H = 1280, 520
+STAGE_W, STAGE_H = 1280, 744   # the whole Kit tab at 1x, so the kit and its floor are never cut off
 
 # ---------- scene ----------
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -81,6 +81,76 @@ M = {
     'wood': mat('wood', (0.78, 0.56, 0.34), rough=0.6),                 # bare maple inside the shell
 }
 
+# ---------- kit finishes ----------
+# kit=<id> renders a kit's own finish from assets/kit-finishes.json: its
+# shells, hoops, lugs and heads, and its snare. The shapes are the same for
+# every kit; only these materials change. Without kit=, the default red.
+def finish_mat(name, spec):
+    """A shell material: lacquer, pearl (mottled, like an oyster wrap), sparkle
+    (metal flakes under a clear coat), stain (wood grain through a tinted
+    lacquer) or metal (a steel or brass snare shell)."""
+    style = spec.get('style', 'lacquer')
+    c1 = tuple(spec['color'])
+    c2 = tuple(spec.get('color2', [min(1.0, c * 2.2 + 0.02) for c in c1]))
+    if style == 'metal':
+        return mat(name, c1, metal=1.0, rough=spec.get('rough', 0.16), coat=0.2)
+    m = mat(name, c1, rough=spec.get('rough', 0.35), coat=spec.get('coat', 0.6), spec=0.1)
+    if style == 'lacquer':
+        return m
+    nt = m.node_tree; p = nt.nodes['Principled BSDF']
+    tc = nt.nodes.new('ShaderNodeTexCoord')
+    ramp = nt.nodes.new('ShaderNodeValToRGB')
+    ramp.color_ramp.elements[0].color = (*c1, 1); ramp.color_ramp.elements[1].color = (*c2, 1)
+    if style == 'pearl':
+        # Big soft swirls, stretched round the shell like a wrap's pattern.
+        mp = nt.nodes.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (1.0, 1.0, 0.35)
+        nz = nt.nodes.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 7.0
+        nz.inputs['Detail'].default_value = 8.0; nz.inputs['Distortion'].default_value = 2.5
+        nt.links.new(tc.outputs['Object'], mp.inputs['Vector']); nt.links.new(mp.outputs[0], nz.inputs['Vector'])
+        ramp.color_ramp.elements[0].position = 0.35; ramp.color_ramp.elements[1].position = 0.7
+        nt.links.new(nz.outputs['Fac'], ramp.inputs['Fac'])
+    elif style == 'stain':
+        # Grain running along the shell: bands stretched by noise.
+        # (The shell's axis is the drum's Z, so bands across X run up and down it.)
+        wv = nt.nodes.new('ShaderNodeTexWave'); wv.wave_type = 'BANDS'; wv.bands_direction = 'X'
+        # Fine, low-contrast grain: the ramp spans the whole wave, so the
+        # bands fade into each other rather than reading as stripes.
+        wv.inputs['Scale'].default_value = 6.0; wv.inputs['Distortion'].default_value = 3.0
+        wv.inputs['Detail'].default_value = 4.0; wv.inputs['Detail Scale'].default_value = 1.5
+        nt.links.new(tc.outputs['Object'], wv.inputs['Vector'])
+        ramp.color_ramp.elements[0].position = 0.0; ramp.color_ramp.elements[1].position = 1.0
+        ramp.color_ramp.elements[1].color = (*[a + (b - a) * 0.6 for a, b in zip(c1, c2)], 1)
+        nt.links.new(wv.outputs['Fac'], ramp.inputs['Fac'])
+    elif style == 'sparkle':
+        # Fine metal flakes: a dense cell texture picks some to catch the light.
+        vo = nt.nodes.new('ShaderNodeTexVoronoi'); vo.inputs['Scale'].default_value = 900.0
+        nt.links.new(tc.outputs['Object'], vo.inputs['Vector'])
+        ramp.color_ramp.elements[0].position = 0.55; ramp.color_ramp.elements[1].position = 0.95
+        nt.links.new(vo.outputs['Distance'], ramp.inputs['Fac'])
+        mr = nt.nodes.new('ShaderNodeMapRange'); mr.inputs['To Min'].default_value = 0.55; mr.inputs['To Max'].default_value = 1.0
+        nt.links.new(vo.outputs['Distance'], mr.inputs['Value']); nt.links.new(mr.outputs['Result'], p.inputs['Metallic'])
+        p.inputs['Roughness'].default_value = 0.22
+    nt.links.new(ramp.outputs['Color'], p.inputs['Base Color'])
+    return m
+
+FINISHES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kit-finishes.json')))
+KIT_ID = FINISHES.get('aliases', {}).get(args.get('kit', ''), args.get('kit', ''))
+KIT_FINISH = FINISHES['kits'].get(KIT_ID, {})
+HARDWARE = {'chrome': 'chrome', 'black': 'black', 'brass': 'brass'}
+
+def finish_or(key, default):
+    return finish_mat(key, KIT_FINISH[key]) if key in KIT_FINISH else M[default]
+
+M['shell'] = finish_or('shell', 'finish')
+M['snare_shell'] = finish_or('snare', 'brass')
+M['kick_hoop'] = finish_or('kickHoop', 'shell') if 'kickHoop' in KIT_FINISH else M['shell']
+M['hoop'] = finish_or('hoops', 'chrome') if isinstance (KIT_FINISH.get('hoops'), dict) else M[HARDWARE[KIT_FINISH.get('hoops', 'chrome')]]
+M['lug'] = M[HARDWARE[KIT_FINISH.get('lugs', 'chrome')]]
+if 'heads' in KIT_FINISH:
+    M['head'] = mat('head_k', tuple(KIT_FINISH['heads']), rough=0.75)
+if 'reso' in KIT_FINISH:
+    M['reso'] = mat('reso_k', tuple(KIT_FINISH['reso']), rough=0.55, coat=0.15)
+
 def smooth(o):
     for p in o.data.polygons: p.use_smooth = True
 
@@ -130,7 +200,7 @@ def empty(name, loc, rot):
 # little low, as on most ported front heads (drum-local x, y on the head).
 PORT_R, PORT_AT = 0.075, (0.15, -0.05)
 
-def drum(name, r, d, loc, rot, lugs, rows=1, shell='finish', reso=False, port=False, wood_hoop=False):
+def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=False, wood_hoop=False):
     e = empty(name, loc, rot)
     sh = cyl(r, d, (0, 0, 0), m=shell, parent=e, cname=name, verts=128, fill='NOTHING')
     sol = sh.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.006
@@ -145,11 +215,11 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='finish', reso=False, port=Fa
             cutter.hide_viewport = True
             cut = head.modifiers.new('port', 'BOOLEAN'); cut.operation = 'DIFFERENCE'; cut.object = cutter
         if wood_hoop:
-            h = cyl(r + 0.012, 0.03, (0, 0, z - side * 0.006), m='finish', parent=e, cname=name, verts=128, fill='NOTHING')
+            h = cyl(r + 0.012, 0.03, (0, 0, z - side * 0.006), m='kick_hoop', parent=e, cname=name, verts=128, fill='NOTHING')
             s2 = h.modifiers.new('s', 'SOLIDIFY'); s2.thickness = 0.014
             torus(r + 0.013, 0.003, (0, 0, z - side * 0.006), m='chrome', parent=e, cname=name)
         else:
-            torus(r + 0.004, 0.0055, (0, 0, z + side * 0.004), scale=(1, 1, 1.9), m='chrome', parent=e, cname=name)
+            torus(r + 0.004, 0.0055, (0, 0, z + side * 0.004), scale=(1, 1, 1.9), m='hoop', parent=e, cname=name)
     for i in range(lugs):
         a = 2 * math.pi * (i + 0.5) / lugs
         cx, cy = math.cos(a), math.sin(a)
@@ -158,7 +228,7 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='finish', reso=False, port=Fa
         else:
             zs = [(d * 0.26, d * 0.11), (-d * 0.26, d * 0.11)]
         for zc, hl in zs:
-            blob((0.009, 0.009, hl), (cx * (r + 0.011), cy * (r + 0.011), zc), parent=e, cname=name)
+            blob((0.009, 0.009, hl), (cx * (r + 0.011), cy * (r + 0.011), zc), m='lug', parent=e, cname=name)
             side = 1 if zc >= 0 else -1
             if rows == 1:
                 for s in (1, -1):
@@ -233,7 +303,7 @@ KIT['kick'] = drum('kick', 0.279, 0.457, (0, 0, 0.31), (R(90), 0, 0), lugs=10, r
 KIT['tom1'] = drum('tom1', 0.127, 0.203, (0.165, 0.10, 0.84), (R(-13), R(-7), 0), lugs=6)
 KIT['tom2'] = drum('tom2', 0.152, 0.229, (-0.185, 0.10, 0.86), (R(-13), R(8), 0), lugs=6)
 KIT['floor'] = drum('floor', 0.203, 0.406, (-0.6, 0.42, 0.40), (R(-2), 0, 0), lugs=8, rows=2)
-KIT['snare'] = drum('snare', 0.178, 0.165, (0.36, 0.42, 0.58), (R(-7), R(-3), 0), lugs=10, rows=2, shell='brass')
+KIT['snare'] = drum('snare', 0.178, 0.165, (0.36, 0.42, 0.58), (R(-7), R(-3), 0), lugs=10, rows=2, shell='snare_shell')
 box((0.03, 0.02, 0.05), (0.36 + 0.19, 0.42, 0.58), m='chrome', cname='snare')
 
 hh = empty('hihat', (0.68, 0.42, 0.0), (0, 0, 0))
@@ -254,6 +324,17 @@ CHINA_ROT = (R(180), R(12), 0)
 KIT['china'] = cymbal('china', 0.229, (-1.02, 0.36, 1.32), CHINA_ROT, china=True, felt=False)
 
 # ---------- hardware (base layer) ----------
+# The hardware belongs to the base layer on the stage. For the slot pictures
+# (mode=pieces), each piece is also drawn with its own: its stand, legs or
+# spurs; a cymbal with its boom arm only. claim() records which objects those are.
+HW = {}
+
+def mark():
+    return set(scn.objects)
+
+def claim(piece, before):
+    HW.setdefault(piece, []).extend(o for o in scn.objects if o not in before)
+
 # Modelled on real double-braced hardware: tripods with paired leg and brace
 # tubes on a hinge casting and sliding collar, telescoping chrome tubes with
 # height clamps, memory locks and T-bolts, boom arms with counterweights,
@@ -345,9 +426,10 @@ def stages_to(height):
         return [(0.56, 0.0127), (height, 0.0105)]
     return [(0.56, 0.0127), (0.84, 0.0105), (height, 0.009)]
 
-def cymbal_stand(x, y, height, loc, rot, radius, china=False, spread=0.3, facing=90):
+def cymbal_stand(x, y, height, loc, rot, radius, china=False, spread=0.3, facing=90, owner=None):
     tripod(x, y, spread=spread, facing=facing)
     top = column(x, y, stages_to(height))
+    boom = mark()   # from here on: the boom, which the cymbal's slot picture shows with it
 
     axis = Euler(rot).to_matrix() @ Vector((0, 0, 1))
     down = -axis if axis.z > 0 else axis                           # along the cymbal's axis, toward the floor
@@ -371,13 +453,15 @@ def cymbal_stand(x, y, height, loc, rot, radius, china=False, spread=0.3, facing
     t_bolt(knuckle + side * 0.015, side)
     tube(pivot - arm * 0.17, knuckle - arm * 0.012, 0.0085, m='chrome')   # boom arm
     ring(pivot - arm * 0.19, 0.017, 0.06, axis=arm, m='chrome')    # counterweight
+    if owner:
+        claim(owner, boom)
 
 # Cymbal stands (positions chosen so the booms reach in over the kit).
-cymbal_stand(0.66, -0.20, 1.06, *CRASH1, 0.229)
+cymbal_stand(0.66, -0.20, 1.06, *CRASH1, 0.229, owner='crash')
 # In the gap between the kick and the floor tom, in front of the kit.
-cymbal_stand(-0.62, -0.30, 1.06, *CRASH2, 0.229, facing=90)
-cymbal_stand(-0.98, 0.02, 0.86, (-0.66, 0.1, 1.06), (R(-12), R(8), 0), 0.267, facing=150)
-cymbal_stand(-1.30, 0.50, 1.02, (-1.02, 0.36, 1.32), CHINA_ROT, 0.229, china=True)
+cymbal_stand(-0.62, -0.30, 1.06, *CRASH2, 0.229, facing=90, owner='crash2')
+cymbal_stand(-0.98, 0.02, 0.86, (-0.66, 0.1, 1.06), (R(-12), R(8), 0), 0.267, facing=150, owner='ride')
+cymbal_stand(-1.30, 0.50, 1.02, (-1.02, 0.36, 1.32), CHINA_ROT, 0.229, china=True, owner='china')
 
 # Hi-hat: the tripod is turned so no leg hides the chain from the camera,
 # with the pedal between two of its legs.
@@ -413,6 +497,7 @@ for i in range(links):                                             # chain: alte
     l.rotation_euler = (R(90), 0, R(90) * (i % 2))
 
 # Snare: basket stand gripping the bottom hoop.
+m = mark()
 SN_LOC, SN_ROT, SN_R, SN_D = (0.36, 0.42, 0.58), (R(-7), R(-3), 0), 0.178, 0.165
 tripod(0.36, 0.42, spread=0.24, hinge=0.27, collar=0.11)
 column(0.36, 0.42, [(0.36, 0.0127), (0.42, 0.0105)])
@@ -427,6 +512,8 @@ for i in range(3):
     tube(hub, elbow, 0.0055, m='chrome')
     tube(elbow, tip, 0.0055, m='chrome')
     blob((0.009, 0.009, 0.012), tip, m='rubber')
+
+claim('snare', m)
 
 # Tom holder: a bracket on the kick shell, a post, and a double holder whose
 # L-arms go up into a bracket on each tom.
@@ -451,6 +538,7 @@ for loc, rot, r, a, sx in (((0.165, 0.10, 0.84), (R(-13), R(-7), 0), 0.127, 135,
     t_bolt(bracket, (sx, -0.3, 0))
 
 # Floor tom legs, through brackets on the shell.
+m = mark()
 FT_LOC, FT_ROT, FT_R = (-0.6, 0.42, 0.40), (R(-2), 0, 0), 0.203
 for deg in (210, 330, 90):
     a = R(deg); d = Vector((math.cos(a), math.sin(a), 0))
@@ -463,16 +551,82 @@ for deg in (210, 330, 90):
     blob((0.0075, 0.0075, 0.006), top, m='chrome')
     blob((0.016, 0.016, 0.013), foot - Vector((0, 0, 0.004)), m='rubber')
 
+claim('floor', m)
+
 # Kick spurs, on brackets low on the shell, angled forward and out.
+m = mark()
 for sx in (1, -1):
     a = R(28)
     bracket = Vector((sx * 0.293 * math.cos(a), -0.11, 0.31 - 0.293 * math.sin(a)))
     box((0.03, 0.06, 0.045), tuple(bracket), m='chrome')
     t_bolt(bracket, (sx, -0.25, 0.2))
-    foot = Vector((sx * 0.44, -0.32, 0.016))
+    foot = Vector((sx * 0.34, -0.30, 0.016))                       # just outside the shell and a little forward: steep, as real spurs stand
     d = (foot - bracket).normalized()
     tube(bracket - d * 0.05, foot, 0.0085, m='chrome')
     blob((0.016, 0.016, 0.013), foot - Vector((0, 0, 0.004)), m='rubber')
+
+claim('kick', m)
+
+# ---------- extra percussion (slot pictures only) ----------
+# Percussion the stage kit doesn't have, modelled only for the Kit tab's slot
+# cards (mode=pieces). They're hidden in every other mode, so the stage and
+# its layers don't change. Placed in front of the kit, toward the camera.
+def mesh_object(name, verts, faces, cname, m):
+    me = bpy.data.meshes.new(name); me.from_pydata(verts, [], faces); me.update()
+    o = bpy.data.objects.new(name, me); scn.collection.objects.link(o)
+    place(o, None, cname, m); smooth(o)
+    return o
+
+# Cowbell: tapered black steel, the sides bowing out a little toward the
+# mouth, with a mounting clamp; turned three quarters to the camera with its
+# mouth tipped up, so you look into it.
+cb = bpy.data.objects.new('cowbell', None); cb.location = (0.0, -1.0, 0.7); cb.rotation_euler = (R(24), 0, R(-32))
+scn.collection.objects.link(cb); coll('cowbell').objects.link(cb); scn.collection.objects.unlink(cb)
+# Rings of the bell from the mouth to the closed back: (y, width, height).
+rings = [(-0.085, 0.112, 0.07), (-0.05, 0.096, 0.061), (0.0, 0.08, 0.052), (0.05, 0.068, 0.045), (0.085, 0.06, 0.04)]
+verts, faces = [], []
+for y, w, h in rings:
+    verts += [(sx * w / 2, y, sz * h / 2) for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+for r in range(len(rings) - 1):
+    a, b = r * 4, (r + 1) * 4
+    faces += [(a + i, a + (i + 1) % 4, b + (i + 1) % 4, b + i) for i in range(4)]
+faces.append(tuple(range(len(verts) - 4, len(verts))))           # the closed back; the mouth stays open
+bell = mesh_object('cowbell_body', verts, faces, 'cowbell', 'black')
+bell.parent = cb
+sol = bell.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.003
+bev = bell.modifiers.new('b', 'BEVEL'); bev.width = 0.008; bev.segments = 4
+sub = bell.modifiers.new('sub', 'SUBSURF'); sub.levels = 1; sub.render_levels = 2
+box((0.03, 0.05, 0.016), (0, 0.045, 0.03), m='chrome', parent=cb, cname='cowbell')                         # clamp
+cyl(0.0055, 0.09, (0, 0.045, 0.078), m='chrome', parent=cb, cname='cowbell', verts=16)                      # mounting rod
+
+# Bell chime: a single brass chime tube, hanging by its cord from a small
+# bracket on a mounting rod, turned a little so it reads as round.
+ch = bpy.data.objects.new('chimes', None); ch.location = (0.0, -1.0, 0.95); ch.rotation_euler = (0, 0, R(-22))
+scn.collection.objects.link(ch); coll('chimes').objects.link(ch); scn.collection.objects.unlink(ch)
+CHIME_L = 0.30
+cyl(0.0055, 0.16, (-0.09, 0, 0.1), m='chrome', parent=ch, cname='chimes', verts=16)                        # mounting rod
+box((0.03, 0.03, 0.026), (-0.09, 0, 0.013), m='chrome', parent=ch, cname='chimes')                          # clamp
+box((0.1, 0.012, 0.01), (-0.035, 0, 0.005), m='black', parent=ch, cname='chimes')                           # bracket arm
+cyl(0.0022, 0.03, (0.0, 0, -0.012), m='cast', parent=ch, cname='chimes', verts=8)                           # cord
+cyl(0.014, CHIME_L, (0.0, 0, -0.027 - CHIME_L / 2), m='brass', parent=ch, cname='chimes', verts=32)         # the chime
+torus(0.014, 0.0018, (0.0, 0, -0.027), m='brass', parent=ch, cname='chimes')                                # rolled top edge
+
+# Splash: a 10" cymbal (the crashes are 18"), on a boom like the crashes'.
+# Its stand's tripod and column are in the base collection, so everything
+# made here is remembered and hidden outside mode=pieces.
+before_splash = mark()
+SPLASH = ((0.0, -0.55, 1.2), (R(-17), R(-6), 0))
+KIT['splash'] = cymbal('splash', 0.127, *SPLASH)
+cymbal_stand(0.28, -0.8, 1.0, *SPLASH, 0.127, owner='splash')
+splash_objects = [o for o in scn.objects if o not in before_splash]
+
+EXTRAS = ('cowbell', 'chimes', 'splash')
+if MODE != 'pieces':
+    for name in EXTRAS:
+        for o in COLL[name].all_objects:
+            o.hide_render = True
+    for o in splash_objects:
+        o.hide_render = True
 
 bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))
 floor = bpy.context.object; floor.is_shadow_catcher = True; place(floor, None, 'base', None)
@@ -506,6 +660,29 @@ def render(path):
 
 if MODE == 'preview':
     render(os.path.join(OUT, 'preview.png'))
+elif MODE == 'pieces':
+    # Each piece on its own, nothing in front of it and no floor: the
+    # pictures on the Kit tab's slot cards. Same camera and light as the
+    # stage, so they look like the kit. (The stage layers can't be used for
+    # this: each has holes where the pieces in front of it are.)
+    pieces = ['kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride', 'china', *EXTRAS]
+    if 'only' in args:
+        pieces = [L for L in pieces if L in args['only'].split(',')]
+    every = [o for o in scn.objects if o.type in ('MESH',)]
+    hidden = {o for o in every if o.hide_render}   # boolean cutters never render
+    def show_only(objs):
+        for o in every:
+            o.is_holdout = False
+            o.hide_render = o in hidden or o not in objs
+    for L in pieces:
+        # A cymbal (or the snare) is also rendered bare, so crop-layers.py knows where the
+        # piece ends and can fade its boom arm (or stand) out from there.
+        if L in ('crash', 'crash2', 'ride', 'china', 'splash', 'snare'):
+            show_only(set(COLL[L].all_objects))
+            render(os.path.join(OUT, 'pieces', L + '-bare.png'))
+        show_only(set(COLL[L].all_objects) | set(HW.get(L, [])))
+        render(os.path.join(OUT, 'pieces', L + '.png'))
+        print('PIECE', L, flush=True)
 else:
     layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride', 'china']
     # only=base,crash2 re-renders just those layers (the others keep their renders).

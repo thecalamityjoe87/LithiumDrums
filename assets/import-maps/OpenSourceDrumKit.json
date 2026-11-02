@@ -1,0 +1,86 @@
+{
+  "comment": "Import mapping for The Open Source Drum Kit by Real Music Media, as kept in s1m0n-github/the-open-source-drumkit (its HISE project's Plugin/Samples folder). Every file is one stereo hit at 96 kHz, 24-bit, named by what was hit and numbered quietest to loudest; the importer measures each file's peak to place it in a velocity zone. The snare's 'bottom' and the toms' 'under' sets are separate takes of their own (other lengths and counts), not a second mic of the same hits, so they can't be layered under the top takes and are left out. The hi-hat has no fully open set: half-closed and half-open are its steps between closed and the pedal.",
+  "format": "samples",
+  "matches": ["the-open-source-drumkit"],
+  "marker": "Plugin/Samples/kick/kick1.wav",
+  "root": "Plugin/Samples",
+  "pack": { "id": "open-source-drumkit", "name": "The Open Source Drum Kit" },
+  "author": "Real Music Media",
+  "sourceUrl": "https://github.com/s1m0n-github/the-open-source-drumkit",
+  "license": {
+    "name": "Public domain",
+    "url": "https://www.kvraudio.com/forum/viewtopic.php?t=277132",
+    "shareAlike": false,
+    "files": ["README.md"]
+  },
+  "licenseNote": "Real Music Media released the samples into the public domain on KVR in 2010: \"The samples and the mappings are completely in the public domain... You can do whatever you want to do with them.\" (The GPL licence in the GitHub repository covers its HISE plugin project, not the samples.)",
+  "credits": "The Open Source Drum Kit, recorded and released into the public domain by Real Music Media (realmusicmedia.net). Kept on GitHub by s1m0n-github.",
+  "description": "An acoustic kit recorded at 96 kHz, in a stereo mix of each hit: kick, snare with rimshots, side-sticks, butt-end hits and snares off, three toms, hi-hat, crash, ride, and a gong.",
+  "tags": ["acoustic", "rock", "stereo", "gong"],
+  "mics": [
+    { "id": "kit", "name": "Kit (stereo)", "role": "overheads", "channels": 2, "volumeDb": -6 }
+  ],
+  "kits": [
+    { "id": "open-source-drumkit", "name": "Open Source Drum Kit" }
+  ],
+  "pieces": [
+    { "id": "kick", "name": "Kick", "role": "kick", "articulations": [
+      { "id": "hit", "name": "Hit", "files": ["kick/kick*.wav"] }
+    ] },
+    { "id": "snare", "name": "Snare", "role": "snare", "articulations": [
+      { "id": "center", "name": "Center", "files": ["snare/snare-top*.wav"], "exclude": ["snare/snare-top-*.wav"] },
+      { "id": "rimshot", "name": "Rimshot", "files": ["rimshot/rimshot*.wav"] },
+      { "id": "sidestick", "name": "Side-stick", "files": ["sidestick/sidestick*.wav"] },
+      { "id": "butt_end", "name": "Butt end", "files": ["snare/snare-top-buttend*.wav"] },
+      { "id": "snares_off", "name": "Snares off", "files": ["snare/snare-top-off*.wav"] }
+    ] },
+    { "id": "hihat", "name": "Hi-Hat", "role": "hihat", "articulations": [
+      { "id": "closed", "name": "Closed", "files": ["hihat/closed-hihat/*.wav"], "chokes": ["hihat_open"] },
+      { "id": "quarter_open", "name": "Half closed", "files": ["hihat/half-closed-hihat/*.wav"], "chokeGroup": "hihat_open", "chokes": ["hihat_open"] },
+      { "id": "half_open", "name": "Half open", "files": ["hihat/half-open-hihat/*.wav"], "chokeGroup": "hihat_open" },
+      { "id": "pedal", "name": "Pedal", "files": ["hihat/foot-hihat/*.wav"], "chokes": ["hihat_open"] }
+    ] },
+    { "id": "tom1", "name": "Small Tom", "role": "tom", "articulations": [
+      { "id": "center", "name": "Center", "files": ["toms/small-tom*.wav"], "exclude": ["toms/small-tom-*.wav"] }
+    ] },
+    { "id": "tom2", "name": "Medium Tom", "role": "tom", "articulations": [
+      { "id": "center", "name": "Center", "files": ["toms/medium-tom*.wav"], "exclude": ["toms/medium-tom-*.wav"] }
+    ] },
+    { "id": "floor", "name": "Large Tom", "role": "floor_tom", "articulations": [
+      { "id": "center", "name": "Center", "files": ["toms/large-tom*.wav"], "exclude": ["toms/large-tom-*.wav"] }
+    ] },
+    { "id": "crash", "name": "Crash", "role": "crash", "articulations": [
+      { "id": "hit", "name": "Hit", "files": ["crash/crash*.wav"], "exclude": ["crash/crash-*.wav"] },
+      { "id": "edge", "name": "Edge", "files": ["crash/crash-edge*.wav"] },
+      { "id": "bell", "name": "Bell", "files": ["crash/crash-bell*.wav"] }
+    ] },
+    { "id": "ride", "name": "Ride", "role": "ride", "articulations": [
+      { "id": "bow", "name": "Bow", "files": ["ride/ride-mid-in*.wav"] },
+      { "id": "bow_outer", "name": "Bow, outer", "files": ["ride/ride-mid-out*.wav"] },
+      { "id": "bell", "name": "Bell", "files": ["ride/ride-bell*.wav"] },
+      { "id": "edge", "name": "Edge", "files": ["ride/ride-edge*.wav"] }
+    ] },
+    { "id": "gong", "name": "Gong", "role": "other", "articulations": [
+      { "id": "mallet", "name": "Mallet", "files": ["gong/mallet-hit*.wav"] },
+      { "id": "wood_stick", "name": "Wood stick", "files": ["gong/wood-stick-hit*.wav"] },
+      { "id": "metal_stick", "name": "Metal stick", "files": ["gong/metal-stick*.wav"], "exclude": ["gong/metal-stick-*.wav"] },
+      { "id": "scrape", "name": "Scrape", "files": ["gong/metal-stick-scrape*.wav"] }
+    ] }
+  ],
+  "midiMap": [
+    { "note": 36, "piece": "kick" },
+    { "note": 38, "piece": "snare", "articulation": "center" },
+    { "note": 40, "piece": "snare", "articulation": "rimshot" },
+    { "note": 37, "piece": "snare", "articulation": "sidestick" },
+    { "note": 42, "piece": "hihat", "articulation": "closed" },
+    { "note": 44, "piece": "hihat", "articulation": "pedal" },
+    { "note": 46, "piece": "hihat", "articulation": "half_open" },
+    { "note": 48, "piece": "tom1" },
+    { "note": 45, "piece": "tom2" },
+    { "note": 43, "piece": "floor" },
+    { "note": 49, "piece": "crash", "articulation": "hit" },
+    { "note": 51, "piece": "ride", "articulation": "bow" },
+    { "note": 53, "piece": "ride", "articulation": "bell" },
+    { "note": 59, "piece": "ride", "articulation": "edge" }
+  ]
+}

@@ -67,6 +67,86 @@ bool OverlayPanel::keyPressed (const juce::KeyPress& key)
 }
 
 //==============================================================================
+PromptPanel::PromptPanel() : OverlayPanel ({}, 460, 236)
+{
+    using namespace theme;
+
+    field.setFont (body (type::body));
+    field.setIndents (10, 7);
+    field.onReturnKey = [this] { finish (true); };
+    field.onEscapeKey = [this] { finish (false); };
+    addChildComponent (field);
+
+    okButton.onClick = [this] { finish (true); };
+    addAndMakeVisible (okButton);
+
+    getCloseButton().setButtonText ("Cancel");
+    onClose = [this] { finish (false); };
+}
+
+void PromptPanel::show (Request r)
+{
+    request = std::move (r);
+    setTitle (request.title);
+    okButton.setButtonText (request.okText);
+    okButton.setColour (juce::TextButton::buttonColourId, request.destructive ? theme::colours::warning : theme::colours::accent);
+    okButton.setColour (juce::TextButton::textColourOffId, theme::colours::background);
+    getCloseButton().setVisible (request.cancellable);
+    field.setVisible (request.withTextField);
+    field.setText (request.text, false);
+    field.selectAll();
+    resized();
+    repaint();
+}
+
+void PromptPanel::finish (bool ok)
+{
+    // Copied first: onOk may show another request, which replaces this one.
+    auto callback = ok ? request.onOk : nullptr;
+    const auto text = field.getText().trim();
+
+    if (onFinished)
+        onFinished();
+
+    if (callback != nullptr && (! request.withTextField || text.isNotEmpty()))
+        callback (text);
+}
+
+bool PromptPanel::keyPressed (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::returnKey)
+    {
+        finish (true);
+        return true;
+    }
+
+    return OverlayPanel::keyPressed (key);
+}
+
+void PromptPanel::layoutContent (juce::Rectangle<int> area)
+{
+    using namespace theme;
+
+    const auto buttons = getCardBounds().reduced (28, 18).removeFromBottom (30);
+    okButton.setBounds (buttons.withTrimmedRight (request.cancellable ? 96 + space::sm : 0).removeFromRight (96));
+
+    if (request.withTextField)
+        field.setBounds (area.removeFromBottom (size::button + 4));
+
+    messageArea = area.withTrimmedBottom (space::sm);
+}
+
+void PromptPanel::paint (juce::Graphics& g)
+{
+    using namespace theme;
+
+    OverlayPanel::paint (g);
+    g.setColour (colours::textMuted);
+    g.setFont (body (type::body));
+    g.drawFittedText (request.message, messageArea, juce::Justification::topLeft, 4, 1.0f);
+}
+
+//==============================================================================
 /** The credits of one content pack (or of a kit outside any pack): what's in
     it, who made it, the credits text, and its licence and source links. */
 class AboutPanel::KitCard final : public juce::Component
@@ -476,8 +556,8 @@ void SettingsPanel::paint (juce::Graphics& g)
     };
 
     heading ("KITS FOLDER", kitsHeading);
-    paragraph ("Lithium Drums lists the kits in this folder: content packs, and loose kit folders. Import "
-               "DrumGizmo kits and SFZ instruments into it with the LithiumImport tool (see the README). "
+    paragraph ("Lithium Drums lists the kits in this folder, and downloads new ones into it (Browse, in the header). "
+               "Libraries you've downloaded yourself go in with the LithiumImport tool (see the README). "
                "Every instance uses the same folder.", kitsText, colours::textMuted);
 
     heading ("STREAMING", streamingHeading);

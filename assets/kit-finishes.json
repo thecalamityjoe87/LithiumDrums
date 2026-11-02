@@ -1,0 +1,96 @@
+{
+  "comment": "Each kit's finish on the stage and slot cards (blender-kit.py kit=<id>). Colours are linear RGB. shell and snare: style lacquer | pearl | stain | sparkle | metal, color, and color2 (the pattern's other colour). hoops: chrome | black | brass, or a material like shell. kickHoop: the kick's wooden hoops, like shell (default: the shell's). lugs: chrome | black | brass. heads, reso: colours of the batter heads and the kick's front head. Kits not listed keep the default red; presets use their base kit's finish.",
+  "aliases": {
+    "virtuosity-snares-off": "virtuosity",
+    "basalt-amber-rods": "basalt-amber"
+  },
+  "kits": {
+    "drskit-full": {
+      "comment": "DRS Drums in orange oyster, from the session photo; a white pearl snare.",
+      "shell": { "style": "pearl", "color": [0.62, 0.09, 0.008], "color2": [1.0, 0.3, 0.04] },
+      "snare": { "style": "pearl", "color": [0.5, 0.48, 0.45], "color2": [0.86, 0.85, 0.83] },
+      "reso": [0.012, 0.012, 0.014]
+    },
+    "muldjordkit": {
+      "comment": "Black Tama with chrome hardware, from the session photo; a steel snare.",
+      "shell": { "style": "lacquer", "color": [0.008, 0.008, 0.01], "rough": 0.18, "coat": 1.0 },
+      "snare": { "style": "metal", "color": [0.62, 0.63, 0.65], "rough": 0.12 },
+      "reso": [0.012, 0.012, 0.014]
+    },
+    "salamander": {
+      "comment": "Green stained shells with dark wooden hoops, from the session photo; a natural wood snare, a white front head.",
+      "shell": { "style": "stain", "color": [0.012, 0.09, 0.02], "color2": [0.06, 0.24, 0.05] },
+      "hoops": { "style": "lacquer", "color": [0.14, 0.045, 0.015], "rough": 0.45 },
+      "kickHoop": { "style": "lacquer", "color": [0.14, 0.045, 0.015], "rough": 0.45 },
+      "snare": { "style": "stain", "color": [0.22, 0.09, 0.03], "color2": [0.45, 0.22, 0.08] },
+      "reso": [0.82, 0.8, 0.75]
+    },
+    "naked-drums": {
+      "comment": "Cherry kick and toms, a silver sparkle snare (the user's description of the recorded kit).",
+      "shell": { "style": "stain", "color": [0.1, 0.003, 0.004], "color2": [0.26, 0.015, 0.012] },
+      "snare": { "style": "sparkle", "color": [0.3, 0.3, 0.32], "color2": [0.92, 0.92, 0.94] },
+      "reso": [0.012, 0.012, 0.014]
+    },
+    "crocellkit-full": {
+      "comment": "Proposed: midnight blue sparkle with black hardware, a black nickel snare.",
+      "shell": { "style": "sparkle", "color": [0.004, 0.008, 0.04], "color2": [0.18, 0.28, 0.75] },
+      "snare": { "style": "metal", "color": [0.06, 0.06, 0.07], "rough": 0.2 },
+      "lugs": "black",
+      "hoops": "black",
+      "reso": [0.012, 0.012, 0.014]
+    },
+    "sm-drums": {
+      "comment": "A 1960s Ludwig in Oyster Blue Pearl (from the library's notes), a chrome snare, a white front head.",
+      "shell": { "style": "pearl", "color": [0.025, 0.07, 0.28], "color2": [0.32, 0.52, 0.88] },
+      "snare": { "style": "metal", "color": [0.62, 0.63, 0.65], "rough": 0.1 },
+      "reso": [0.82, 0.8, 0.75]
+    },
+    "big-rusty": {
+      "comment": "Proposed: a hand-made vintage kit in rusty brown stain with wooden hoops, an aged brass snare.",
+      "shell": { "style": "stain", "color": [0.1, 0.03, 0.008], "color2": [0.3, 0.11, 0.03] },
+      "hoops": { "style": "lacquer", "color": [0.1, 0.035, 0.012], "rough": 0.5 },
+      "kickHoop": { "style": "lacquer", "color": [0.1, 0.035, 0.012], "rough": 0.5 },
+      "snare": { "style": "metal", "color": [0.45, 0.28, 0.1], "rough": 0.35 },
+      "reso": [0.75, 0.72, 0.62]
+    },
+    "virtuosity": {
+      "comment": "Proposed: natural maple under a satin finish.",
+      "shell": { "style": "stain", "color": [0.4, 0.2, 0.07], "color2": [0.7, 0.45, 0.2], "rough": 0.5, "coat": 0.3 },
+      "snare": { "style": "stain", "color": [0.4, 0.2, 0.07], "color2": [0.7, 0.45, 0.2], "rough": 0.5, "coat": 0.3 },
+      "reso": [0.82, 0.8, 0.75]
+    },
+    "basalt-onyx": {
+      "comment": "Proposed, after its name: black with a faint sparkle, black hardware.",
+      "shell": { "style": "sparkle", "color": [0.006, 0.006, 0.008], "color2": [0.2, 0.2, 0.22] },
+      "snare": { "style": "metal", "color": [0.06, 0.06, 0.07], "rough": 0.2 },
+      "lugs": "black",
+      "hoops": "black",
+      "reso": [0.012, 0.012, 0.014]
+    },
+    "basalt-garnet": {
+      "comment": "Proposed, after its name: deep garnet red sparkle.",
+      "shell": { "style": "sparkle", "color": [0.09, 0.0, 0.008], "color2": [0.55, 0.04, 0.07] },
+      "snare": { "style": "metal", "color": [0.62, 0.63, 0.65], "rough": 0.12 },
+      "reso": [0.012, 0.012, 0.014]
+    },
+    "basalt-amber": {
+      "comment": "Proposed, after its name: amber stain, brass hardware.",
+      "shell": { "style": "stain", "color": [0.4, 0.13, 0.008], "color2": [0.8, 0.4, 0.04] },
+      "snare": { "style": "metal", "color": [0.8, 0.6, 0.3], "rough": 0.2 },
+      "lugs": "brass",
+      "reso": [0.82, 0.8, 0.75]
+    },
+    "basalt-cobblestone": {
+      "comment": "Proposed, after its name: grey stone pearl.",
+      "shell": { "style": "pearl", "color": [0.09, 0.09, 0.085], "color2": [0.32, 0.31, 0.29] },
+      "snare": { "style": "pearl", "color": [0.09, 0.09, 0.085], "color2": [0.32, 0.31, 0.29] },
+      "reso": [0.82, 0.8, 0.75]
+    },
+    "open-source-drumkit": {
+      "comment": "Proposed: white marine pearl.",
+      "shell": { "style": "pearl", "color": [0.55, 0.55, 0.53], "color2": [0.9, 0.9, 0.88] },
+      "snare": { "style": "metal", "color": [0.62, 0.63, 0.65], "rough": 0.12 },
+      "reso": [0.012, 0.012, 0.014]
+    }
+  }
+}

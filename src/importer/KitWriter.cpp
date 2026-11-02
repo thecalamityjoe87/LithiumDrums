@@ -5,6 +5,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -382,10 +383,87 @@ namespace
     }
 
     //==============================================================================
-    ImportedKit writeKit (const PackModel& pack, const KitModel& kit, const juce::File& packFolder, const Options& options,
+    /** The kit without any recording far longer than the others of the
+        same hits: a whole take left in a library by mistake. Salamander's
+        kick_OH_P_1.wav is 44 seconds with sixteen soft kicks in it, so a
+        soft kick that picked it kept playing more kicks long after. Each
+        file left out is a warning. */
+    KitModel withoutWholeTakes (const KitModel& in, const juce::File& sourceRoot, std::map<juce::String, AudioHeader>& headers)
+    {
+        // Longer than this many times the zone's median, and than this many seconds.
+        constexpr double maxTimesMedian = 6.0, minSeconds = 5.0;
+
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+
+        auto secondsOf = [&] (const KitModel::Part& part)
+        {
+            if (headers.count (part.file) == 0)
+            {
+                std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (sourceRoot.getChildFile (part.file)));
+
+                if (reader == nullptr)
+                    return 0.0;   // the audio pass reports it
+
+                headers[part.file] = { reader->lengthInSamples, (int) reader->numChannels,
+                                       reader->usesFloatingPointData ? 32 : (int) reader->bitsPerSample, reader->sampleRate };
+            }
+
+            const auto& h = headers[part.file];
+            return h.sampleRate > 0.0 ? (double) (h.frames - part.start) / h.sampleRate : 0.0;
+        };
+
+        auto kit = in;
+
+        for (auto& p : kit.pieces)
+        {
+            for (auto& a : p.articulations)
+            {
+                for (auto& z : a.zones)
+                {
+                    if (z.hits.size() < 3)
+                        continue;   // too few to tell what's normal
+
+                    std::vector<double> lengths;
+
+                    for (const auto& h : z.hits)
+                    {
+                        auto longest = 0.0;
+
+                        for (const auto& part : h.parts)
+                            longest = std::max (longest, secondsOf (part));
+
+                        lengths.push_back (longest);
+                    }
+
+                    auto sorted = lengths;
+                    std::nth_element (sorted.begin(), sorted.begin() + (std::ptrdiff_t) sorted.size() / 2, sorted.end());
+                    const auto median = sorted[sorted.size() / 2];
+                    std::vector<KitModel::Hit> kept;
+
+                    for (size_t i = 0; i < z.hits.size(); ++i)
+                    {
+                        if (lengths[i] > maxTimesMedian * median && lengths[i] > minSeconds)
+                            kit.warnings.add (p.name + " " + a.name + ": left out " + z.hits[i].parts.front().file + ", "
+                                              + juce::String (lengths[i], 1) + " s long, a whole take rather than one hit (the others are about "
+                                              + juce::String (median, 1) + " s)");
+                        else
+                            kept.push_back (z.hits[i]);
+                    }
+
+                    z.hits = std::move (kept);
+                }
+            }
+        }
+
+        return kit;
+    }
+
+    ImportedKit writeKit (const PackModel& pack, const KitModel& original, const juce::File& packFolder, const Options& options,
                           std::map<juce::String, AudioHeader>& headers, const juce::StringArray& originals)
     {
         auto log = [&] (const juce::String& s) { if (options.log) options.log (s); };
+        const auto kit = withoutWholeTakes (original, pack.sourceRoot, headers);
 
         ImportedKit result;
         result.name = kit.name;
@@ -771,6 +849,23 @@ juce::var findBuiltInMapping (const juce::StringArray& candidates, const juce::S
     }
 
     return {};
+}
+
+std::vector<juce::var> builtInMappings (const juce::String& format)
+{
+    std::vector<juce::var> result;
+
+    for (int i = 0; i < LithiumImportMaps::namedResourceListSize; ++i)
+    {
+        int size = 0;
+        const auto* data = LithiumImportMaps::getNamedResource (LithiumImportMaps::namedResourceList[i], size);
+        const auto mapping = juce::JSON::parse (juce::String::fromUTF8 (data, size));
+
+        if (mapping["format"].toString().equalsIgnoreCase (format))
+            result.push_back (mapping);
+    }
+
+    return result;
 }
 
 std::vector<PresetModel> presetsFromMapping (const juce::var& mapping, const std::vector<KitModel>& kits)

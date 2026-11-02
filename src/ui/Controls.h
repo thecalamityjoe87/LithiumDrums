@@ -14,6 +14,38 @@
 namespace lithium
 {
 
+/** The slider every knob and fader in the UI is built on, so they all
+    handle the mouse and keyboard the same way:
+      - dragging is relative (clicking doesn't jump the value), and holding
+        Shift while dragging or scrolling makes it ten times finer;
+      - double-clicking puts it back to its default (setDoubleClickReturnValue);
+      - the wheel moves it by the same proportion whatever its range;
+      - it can be reached with Tab and moved with the arrow keys, and shows
+        an outline when it has the keyboard focus. */
+class ControlSlider : public juce::Slider
+{
+public:
+    ControlSlider();
+
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void focusGained (FocusChangeType) override                { repaint(); }
+    void focusLost (FocusChangeType) override                  { repaint(); }
+
+    /** Pixels of drag for the whole range (Shift makes it fineFactor times more). */
+    static constexpr double pixelsForFullRange = 200.0;
+    static constexpr double fineFactor = 10.0;
+
+private:
+    juce::Point<float> lastDragPosition;
+};
+
+/** Makes the buttons, sliders and drop-downs under root reachable with Tab
+    (in the order they were added), without a mouse click moving the focus,
+    so the focus outline only shows when the keyboard is used. */
+void enableKeyboardNavigation (juce::Component& root);
+
 /** A rotary knob with its name above and its value (as the parameter
     formats it) below. Double-click puts it back to the parameter's default. */
 class Knob final : public juce::Component
@@ -25,7 +57,10 @@ public:
         compact     // just the knob, with the value in a tooltip (mixer strips)
     };
 
-    explicit Knob (juce::String name = {}, Style = Style::labelled);
+    /** The dial's diameter, from the theme: theme::size::knob, knobLarge or knobCompact. */
+    enum class Size { standard, large };
+
+    explicit Knob (juce::String name = {}, Style = Style::labelled, Size = Size::standard);
 
     void attach (juce::AudioProcessorValueTreeState&, const juce::String& parameterId);
 
@@ -33,16 +68,33 @@ public:
     void setBipolar (bool);
     void setArcColour (juce::Colour);
 
+    /** Replaces the tooltip (by default the parameter's name). Call after attach(). */
+    void setTooltip (const juce::String& t)  { slider.setTooltip (t); }
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
     const juce::String name;
     const Style style;
-    juce::Slider slider;
+    const Size dialSize;
+    ControlSlider slider;
 
     // Destroyed before the slider (members go in reverse order), which it must be.
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+};
+
+/** A small button with a drawn chevron (previous / next), crisp at any scale. */
+class ChevronButton final : public juce::Button
+{
+public:
+    enum class Direction { left, right, down };
+
+    ChevronButton (const juce::String& tooltip, Direction);
+    void paintButton (juce::Graphics&, bool isMouseOver, bool isDown) override;
+
+private:
+    const Direction direction;
 };
 
 /** A toggle button bound to a bool parameter. */
@@ -79,12 +131,20 @@ public:
     /** Linear peaks since the last call. */
     void push (float left, float right = 0.0f);
 
+    /** The level at the top of the meter, so it can match a fader's scale
+        (the bottom is always minDb). */
+    void setTopDb (float db)                 { topDb = db; repaint(); }
+
+    /** Where a level sits, 0 at the bottom to 1 at the top. */
+    float proportionOf (float db) const noexcept    { return juce::jlimit (0.0f, 1.0f, (db - minDb) / (topDb - minDb)); }
+
     void paint (juce::Graphics&) override;
 
     static constexpr float minDb = -60.0f, maxDb = 6.0f;
 
 private:
     const int channels;
+    float topDb = maxDb;
     std::array<float, 2> levelDb { minDb, minDb }, holdDb { minDb, minDb };
     std::array<double, 2> holdUntil {};
 };

@@ -49,9 +49,15 @@ public:
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height, float sliderPosProportional,
                            float rotaryStartAngle, float rotaryEndAngle, juce::Slider&) override;
 
-    void drawTooltip (juce::Graphics&, const juce::String& text, int width, int height) override;
+    void drawCallOutBoxBackground (juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
+    float getCallOutBoxCornerSize (const juce::CallOutBox&) override     { return theme::cornerRadius + 2.0f; }
+
+        void drawTooltip (juce::Graphics&, const juce::String& text, int width, int height) override;
     juce::Rectangle<int> getTooltipBounds (const juce::String& text, juce::Point<int> screenPos,
                                            juce::Rectangle<int> parentArea) override;
+
+    /** The keyboard-focus outline, drawn the same on every kind of control. */
+    static void drawFocusRing (juce::Graphics&, juce::Rectangle<float>, float cornerRadius);
 
 private:
     void drawFader (juce::Graphics&, juce::Rectangle<int>, float sliderPos, juce::Slider&);

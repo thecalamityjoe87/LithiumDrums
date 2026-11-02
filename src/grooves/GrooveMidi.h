@@ -33,6 +33,10 @@ std::vector<ResolvedHit> resolve (const Clip&, const MidiMap& packMap, const Kit
 /** The colour group a recorded note belongs to, through the pack's note map. */
 PieceGroup groupOf (const MidiMap& packMap, int note);
 
+/** The kind of piece a recorded note plays, through the pack's note map
+    (any tom counts as a rack tom). Empty for notes the map doesn't have. */
+std::optional<PieceRole> roleOf (const MidiMap& packMap, int note);
+
 /** The note that plays each of the kit's articulations in a resolved map:
     the lowest note that isn't a spare, or else the spare. -1 = none. */
 std::vector<int> notesForArticulations (const NoteTable&, int numArticulations);

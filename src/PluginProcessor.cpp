@@ -15,6 +15,7 @@ namespace
     const juce::Identifier stateSelectedPiece { "selectedPiece" };
     const juce::Identifier stateMidiMap { "midiMap" };
     const juce::Identifier stateMidiMapModified { "midiMapModified" };
+    const juce::Identifier statePresetFile { "presetFile" };
     const juce::Identifier grooveTempo { "tempo" }, grooveCustomBpm { "customBpm" }, grooveSpeed { "speed" }, grooveLoop { "loop" };
 
     constexpr double kitSwapFadeSeconds = 0.01;
@@ -54,6 +55,19 @@ LithiumDrumsProcessor::LithiumDrumsProcessor()
     // project, its kit request simply replaces this one.
     if (const auto folder = kitlibrary::findDefaultKit (settings->getKitsFolder()); folder != juce::File())
         loadKit (folder, true);
+
+    if (const auto log = juce::SystemStats::getEnvironmentVariable ("LITHIUM_HIT_LOG", {}); log.isNotEmpty())
+    {
+        hitLogFile = juce::File::getCurrentWorkingDirectory().getChildFile (log).createOutputStream();
+
+        if (hitLogFile != nullptr)
+        {
+            hitLogFile->setPosition (hitLogFile->getFile().getSize());   // append
+            *hitLogFile << "\n" << juce::Time::getCurrentTime().toString (true, true, true, true) << ": Lithium Drums started\n";
+            hitLogFile->flush();
+            hitLogOn = true;
+        }
+    }
 
     startTimerHz (5);
 }
@@ -168,10 +182,12 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     {
         if (acceptNotes && request.note >= 0)
         {
+            logHit (HitLogEntry::Source::key, request.note, request.velocity);
             engine.noteOn (*kit, request.note, request.velocity, engineParams);
         }
         else if (acceptNotes && juce::isPositiveAndBelow (request.piece, (int) kit->pieces.size()))
         {
+            logHit (HitLogEntry::Source::click, request.piece, request.velocity);
             // The request was made against the kit the UI knew about; if that
             // has changed since, the clamp keeps the index valid.
             const auto& piece = kit->pieces[(size_t) request.piece];
@@ -217,7 +233,10 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             // The player only plays patterns made for this kit, but the
             // check costs nothing and guards the index.
             if (acceptNotes && juce::isPositiveAndBelow (hit.articulation, (int) kit->articulations.size()))
+            {
+                logHit (HitLogEntry::Source::groove, hit.articulation, hit.velocity);
                 engine.trigger (*kit, hit.articulation, hit.velocity, engineParams);
+            }
         }
     };
 
@@ -229,6 +248,11 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         position = eventTime;
 
         const auto message = metadata.getMessage();
+
+        if (message.isNoteOn())
+            logHit (HitLogEntry::Source::midiNote, message.getNoteNumber(), message.getVelocity());
+        else if (message.isController())
+            logHit (HitLogEntry::Source::midiController, message.getControllerNumber(), message.getControllerValue());
 
         // Drums are one-shots, so note-offs (and All Notes Off, which many hosts
         // send when the transport stops) leave ringing cymbals alone. Only All
@@ -247,6 +271,97 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     playGrooveHitsBefore (numSamples + 1);
     render (kit, position, numSamples, mainOut, auxOuts);
+
+    if (hitLogOn)
+        endHitLogBlock (mainBus.getMagnitude (0, numSamples), numSamples);
+}
+
+//==============================================================================
+void LithiumDrumsProcessor::logHit (HitLogEntry::Source source, int a, int b, float peakDb) noexcept
+{
+    if (! hitLogOn)
+        return;
+
+    if (source != HitLogEntry::Source::midiController && source != HitLogEntry::Source::lateBlock)
+        samplesSinceHit = 0;
+
+    hitLog.push ({ samplesPlayed.load (std::memory_order_relaxed), source, a, b, peakDb });   // dropped if the queue is full
+}
+
+void LithiumDrumsProcessor::endHitLogBlock (float peak, int numSamples) noexcept
+{
+    // A block that came well after the previous one: the audio device ran
+    // short (an xrun), which can click or repeat a scrap of old audio.
+    // (Reading the clock is a cheap system call, no locks or allocation.)
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+    const auto blockMs = 1000.0 * numSamples / currentSampleRate;
+
+    if (lastBlockMs > 0.0 && now - lastBlockMs > 2.0 * blockMs + 5.0)
+        logHit (HitLogEntry::Source::lateBlock, juce::roundToInt (now - lastBlockMs), 0);
+
+    lastBlockMs = now;
+
+    // Sound after at least 0.3 s of silence, with no hit in the last 50 ms.
+    const auto rate = (std::int64_t) currentSampleRate;
+
+    if (peak > juce::Decibels::decibelsToGain (-50.0f) && quietSamples >= rate * 3 / 10 && samplesSinceHit > rate / 20)
+        logHit (HitLogEntry::Source::noHit, 0, 0, juce::Decibels::gainToDecibels (peak));
+
+    quietSamples = peak < juce::Decibels::decibelsToGain (-80.0f) ? quietSamples + numSamples : 0;
+    samplesSinceHit += numSamples;
+    samplesPlayed.fetch_add (numSamples, std::memory_order_relaxed);
+}
+
+void LithiumDrumsProcessor::writeHitLog()
+{
+    if (hitLogFile == nullptr)
+        return;
+
+    const auto info = getKitInfo();
+
+    // Articulation and piece names, by the kit's global articulation index.
+    auto articulationName = [&] (int index) -> juce::String
+    {
+        if (info != nullptr)
+            for (const auto& p : info->pieces)
+                if (juce::isPositiveAndBelow (index - p.firstArticulation, (int) p.articulations.size()))
+                    return p.name + " / " + p.articulations[(size_t) (index - p.firstArticulation)].name;
+
+        return "?";
+    };
+
+    auto noteName = [&] (int note)
+    {
+        std::scoped_lock lock (stateMutex);
+        const auto target = noteTable.targets[(size_t) juce::jlimit (0, 127, note)].articulation;
+        return target >= 0 ? articulationName (target) : juce::String ("nothing");
+    };
+
+    const auto playedNow = samplesPlayed.load (std::memory_order_relaxed);
+    const auto nowMs = juce::Time::currentTimeMillis();
+    HitLogEntry e;
+
+    while (hitLog.pop (e))
+    {
+        using Source = HitLogEntry::Source;
+        const auto when = juce::Time (nowMs - (juce::int64) (1000.0 * (double) (playedNow - e.sample) / currentSampleRate));
+        juce::String text;
+
+        switch (e.source)
+        {
+            case Source::midiNote:       text << "MIDI note " << e.a << " vel " << e.b << " -> " << noteName (e.a); break;
+            case Source::midiController: text << "MIDI CC " << e.a << " = " << e.b; break;
+            case Source::click:          text << "click: " << (info != nullptr && e.a < (int) info->pieces.size() ? info->pieces[(size_t) e.a].name : juce::String (e.a)) << " vel " << e.b; break;
+            case Source::key:            text << "on-screen key " << e.a << " vel " << e.b << " -> " << noteName (e.a); break;
+            case Source::groove:         text << "groove: " << articulationName (e.a) << " vel " << e.b; break;
+            case Source::noHit:          text << "*** SOUND WITH NO HIT, peak " << juce::String (e.peakDb, 1) << " dB"; break;
+            case Source::lateBlock:      text << "late audio block: " << e.a << " ms since the last"; break;
+        }
+
+        *hitLogFile << when.formatted ("%H:%M:%S.") << juce::String (when.getMilliseconds()).paddedLeft ('0', 3) << "  " << text << "\n";
+    }
+
+    hitLogFile->flush();
 }
 
 void LithiumDrumsProcessor::render (Kit* kit, int from, int to, std::array<float*, 2> mainOut,
@@ -324,41 +439,62 @@ MicMask LithiumDrumsProcessor::currentlyUnmutedMics() const
     return mask;
 }
 
-void LithiumDrumsProcessor::requestKit (const juce::File& folder, bool resetMixer, bool force)
+void LithiumDrumsProcessor::loadKit (const juce::File& folder, bool resetMixer)
 {
-    if (folder == juce::File())
-        return;
+    auto force = false;
+
+    if (resetMixer)
+    {
+        // A kit from the menu is a fresh start: its own pieces, no preset.
+        presetFile = juce::File();
+        pendingPreset.reset();
+
+        std::scoped_lock lock (stateMutex);
+        force = ! pieceSwaps.empty();
+        pieceSwaps.clear();
+    }
+
+    requestKit ({ folder, resetMixer ? KitSettings::reset : KitSettings::keep, force });
+}
+
+std::uint64_t LithiumDrumsProcessor::requestKit (const KitRequest& r)
+{
+    if (r.folder == juce::File())
+        return 0;
 
     KitLoader::Request request;
     request.streaming = settings->getStreaming();
     request.streamStats = streamStats;
+    const auto reset = r.settings != KitSettings::keep;
 
     {
         std::scoped_lock lock (stateMutex);
 
         // Asking for the kit that's already loaded (or loading) doesn't load
         // it again; it only updates whether the mixer should be reset.
-        if (! force && folder == kitFolder && (kitLoadPending || (kitInfo != nullptr && kitInfo->folder == folder)))
+        if (! r.force && r.folder == kitFolder && (kitLoadPending || (kitInfo != nullptr && kitInfo->folder == r.folder)))
         {
-            resetWanted = resetMixer && kitLoadPending;
-            return;
+            resetWanted = reset && kitLoadPending;
+            return 0;
         }
 
-        kitFolder = folder;
-        resetWanted = resetMixer;
+        kitFolder = r.folder;
+        resetWanted = reset;
 
-        request.folder = folder;
-        request.resetToken = resetMixer ? ++lastResetToken : 0;
+        request.folder = r.folder;
+        request.resetToken = reset ? ++lastResetToken : 0;
         request.midiMap = midiMap;
+        request.swaps = pieceSwaps;
 
         // Muted mics of a restored project aren't loaded at all. A kit chosen
         // from the menu starts unmuted, so everything loads.
-        request.mics = resetMixer ? allMics : currentlyUnmutedMics();
+        request.mics = r.mics.value_or (r.settings == KitSettings::reset ? allMics : currentlyUnmutedMics());
     }
 
     kitLoadPending = true;
     loader.requestLoad (request);
     sendChangeMessage();   // safe from any thread: the message is delivered asynchronously
+    return request.resetToken;
 }
 
 juce::File LithiumDrumsProcessor::getKitFolder() const
@@ -403,11 +539,12 @@ void LithiumDrumsProcessor::handleAsyncUpdate()
 
 void LithiumDrumsProcessor::applyLoadResult (const KitLoader::Result& result)
 {
-    std::shared_ptr<const KitInfo> info;
+    std::shared_ptr<const KitInfo> info, previous;
     bool reset = false;
 
     {
         std::scoped_lock lock (stateMutex);
+        previous = kitInfo;
 
         // Only the latest request counts; an older result that slipped
         // through is ignored.
@@ -419,6 +556,7 @@ void LithiumDrumsProcessor::applyLoadResult (const KitLoader::Result& result)
         if (result.info == nullptr)
         {
             kitError = result.error;
+            pendingPreset.reset();
 
             // If an older kit is still playing, keep saving that one rather
             // than the folder that failed.
@@ -430,14 +568,47 @@ void LithiumDrumsProcessor::applyLoadResult (const KitLoader::Result& result)
         }
 
         kitInfo = info = result.info;
+        loadedSwaps = result.swaps;
         kitError = {};
         reset = resetWanted && result.resetToken == lastResetToken;
         resetWanted = false;
         resetSelection = reset;
     }
 
-    if (reset)
+    // A preset's settings go in once its kit is here; any other kit chosen
+    // from the menu starts neutral.
+    if (reset && pendingPreset != nullptr && pendingPreset->resetToken == result.resetToken)
+    {
+        parameters.replaceState (pendingPreset->contents.parameters.createCopy());
+        applyPresetBaseline (pendingPreset->contents);
+        pendingPreset.reset();
+    }
+    else if (reset)
+    {
         params::resetForKit (parameters, *info);
+    }
+    else if (previous != nullptr && previous->folder == info->folder)
+    {
+        // The same kit with a slot filled or emptied: pieces may have moved,
+        // so their settings move with them (matched by id).
+        std::vector<int> from;
+        auto moved = info->pieces.size() != previous->pieces.size();
+
+        for (size_t i = 0; i < info->pieces.size(); ++i)
+        {
+            auto old = -1;
+
+            for (size_t j = 0; j < previous->pieces.size() && old < 0; ++j)
+                if (previous->pieces[j].id == info->pieces[i].id)
+                    old = (int) j;
+
+            from.push_back (old);
+            moved = moved || old != (int) i;
+        }
+
+        if (moved)
+            params::movePieces (parameters, *info, from);
+    }
 
     // Whether or not anything was reset, the audio thread can now use the
     // parameters for this kit.
@@ -503,6 +674,8 @@ void LithiumDrumsProcessor::applySelection()
 
 void LithiumDrumsProcessor::timerCallback()
 {
+    writeHitLog();
+
     // Keep the loader's idea of which mics should be in RAM in line with the
     // mute buttons: unmuted mics load straight away, muted ones unload once
     // they've stayed muted for a moment.
@@ -685,6 +858,8 @@ void LithiumDrumsProcessor::getStateInformation (juce::MemoryBlock& destData)
     // plays the same on a machine without that saved map.
     {
         std::scoped_lock lock (stateMutex);
+        state.appendChild (swaps::toValueTree (pieceSwaps), nullptr);
+        state.setProperty (statePresetFile, presetFile.getFullPathName(), nullptr);
         state.setProperty (stateMidiMap, midiMap.toJson(), nullptr);
         state.setProperty (stateMidiMapModified, midiMapModified, nullptr);
 
@@ -714,8 +889,22 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
     const auto savedMap = state[stateMidiMap].toString();
     const auto savedMapModified = (bool) state[stateMidiMapModified];
 
-    for (const auto& id : { stateKitFolder, stateKitId, stateSelectedPiece, stateMidiMap, stateMidiMapModified })
+    const auto savedPreset = state[statePresetFile].toString();
+
+    for (const auto& id : { stateKitFolder, stateKitId, stateSelectedPiece, stateMidiMap, stateMidiMapModified, statePresetFile })
         state.removeProperty (id, nullptr);
+
+    // Swapped pieces: projects from before piece swapping have none.
+    auto swapsChanged = false;
+
+    {
+        auto savedSwaps = swaps::fromValueTree (state.getChildWithName (swaps::treeType));
+        state.removeChild (state.getChildWithName (swaps::treeType), nullptr);
+
+        std::scoped_lock lock (stateMutex);
+        swapsChanged = savedSwaps != pieceSwaps;
+        pieceSwaps = std::move (savedSwaps);
+    }
 
     // The Grooves page's state isn't a parameter; it's kept apart from them.
     if (auto grooves = state.getChildWithName (grooveState.getType()); grooves.isValid())
@@ -745,9 +934,171 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
     }
 
     if (const auto folder = kitlibrary::resolveSavedKit (savedFolder, savedId, settings->getKitsFolder()); folder != juce::File())
-        loadKit (folder, false);
+        requestKit ({ folder, KitSettings::keep, swapsChanged });
+
+    // The preset the project was using, to tell whether it has been changed
+    // since. (Hosts may restore state off the message thread; the preset
+    // fields are the message thread's, so this hops over.)
+    juce::MessageManager::callAsync ([this, safe = juce::WeakReference<LithiumDrumsProcessor> (this), savedPreset]
+    {
+        if (safe == nullptr)
+            return;
+
+        pendingPreset.reset();
+        presetFile = juce::File::isAbsolutePath (savedPreset) ? juce::File (savedPreset) : juce::File();
+        presetValues.clear();
+
+        if (presets::Contents contents; presetFile.existsAsFile() && presets::read (presetFile, contents).wasOk())
+            applyPresetBaseline (contents);
+
+        sendChangeMessage();
+    });
 
     triggerAsyncUpdate();   // applies the saved selection once the kit is there
+}
+
+//==============================================================================
+void LithiumDrumsProcessor::setPieceSwap (const PieceSwap& swap)
+{
+    {
+        std::scoped_lock lock (stateMutex);
+        auto swaps = pieceSwaps;
+        swaps::set (swaps, swap);
+
+        if (swaps == pieceSwaps)
+            return;
+
+        pieceSwaps = std::move (swaps);
+    }
+
+    requestKit ({ getKitFolder(), KitSettings::keep, true });
+}
+
+juce::Result LithiumDrumsProcessor::loadPreset (const juce::File& file)
+{
+    presets::Contents contents;
+
+    if (const auto r = presets::read (file, contents); r.failed())
+        return r;
+
+    const auto folder = kitlibrary::resolveSavedKit (contents.kitPath, contents.kitId, settings->getKitsFolder());
+
+    if (folder == juce::File() || ! folder.getChildFile ("kit.json").existsAsFile())
+        return juce::Result::fail ("This preset plays " + (contents.kitName.isNotEmpty() ? contents.kitName : contents.kitId)
+                                   + ", which isn't installed. Download it from the kit browser (Browse), then load the preset again.");
+
+    presetFile = file;
+
+    // The same kit, with the same pieces: just the settings, at once. (The
+    // mixer and EQ smooth their changes, so this doesn't click.)
+    const auto info = getKitInfo();
+    bool sameKit = false;
+
+    {
+        std::scoped_lock lock (stateMutex);
+        sameKit = ! kitLoadPending && info != nullptr && info->folder == folder && loadedSwaps == contents.swaps
+                  && pieceSwaps == contents.swaps;
+    }
+
+    if (sameKit)
+    {
+        pendingPreset.reset();
+        parameters.replaceState (contents.parameters.createCopy());
+        applyPresetBaseline (contents);
+        sendChangeMessage();
+        return juce::Result::ok();
+    }
+
+    // Another kit: it loads in the background, with only the mics the
+    // preset has unmuted, and the settings go in when it arrives. Until
+    // then the current kit plays on as it was.
+    MicMask mics = 0;
+
+    for (int m = 0; m < maxMics; ++m)
+    {
+        const auto mute = contents.parameters.getChildWithProperty ("id", params::micParamId (m, "mute"));
+
+        if (! mute.isValid() || ! (bool) mute["value"])
+            mics |= 1u << m;
+    }
+
+    {
+        std::scoped_lock lock (stateMutex);
+        pieceSwaps = contents.swaps;
+    }
+
+    auto pending = std::make_unique<PendingPreset>();
+    pending->contents = std::move (contents);
+    pendingPreset = std::move (pending);
+    pendingPreset->resetToken = requestKit ({ folder, KitSettings::preset, true, mics });
+    sendChangeMessage();
+    return juce::Result::ok();
+}
+
+juce::Result LithiumDrumsProcessor::savePreset (const juce::File& file)
+{
+    if (presets::isFactory (file))
+        return juce::Result::fail ("Factory presets can't be overwritten. Save it under another name.");
+
+    const auto info = getKitInfo();
+
+    if (info == nullptr)
+        return juce::Result::fail ("Load a kit before saving a preset.");
+
+    presets::Contents contents;
+    contents.kitId = info->id;
+    contents.kitPath = info->folder.getFullPathName();
+    contents.kitName = info->credits.name;
+    contents.swaps = getPieceSwaps();
+    contents.parameters = parameters.copyState();
+
+    if (const auto r = presets::write (file, contents); r.failed())
+        return r;
+
+    presetFile = file;
+    pendingPreset.reset();
+    applyPresetBaseline (contents);
+    sendChangeMessage();
+    return juce::Result::ok();
+}
+
+void LithiumDrumsProcessor::applyPresetBaseline (const presets::Contents& contents)
+{
+    // What "unmodified" means: the preset's kit, its swaps and every
+    // parameter value it holds.
+    presetKitId = contents.kitId;
+    presetSwaps = contents.swaps;
+    presetValues.clear();
+
+    for (const auto& child : contents.parameters)
+        if (auto* p = parameters.getParameter (child["id"].toString()))
+            presetValues.emplace_back (p, p->convertTo0to1 ((float) child["value"]));
+}
+
+bool LithiumDrumsProcessor::isPresetModified() const
+{
+    if (presetFile == juce::File() || pendingPreset != nullptr || isKitLoading())
+        return false;
+
+    const auto info = getKitInfo();
+
+    if (info == nullptr || (presetKitId.isNotEmpty() && info->id != presetKitId))
+        return true;
+
+    auto sorted = [] (PieceSwaps s)
+    {
+        std::sort (s.begin(), s.end(), [] (const PieceSwap& a, const PieceSwap& b) { return a.piece < b.piece; });
+        return s;
+    };
+
+    if (sorted (getPieceSwaps()) != sorted (presetSwaps))
+        return true;
+
+    // Normalised values, so one tolerance suits every range.
+    return std::any_of (presetValues.begin(), presetValues.end(), [] (const auto& pv)
+    {
+        return std::abs (pv.first->getValue() - pv.second) > 1.0e-4f;
+    });
 }
 
 juce::AudioProcessorEditor* LithiumDrumsProcessor::createEditor()

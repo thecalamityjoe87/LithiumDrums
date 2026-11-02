@@ -24,7 +24,7 @@ on macOS, `%LOCALAPPDATA%\Lithium Drums\Grooves` on Windows
 (`--grooves-folder` puts it elsewhere, and the `LITHIUM_GROOVES_FOLDER`
 environment variable points the plugin at another one). Rescan on the Grooves
 tab reads the folder again. `--phrase-bars <n>` changes how many bars each
-phrase tile holds (4 by default).
+phrase card holds (4 by default).
 
 ## How the dataset becomes grooves
 
@@ -45,9 +45,20 @@ MIDI files as they were recorded and adds only what the files don't say:
   at exactly 90. The pack records that, so 90 reads as fully closed.
 
 On the page each groove is split into phrases of four bars, plus a "whole take"
-tile and the fills. A hit played up to a 32nd note ahead of a phrase's first
+card and the fills. A hit played up to a 32nd note ahead of a phrase's first
 bar line counts as that phrase's (drummers push downbeats), and in a loop it
 plays just before the downbeat comes round again.
+
+Each card shows what's worth knowing while browsing: its bars, the tempo and
+meter, the style, a feel and how busy it is (one to three dots), with a
+preview of its first bar on three rows (kick, snare, hi-hat or ride, on a
+16-step grid; toms, crashes and ghost notes are left out, and a louder hit is a
+bigger dot). The feel and the dots are worked out from the hits: "Shuffle" when
+the off-beat eighths fall late (two thirds of the way through the beat),
+"Half-time" when the snare's backbeat is on beat 3 rather than 2 and 4,
+otherwise "Straight"; the dots count the hits per bar (up to 14, up to 24,
+more). The selected card is drawn in full in the pane below the cards: a lane
+per kind of piece across all its bars, with the playhead while it plays.
 
 ## Preview and export
 
@@ -57,7 +68,7 @@ plays on the loaded kit. A hi-hat hit plays the openness step nearest to where
 the pedal was at the time: a kit with closed, half-open and open hats plays
 all three, where the dataset's open-hat notes alone would only give two.
 
-The preview plays those articulations. Dragging a tile into the host (or Save
+The preview plays those articulations. Dragging a card (or the full view) into the host (or Save
 MIDI) writes, for each hit, the note that plays the same articulation in the
 **current** MIDI map: the recorded note itself where it plays the same hit
 there (a kick stays on 36, though General MIDI's 35 plays it too), otherwise

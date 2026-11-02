@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ChannelModules.h"
+#include "ModelPicker.h"
 #include "PluginProcessor.h"
 #include "ZoneMap.h"
 
@@ -51,8 +52,10 @@ private:
     juce::String lastHitText;
 
     // Piece bar
-    juce::TextButton previous { "<" }, next { ">" };
+    ChevronButton previous { "Previous drum", ChevronButton::Direction::left };
+    ChevronButton next { "Next drum", ChevronButton::Direction::right };
     juce::ComboBox pieceBox, articulationBox;
+    ModelButton model;
     std::vector<std::unique_ptr<juce::TextButton>> tabs;
     juce::TextButton play { "Play" };
     ParamToggle crossfade { "Crossfade", "Crossfade between neighbouring velocity zones, so there's no step between them" };

@@ -2,6 +2,7 @@
 
 #include "KitLibrary.h"
 #include "Parameters.h"
+#include "Presets.h"
 #include "SelectionModel.h"
 #include "engine/DrumEngine.h"
 #include "engine/GroovePlayer.h"
@@ -80,16 +81,20 @@ public:
         closing the editor. Message thread. */
     params::ChannelId selectedMixerChannel { true, 0 };
     bool reverbSelected = false;
+
+    /** Whether the Kit tab shows the piece slots rather than the stage. Message thread. */
+    bool kitSlotsView = false;
     double getCpuLoadPercent() const                                 { return loadMeasurer.getLoadAsPercentage(); }
 
     /** Loads a kit. With resetMixer (choosing a kit from the menu), the
-        piece and mixer settings go back to neutral for the new kit; without
-        it (restoring a project), they're kept. */
-    void loadKit (const juce::File& folder, bool resetMixer)        { requestKit (folder, resetMixer, false); }
+        piece and mixer settings go back to neutral for the new kit, and
+        swapped pieces and the current preset are let go of; without it
+        (restoring a project), they're kept. */
+    void loadKit (const juce::File& folder, bool resetMixer);
 
     /** Loads the current kit again, keeping its settings (after the
         streaming settings change). */
-    void reloadKit()                                                 { requestKit (getKitFolder(), false, true); }
+    void reloadKit()                                                 { requestKit ({ getKitFolder(), KitSettings::keep, true }); }
 
     juce::File getKitFolder() const;
     std::shared_ptr<const KitInfo> getKitInfo() const                { std::scoped_lock lock (stateMutex); return kitInfo; }
@@ -123,6 +128,40 @@ public:
 
     /** Plays one of a piece's articulations (0 = its first), as if hit from MIDI. */
     void audition (int piece, int velocity, int articulation = 0);
+
+    //==============================================================================
+    // Piece swapping (message thread): playing a piece with another kit's
+    // recordings of that kind of drum. See engine/PieceSwap.h.
+
+    PieceSwaps getPieceSwaps() const                                 { std::scoped_lock lock (stateMutex); return pieceSwaps; }
+
+    /** Swaps a piece (swap.piece, by id) for another kit's, or with an empty
+        sourceKit puts the kit's own back. The kit reloads in the background
+        with its settings kept; the old one plays until the new one is ready. */
+    void setPieceSwap (const PieceSwap&);
+
+    //==============================================================================
+    // Presets (message thread). See Presets.h.
+
+    /** Loads a preset: its kit and swapped pieces in the background (the
+        current kit plays on until they're ready), then its settings. */
+    juce::Result loadPreset (const juce::File&);
+
+    /** Saves everything as a preset, which then becomes the current one. */
+    juce::Result savePreset (const juce::File&);
+
+    /** The preset loaded (or saved) last, if the kit hasn't been changed
+        from the menu since. */
+    juce::File getPresetFile() const                                 { return presetFile; }
+
+    /** After a rename. */
+    void setPresetFile (const juce::File& f)                         { presetFile = f; sendChangeMessage(); }
+
+    /** Whether anything differs from the preset as it was loaded or saved. */
+    bool isPresetModified() const;
+
+    /** Whether a preset's kit is still loading. */
+    bool isPresetLoading() const noexcept                            { return pendingPreset != nullptr; }
 
     //==============================================================================
     // The MIDI map (message thread). Every change is resolved against the
@@ -182,7 +221,24 @@ public:
     void setGrooveSetting (const juce::Identifier& id, const juce::var& v)  { std::scoped_lock lock (stateMutex); grooveState.setProperty (id, v, nullptr); }
 
 private:
-    void requestKit (const juce::File& folder, bool resetMixer, bool force);
+    enum class KitSettings
+    {
+        keep,      // restoring a project, or reloading: the settings stay
+        reset,     // chosen from the menu: neutral settings for the new kit
+        preset     // a preset's kit: its settings, once the kit has arrived
+    };
+
+    struct KitRequest
+    {
+        juce::File folder;
+        KitSettings settings = KitSettings::keep;
+        bool force = false;                  // load it even if it's the kit that's loaded
+        std::optional<MicMask> mics = std::nullopt;   // the mics to load straight away (default: the unmuted ones)
+    };
+
+    /** Returns the request's reset token (0 if it has none, or nothing was requested). */
+    std::uint64_t requestKit (const KitRequest&);
+    void applyPresetBaseline (const presets::Contents&);
     void handleAsyncUpdate() override;
     void applyLoadResult (const KitLoader::Result&);
     void applySelection();
@@ -206,6 +262,25 @@ private:
         int velocity;
         int note = -1;               // >= 0: play this MIDI note instead of the piece
     };
+
+    /** For tracking down sounds nobody played: with LITHIUM_HIT_LOG=<file> in
+        the environment, every hit and where it came from, every MIDI
+        message, any sound that starts with no hit behind it, and any audio
+        block that came late are written to that file. The audio thread only
+        queues them; the timer writes them. */
+    struct HitLogEntry
+    {
+        enum class Source : std::uint8_t { midiNote, midiController, click, key, groove, noHit, lateBlock };
+
+        std::int64_t sample = 0;     // when, in samples since playback started
+        Source source = Source::midiNote;
+        int a = 0, b = 0;            // note and velocity, controller and value, piece or articulation and velocity...
+        float peakDb = 0.0f;         // noHit: how loud
+    };
+
+    void logHit (HitLogEntry::Source, int a, int b, float peakDb = 0.0f) noexcept;
+    void endHitLogBlock (float peak, int numSamples) noexcept;
+    void writeHitLog();
 
     /** A note table for one kit, sent when the map changes (or a kit
         arrives). Plain data, copied through the queue. */
@@ -251,6 +326,15 @@ private:
     std::array<GroovePlayer::Hit, 256> grooveHits {};       // one block's worth, allocated up front
     double currentSampleRate = 44100.0;                     // from prepareToPlay
 
+    // The hit log (see HitLogEntry). The counters are the audio thread's;
+    // samplesPlayed is atomic so the timer can turn sample times into clock times.
+    bool hitLogOn = false;
+    SpscQueue<HitLogEntry, 1024> hitLog;
+    std::unique_ptr<juce::FileOutputStream> hitLogFile;     // message thread
+    std::atomic<std::int64_t> samplesPlayed { 0 };
+    std::int64_t samplesSinceHit = 0, quietSamples = 0;
+    double lastBlockMs = 0.0;
+
     // Message thread, but some hosts save and restore state on other
     // threads, hence the mutex.
     mutable std::mutex stateMutex;
@@ -266,6 +350,22 @@ private:
     NoteTable noteTable;                     // midiMap resolved for kitInfo
     bool noteTableUnsent = false;            // the queue was full; the timer tries again
 
+    PieceSwaps pieceSwaps;                   // what the kit is asked to play with
+    PieceSwaps loadedSwaps;                  // what kitInfo was loaded with
+
+    // Presets. Message thread only.
+    struct PendingPreset
+    {
+        std::uint64_t resetToken = 0;
+        presets::Contents contents;
+    };
+
+    juce::File presetFile;
+    std::unique_ptr<PendingPreset> pendingPreset;    // waiting for its kit
+    juce::String presetKitId;
+    PieceSwaps presetSwaps;
+    std::vector<std::pair<juce::RangedAudioParameter*, float>> presetValues;   // as the preset set them
+
     // Message thread only.
     juce::String kitError;
     juce::ChangeBroadcaster midiMapBroadcaster;
@@ -278,6 +378,7 @@ private:
     std::unique_ptr<GroovePattern> unsentGroovePattern;   // the queue was full; the timer tries again
     juce::ValueTree grooveState { "grooves" };            // under stateMutex
 
+    JUCE_DECLARE_WEAK_REFERENCEABLE (LithiumDrumsProcessor)   // for callbacks that may outlive it
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LithiumDrumsProcessor)
 };
 

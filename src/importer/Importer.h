@@ -7,8 +7,9 @@
 
 // Converts downloaded drum libraries into Lithium Drums' native kit format.
 //
-// Two source formats are understood: DrumGizmo kits (DrumGizmoImporter) and
-// SFZ instruments (SfzImporter). Both turn their source into the same
+// Three source formats are understood: DrumGizmo kits (DrumGizmoImporter),
+// SFZ instruments (SfzImporter) and folders of one-shot samples that a
+// built-in mapping knows (SampleFolderImporter). All turn their source into the same
 // in-memory model (KitWriter.h), which KitWriter writes out as a content pack:
 // a folder in the kits folder holding the converted kits, any kit presets,
 // and the licence. See docs/kit-format.md.

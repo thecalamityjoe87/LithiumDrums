@@ -56,6 +56,17 @@ public:
         folder. LITHIUM_GROOVES_FOLDER overrides it. */
     static juce::File getGroovesFolder();
 
+    /** Where the user's presets go: a "Presets" folder next to the default
+        kits folder. LITHIUM_PRESETS_FOLDER overrides it. */
+    static juce::File getPresetsFolder();
+
+    /** Where factory presets are installed, read-only: the system-wide data
+        folder (/usr/share/lithium-drums/presets on Linux,
+        /Library/Application Support/Lithium Drums/Presets on macOS,
+        %PROGRAMDATA%\Lithium Drums\Presets on Windows).
+        LITHIUM_FACTORY_PRESETS_FOLDER overrides it. */
+    static juce::File getFactoryPresetsFolder();
+
     /** The preload sizes offered in the settings, in frames. */
     static constexpr std::array<int, 4> preloadChoices { 8192, 16384, 32768, 65536 };
     static constexpr int defaultPreloadFrames = 16384;

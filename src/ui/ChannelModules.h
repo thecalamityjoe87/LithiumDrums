@@ -105,7 +105,8 @@ public:
 private:
     juce::AudioProcessorValueTreeState& state;
     const bool withFader;
-    Knob fader { "Channel" }, pan { "Pan" }, send { "Reverb" };
+    Knob fader { "Channel", Knob::Style::labelled, Knob::Size::large }, pan { "Pan", Knob::Style::labelled, Knob::Size::large };
+    Knob send { "Reverb", Knob::Style::labelled, Knob::Size::large };
     ParamCombo output;
 };
 

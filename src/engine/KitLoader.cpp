@@ -99,7 +99,7 @@ namespace
                      std::array<std::unique_ptr<MicStore>, maxMics>& stores, juce::String& error)
     {
         const auto& layout = *plan.layout;
-        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (plan.folder.getChildFile (f.path)));
+        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (plan.folders[(size_t) f.source].getChildFile (f.path)));
 
         if (reader == nullptr || (int) reader->numChannels != f.numChannels)
         {
@@ -286,11 +286,12 @@ namespace
                         std::array<std::unique_ptr<MicStore>, maxMics>& stores, juce::String& error)
     {
         const auto& layout = *plan.layout;
-        juce::FileInputStream in (plan.stream->dataFile);
+        const auto& dataFile = plan.stream->dataFiles[(size_t) f.source];
+        juce::FileInputStream in (dataFile);
 
         if (! in.openedOk())
         {
-            error = "Can't open the stream cache " + plan.stream->dataFile.getFullPathName();
+            error = "Can't open the stream cache " + dataFile.getFullPathName();
             return false;
         }
 
@@ -390,6 +391,10 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         return nullptr;
     }
 
+    // Pieces played with other kits' recordings: from here on they're just
+    // pieces whose audio is in another folder.
+    swaps::apply (manifest, options.swaps);
+
     auto kit = std::make_unique<Kit>();
     kit->name = manifest.credits.name;
     kit->folder = folder;
@@ -402,6 +407,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     info.folder = folder;
     info.isPreset = manifest.isPreset;
     info.warnings = manifest.warnings;
+    info.slotOwners = manifest.slotOwners;
 
     for (const auto& [i, m] : juce::enumerate (manifest.mics))
     {
@@ -448,8 +454,32 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         pd.defaultGain = juce::Decibels::decibelsToGain (pm.volumeDb, -200.0f);
         pd.defaultTune = pm.tuneSemitones;
         pd.defaultDecay = pm.decay;
+        pd.sampleRate = pm.swap.has_value() ? pm.swap->sampleRate : manifest.sampleRate;
+        pd.micGain.fill (1.0f);
 
-        KitPieceInfo pieceInfo { pm.id, pm.name, pm.role, {}, pm.chokeNote, pd.firstArticulation };
+        KitPieceInfo pieceInfo;
+        pieceInfo.id = pm.id;
+        pieceInfo.name = pm.name;
+        pieceInfo.role = pm.role;
+        pieceInfo.defaultChokeNote = pm.chokeNote;
+        pieceInfo.firstArticulation = pd.firstArticulation;
+        pieceInfo.slot = pm.slot;
+
+        pieceInfo.recordedIn = pm.swap.has_value() ? pm.swap->kitId : manifest.isPreset ? manifest.baseId : manifest.id;
+
+        if (pm.swap.has_value())
+        {
+            pd.micGain = pm.swap->micGain;
+            pieceInfo.swappedFrom = pm.swap->kitName;
+            pieceInfo.swappedPiece = pm.swap->pieceName;
+
+            if (! pm.swap->dropped.isEmpty())
+                pieceInfo.swapNotes.add ("Not used: " + pm.swap->dropped.joinIntoString (", ") + " (" + kit->name
+                                         + " has no mic to match)");
+        }
+
+        if (pm.swapProblem.isNotEmpty())
+            pieceInfo.swapNotes.add (pm.swapProblem);
 
         for (const auto& am : pm.articulations)
         {
@@ -558,20 +588,23 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
     // Every distinct audio file, once. A multichannel file usually feeds
     // every mic of one hit.
-    // A preset's audio lives in its base kit's folder.
+    // A preset's audio lives in its base kit's folder, and a swapped-in
+    // piece's in its own kit's.
     auto plan = std::make_shared<LoadPlan>();
-    plan->folder = manifest.audioFolder;
     plan->numMics = kit->numMics;
 
-    std::map<juce::String, size_t> fileIndex;
+    for (int i = 0; i < manifest.numSources(); ++i)
+        plan->folders.push_back (manifest.folderOf (i));
+
+    std::map<std::pair<int, juce::String>, size_t> fileIndex;
     std::vector<size_t> sourceFile;
 
     for (const auto& s : sources)
     {
-        const auto [it, added] = fileIndex.try_emplace (s.source.file, plan->files.size());
+        const auto [it, added] = fileIndex.try_emplace ({ s.source.source, s.source.file }, plan->files.size());
 
         if (added)
-            plan->files.push_back ({ s.source.file, 0, {} });
+            plan->files.push_back ({ s.source.file, s.source.source, 0, {} });
 
         sourceFile.push_back (it->second);
     }
@@ -579,15 +612,22 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     // Pass 1: every file's header (in parallel; large kits have thousands).
     // Files already in the stream cache don't need opening: their entries
     // say everything the header would.
+    // One cache pack per audio folder.
     const auto& streaming = options.streaming;
     const auto mayStream = streaming.mode != StreamingMode::never && streaming.cacheFolder != juce::File();
-    auto pack = mayStream ? streamcache::Pack::open (streaming.cacheFolder, plan->folder) : streamcache::Pack();
+    std::vector<streamcache::Pack> packs;
+
+    for (const auto& f : plan->folders)
+        packs.push_back (mayStream ? streamcache::Pack::open (streaming.cacheFolder, f) : streamcache::Pack());
+
     std::vector<FileHeader> headers (plan->files.size());
     std::vector<size_t> uncached;
 
     for (size_t i = 0; i < plan->files.size(); ++i)
     {
-        if (const auto* e = mayStream ? pack.find (plan->files[i].path) : nullptr)
+        const auto& f = plan->files[i];
+
+        if (const auto* e = mayStream ? packs[(size_t) f.source].find (f.path) : nullptr)
             headers[i] = { e->numChannels, e->numFrames, e->sourceBits };
         else
             uncached.push_back (i);
@@ -598,7 +638,8 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
                        {
                            const auto i = uncached[j];
                            const auto& f = plan->files[i];
-                           return readHeader (formats, plan->folder.getChildFile (f.path), f.path, manifest.sampleRate, headers[i], jobError);
+                           return readHeader (formats, plan->folders[(size_t) f.source].getChildFile (f.path), f.path,
+                                              manifest.sampleRateOf (f.source), headers[i], jobError);
                        }))
         return nullptr;
 
@@ -643,14 +684,27 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     if (stream && ! uncached.empty())
     {
         setPhase (options, LoadPhase::caching);
-        juce::StringArray paths;
 
-        for (const auto i : uncached)
-            paths.add (plan->files[i].path);
+        for (int source = 0; source < manifest.numSources(); ++source)
+        {
+            juce::StringArray paths;
 
-        if (! streamcache::cacheFiles (streaming.cacheFolder, plan->folder, paths, manifest.sampleRate, pack, error,
-                                       options.shouldAbort, [&] (float p) { setProgress (options, 0.1f + 0.75f * p); }))
-            return nullptr;
+            for (const auto i : uncached)
+                if (plan->files[i].source == source)
+                    paths.add (plan->files[i].path);
+
+            if (paths.isEmpty())
+                continue;
+
+            // Progress runs across the sources in turn.
+            const auto from = 0.1f + 0.75f * (float) source / (float) manifest.numSources();
+            const auto span = 0.75f / (float) manifest.numSources();
+
+            if (! streamcache::cacheFiles (streaming.cacheFolder, plan->folders[(size_t) source], paths,
+                                           manifest.sampleRateOf (source), packs[(size_t) source], error, options.shouldAbort,
+                                           [&] (float p) { setProgress (options, from + span * p); }))
+                return nullptr;
+        }
     }
 
     setPhase (options, LoadPhase::loading);
@@ -701,7 +755,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
         if (stream)
         {
-            const auto* e = pack.find (file.path);
+            const auto* e = packs[(size_t) file.source].find (file.path);
 
             if (e == nullptr)
             {
@@ -711,6 +765,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
             StreamRegion r;
             r.bytesPerSample = e->bytesPerSample;
+            r.pack = file.source;
 
             for (int ch = 0; ch < micChannels; ++ch)
                 r.offset[(size_t) ch] = e->offsetOf (fileChannels[(size_t) ch], s.source.start);
@@ -729,7 +784,10 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     if (stream)
     {
         auto map = std::make_shared<StreamMap>();
-        map->dataFile = pack.getDataFile();
+
+        for (const auto& p : packs)
+            map->dataFiles.push_back (p.getDataFile());
+
         map->regions = std::move (regions);
         plan->stream = std::move (map);
         plan->streamBufferBytes = StreamingSampleSource::bufferBytesFor (micChannels, kit->numMics, DrumEngine::numVoices);
@@ -753,7 +811,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
                                                                                                 : std::make_shared<StreamStats>());
         if (! streamer->isValid())
         {
-            error = "Can't open the stream cache " + plan->stream->dataFile.getFullPathName();
+            error = "Can't open the stream cache " + plan->stream->dataFiles.front().getFullPathName();
             return nullptr;
         }
 
@@ -771,7 +829,7 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     info.preloadFrames = stream ? (int) maxStored : 0;
     info.fullMemoryBytes = fullBytes;
     info.streamBufferBytes = plan->streamBufferBytes;
-    info.streamCache = stream ? pack.getFolder() : juce::File();
+    info.streamCache = stream ? packs.front().getFolder() : juce::File();
 
     // MIDI: the map the load was requested with (Lithium Standard, the kit's
     // own map, General MIDI or an e-kit map), resolved against this kit.
@@ -965,6 +1023,7 @@ void KitLoader::loadRequested (const Request& r, std::uint64_t myGeneration)
     options.phase = &phase;
     options.streaming = r.streaming;
     options.streamStats = r.streamStats;
+    options.swaps = r.swaps;
     options.shouldAbort = [this, myGeneration] { return threadShouldExit() || generation.load() != myGeneration; };
 
     auto kit = loadKit (r.folder, r.midiMap, *info, error, options, &plan);
@@ -994,7 +1053,7 @@ void KitLoader::loadRequested (const Request& r, std::uint64_t myGeneration)
 
     {
         std::scoped_lock lock (mutex);
-        result = Result { r.folder, std::move (info), error, r.resetToken };
+        result = Result { r.folder, std::move (info), error, r.resetToken, r.swaps };
     }
 
     if (onLoadFinished)

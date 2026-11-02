@@ -241,7 +241,8 @@ void DrumEngine::trigger (Kit& kit, int articulationIndex, int velocity, const E
     // The Tune parameter is added to the kit's (or preset's) own tuning of the piece.
     const auto& piece = params.pieces[(size_t) art.piece];
     const auto semitones = piece.tuneSemitones + kit.pieces[(size_t) art.piece].defaultTune;
-    const auto pitchRatio = std::exp2 (semitones / 12.0) * kit.sampleRate / sampleRate;
+    // The piece's own sample rate: a piece swapped in from another kit may have been recorded at another.
+    const auto pitchRatio = std::exp2 (semitones / 12.0) * kit.pieces[(size_t) art.piece].sampleRate / sampleRate;
 
     // Within one zone, velocity still scales the level a little (by the zone's
     // velocityRangeDb), so the response is continuous instead of stepping at

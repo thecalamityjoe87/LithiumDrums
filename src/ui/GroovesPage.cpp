@@ -16,10 +16,11 @@ namespace
     constexpr int leftWidth = 330;
     constexpr int transportHeight = 60;
     constexpr int grooveRowHeight = 46;
-    constexpr int tileHeight = 96;
-    constexpr int tileGap = 10;
-    constexpr int minTileWidth = 156;
+    constexpr int cardHeight = 128;
+    constexpr int cardGap = 10;
+    constexpr int minCardWidth = 200;
     constexpr int sectionHeight = 30;
+    constexpr int detailHeight = 212;
     constexpr double minTempo = 40.0, maxTempo = 240.0;
 
     // Settings kept with the project (see LithiumDrumsProcessor::getGrooveSetting).
@@ -27,22 +28,164 @@ namespace
 
     const juce::String dot (juce::CharPointer_UTF8 (" \xc2\xb7 "));   // a middle dot, in UTF-8
 
-    /** Rows of the mini roll on each tile, top to bottom. */
-    constexpr PieceGroup laneGroups[] { PieceGroup::cymbals, PieceGroup::hats, PieceGroup::toms, PieceGroup::snare, PieceGroup::kick };
-    constexpr int numLanes = (int) std::size (laneGroups);
+    //==============================================================================
+    // What the cards and the detail pane show of a clip.
 
-    int laneOf (PieceGroup g)
+    /** The detail pane's lanes, top to bottom, and the kinds of piece in each. */
+    enum class Lane { crash, ride, hihat, snare, toms, kick, other };
+    constexpr std::array allLanes { Lane::crash, Lane::ride, Lane::hihat, Lane::snare, Lane::toms, Lane::kick, Lane::other };
+
+    Lane laneOf (std::optional<PieceRole> role)
     {
-        for (int i = 0; i < numLanes; ++i)
-            if (laneGroups[i] == g)
-                return i;
+        switch (role.value_or (PieceRole::other))
+        {
+            case PieceRole::crash:
+            case PieceRole::china:    return Lane::crash;
+            case PieceRole::ride:     return Lane::ride;
+            case PieceRole::hihat:    return Lane::hihat;
+            case PieceRole::snare:    return Lane::snare;
+            case PieceRole::tom:
+            case PieceRole::floorTom: return Lane::toms;
+            case PieceRole::kick:     return Lane::kick;
+            case PieceRole::other:    break;
+        }
 
-        return 0;   // percussion goes with the cymbals, on top
+        return Lane::other;
     }
 
-    juce::String barsText (int bars)
+    const char* laneName (Lane l)
     {
-        return juce::String (bars) + (bars == 1 ? " BAR" : " BARS");
+        switch (l)
+        {
+            case Lane::crash: return "Crash";
+            case Lane::ride:  return "Ride";
+            case Lane::hihat: return "Hi-hat";
+            case Lane::snare: return "Snare";
+            case Lane::toms:  return "Toms";
+            case Lane::kick:  return "Kick";
+            case Lane::other: break;
+        }
+
+        return "Other";
+    }
+
+    juce::Colour laneColour (Lane l)
+    {
+        using namespace theme::colours;
+
+        switch (l)
+        {
+            case Lane::crash:
+            case Lane::ride:  return groupCymbals;
+            case Lane::hihat: return groupHats;
+            case Lane::snare: return groupSnare;
+            case Lane::toms:  return groupToms;
+            case Lane::kick:  return groupKick;
+            case Lane::other: break;
+        }
+
+        return textMuted;
+    }
+
+    using RoleTable = std::array<std::optional<PieceRole>, 128>;
+
+    /** A clip's hits, from `start` (in beats) for `bars` bars, with beats counted from its start. */
+    std::vector<grooves::Hit> hitsOf (const std::vector<grooves::Hit>& hits, double start, int bars, double beatsPerBar)
+    {
+        std::vector<grooves::Hit> result;
+        const auto length = bars * beatsPerBar;
+
+        for (auto h : hits)
+        {
+            h.beat -= start;
+
+            if (h.beat >= -grooves::earlyHitBeats && h.beat < length && juce::isPositiveAndBelow (h.note, 128))
+            {
+                h.beat = std::max (0.0, h.beat);
+                result.push_back (h);
+            }
+        }
+
+        return result;
+    }
+
+    /** What a card shows of a clip. */
+    struct Summary
+    {
+        juce::String feel;           // "Straight", "Shuffle" or "Half-time"
+        int intensity = 1;           // 1 (sparse) to 3 (busy)
+        int steps = 16;              // per bar
+        // Bar 1 on three rows (kick, snare, hats or ride): the loudest hit on each step, 0 for none.
+        std::array<std::vector<std::uint8_t>, 3> preview;
+    };
+
+    Summary summarise (const std::vector<grooves::Hit>& hits, int bars, const grooves::Groove& groove, const RoleTable& roles)
+    {
+        Summary s;
+        const auto beatsPerBar = groove.beatsPerBar();
+        s.steps = std::max (4, juce::roundToInt (beatsPerBar * 4.0));
+
+        for (auto& row : s.preview)
+            row.assign ((size_t) s.steps, 0);
+
+        int counted = 0, offbeats = 0, strongOnTwoAndFour = 0, strongOnThree = 0;
+        double offbeatSum = 0.0;
+
+        for (const auto& h : hits)
+        {
+            const auto role = roles[(size_t) h.note];
+            const auto lane = laneOf (role);
+
+            if (h.velocity >= 30)
+                ++counted;
+
+            // Bar 1, on the step grid. Toms, cymbal crashes and ghost notes
+            // stay out of the card's preview (the detail pane has them).
+            if (h.beat < beatsPerBar)
+            {
+                const auto step = juce::jlimit (0, s.steps - 1, juce::roundToInt (h.beat * 4.0));
+                const auto row = lane == Lane::kick ? 0 : lane == Lane::snare ? 1 : (lane == Lane::hihat || lane == Lane::ride) ? 2 : -1;
+
+                if (row >= 0 && ! (row == 1 && h.velocity < 40))
+                {
+                    auto& v = s.preview[(size_t) row][(size_t) step];
+                    v = (std::uint8_t) std::max ((int) v, h.velocity);
+                }
+            }
+
+            // Feel: where the off-beat eighths fall, and where the backbeat is.
+            const auto inBeat = h.beat - std::floor (h.beat);
+
+            if (inBeat > 0.35 && inBeat < 0.8 && lane != Lane::other)
+            {
+                ++offbeats;
+                offbeatSum += inBeat;
+            }
+
+            if (lane == Lane::snare && h.velocity >= 60)
+            {
+                const auto inBar = std::fmod (h.beat, beatsPerBar);
+
+                if (std::abs (inBar - 1.0) < 0.15 || std::abs (inBar - 3.0) < 0.15)
+                    ++strongOnTwoAndFour;
+                else if (std::abs (inBar - 2.0) < 0.15)
+                    ++strongOnThree;
+            }
+        }
+
+        const auto perBar = (double) counted / std::max (1, bars);
+        s.intensity = perBar <= 14.0 ? 1 : perBar <= 24.0 ? 2 : 3;
+
+        const auto fourFour = groove.numerator == 4 && groove.denominator == 4;
+
+        if (offbeats >= 2 * bars && offbeatSum / offbeats >= 0.6)
+            s.feel = "Shuffle";
+        else if (fourFour && strongOnThree >= bars * 0.6 && strongOnTwoAndFour <= strongOnThree * 0.3)
+            s.feel = "Half-time";
+        else
+            s.feel = "Straight";
+
+        return s;
     }
 
     juce::String encode (GroovesPage::Part p)
@@ -109,19 +252,22 @@ public:
         repaint();
     }
 
-    void resized() override
+    /** Lays the chips out in up to `available` pixels, and returns how many
+        they take: the chips that fit, then "More" (only as wide as its
+        label) for the rest. The page gives what's left to the search box,
+        so there's no gap after the last chip. */
+    int layOut (int available)
     {
-        // Lays the chips out left to right, keeping room for "More" if they don't all fit.
-        const auto moreWidth = 96.0f;
         auto x = 0.0f;
         visibleCount = 0;
+        const auto moreWidth = moreChipWidth();
 
         for (size_t i = 0; i < chips.size(); ++i)
         {
             const auto w = chipWidth (chips[i]);
             const auto roomNeeded = i + 1 < chips.size() ? moreWidth + gap : 0.0f;
 
-            if (x + w + roomNeeded > (float) getWidth())
+            if (x + w + roomNeeded > (float) available)
                 break;
 
             chips[i].bounds = { x, 0.0f, w, (float) getHeight() };
@@ -129,9 +275,20 @@ public:
             ++visibleCount;
         }
 
-        moreBounds = visibleCount < (int) chips.size() ? juce::Rectangle<float> (x, 0.0f, moreWidth, (float) getHeight())
-                                                       : juce::Rectangle<float>();
+        if (visibleCount < (int) chips.size())
+        {
+            moreBounds = { x, 0.0f, moreWidth, (float) getHeight() };
+            x += moreWidth + gap;
+        }
+        else
+        {
+            moreBounds = {};
+        }
+
+        return juce::roundToInt (std::max (0.0f, x - gap));
     }
+
+    void resized() override    { layOut (getWidth()); }
 
     void paint (juce::Graphics& g) override
     {
@@ -145,23 +302,7 @@ public:
         }
 
         if (! moreBounds.isEmpty())
-        {
-            // "More" shows the style chosen from it, if one is.
-            juce::String name ("More");
-            auto on = false;
-
-            for (size_t i = (size_t) visibleCount; i < chips.size(); ++i)
-            {
-                if (chips[i].key == page.styleFilter)
-                {
-                    name = chips[i].name;
-                    on = true;
-                }
-            }
-
-            drawChip (g, moreBounds, name + juce::String (juce::CharPointer_UTF8 (" \xe2\x96\xbe")), -1, on,
-                      hovering && moreBounds.contains (mouse));
-        }
+            drawChip (g, moreBounds, moreLabel(), -1, isHiddenStyleChosen(), hovering && moreBounds.contains (mouse));
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -205,7 +346,43 @@ private:
         page.styleFilter = key;
         page.processor.setGrooveSetting (settingStyle, key);
         page.applyFilter();
+        page.resized();   // "More" may now name the style, and be wider
         repaint();
+    }
+
+    /** "More", or the style chosen from it. */
+    juce::String moreLabel() const
+    {
+        juce::String name ("More");
+
+        for (size_t i = (size_t) visibleCount; i < chips.size(); ++i)
+            if (chips[i].key == page.styleFilter && page.styleFilter.isNotEmpty())
+                name = chips[i].name;
+
+        return name + juce::String (juce::CharPointer_UTF8 (" \xe2\x96\xbe"));
+    }
+
+    bool isHiddenStyleChosen() const
+    {
+        for (size_t i = (size_t) visibleCount; i < chips.size(); ++i)
+            if (chips[i].key == page.styleFilter && page.styleFilter.isNotEmpty())
+                return true;
+
+        return false;
+    }
+
+    float moreChipWidth() const
+    {
+        // As wide as the longest label it could show, so choosing a style from it doesn't reflow the row.
+        const juce::String arrow (juce::CharPointer_UTF8 (" \xe2\x96\xbe"));
+        const auto font = theme::body (13.5f, theme::Weight::medium);
+        auto widest = juce::GlyphArrangement::getStringWidth (font, "More" + arrow);
+
+        for (const auto& c : chips)
+            if (c.key == page.styleFilter && c.key.isNotEmpty())
+                widest = std::max (widest, juce::GlyphArrangement::getStringWidth (font, c.name + arrow));
+
+        return widest + 32.0f;
     }
 
     static float chipWidth (const Chip& c)
@@ -338,15 +515,18 @@ private:
 };
 
 //==============================================================================
-/** The selected groove's tiles: the whole take and its phrases, then its
-    fills. One component draws them all; each tile has a mini roll of its
-    hits, a row per kind of drum in the group colours. */
+/** The selected groove's cards: the whole take and its phrases, then its
+    fills, all the same size. Each card has what someone browsing needs at a
+    glance (its bars, the tempo and meter, the style and feel, how busy it
+    is) and a short preview of its first bar on three rows: kick, snare and
+    hi-hat (or ride). The whole of the selected card is in the detail pane
+    below. One component draws every card. */
 class GroovesPage::TileGrid final : public juce::Component, public juce::TooltipClient
 {
 public:
     explicit TileGrid (GroovesPage& p) : page (p)   { setRepaintsOnMouseActivity (true); }
 
-    /** Rebuilds the tiles for the selected groove, at this width. */
+    /** Rebuilds the cards for the selected groove, at this width. */
     void rebuild (int width)
     {
         tiles.clear();
@@ -361,18 +541,12 @@ public:
             return;
         }
 
-        // Which lane each recorded note is drawn in.
-        const auto noteMap = MidiMap::factoryMap (pack->noteMap);
-        std::array<int, 128> lanes {};
-
-        for (int n = 0; n < 128; ++n)
-            lanes[(size_t) n] = laneOf (grooves::groupOf (noteMap, n));
-
-        const auto columns = std::max (1, (width + tileGap) / (minTileWidth + tileGap));
-        const auto tileWidth = (width - tileGap * (columns - 1)) / columns;
+        const auto roles = page.roleTable();
+        const auto columns = std::max (1, (width + cardGap) / (minCardWidth + cardGap));
+        const auto cardWidth = (width - cardGap * (columns - 1)) / columns;
         auto y = 0;
 
-        auto addSection = [&] (const juce::String& heading, const std::vector<Tile>& section)
+        auto addSection = [&] (const juce::String& heading, std::vector<Tile> section)
         {
             if (section.empty())
                 return;
@@ -382,31 +556,21 @@ public:
 
             for (size_t i = 0; i < section.size(); ++i)
             {
-                auto t = section[i];
+                auto t = std::move (section[i]);
                 const auto column = (int) i % columns;
-                t.bounds = { column * (tileWidth + tileGap), y, tileWidth, tileHeight };
+                t.bounds = { column * (cardWidth + cardGap), y, cardWidth, cardHeight };
                 tiles.push_back (std::move (t));
 
                 if (column == columns - 1 || i + 1 == section.size())
-                    y += tileHeight + tileGap;
+                    y += cardHeight + cardGap;
             }
 
             y += 6;
         };
 
-        auto marksFor = [&lanes] (const std::vector<grooves::Hit>& hits, double start, double length)
+        auto tile = [&] (Part part, const juce::String& title, const std::vector<grooves::Hit>& hits, double start, int bars)
         {
-            std::vector<Mark> marks;
-
-            for (const auto& h : hits)
-            {
-                const auto t = (h.beat - start) / length;
-
-                if (t >= -grooves::earlyHitBeats / length && t < 1.0 && juce::isPositiveAndBelow (h.note, 128))
-                    marks.push_back ({ (float) std::max (0.0, t), lanes[(size_t) h.note], h.velocity });
-            }
-
-            return marks;
+            return Tile { part, title, bars, summarise (hitsOf (hits, start, bars, groove->beatsPerBar()), bars, *groove, roles), {} };
         };
 
         const auto beatsPerBar = groove->beatsPerBar();
@@ -414,19 +578,16 @@ public:
         if (page.beatsButton.getToggleState())
         {
             std::vector<Tile> section;
-            section.push_back ({ { Part::Kind::whole, 0 }, "WHOLE TAKE", barsText (groove->bars), groove->bars, beatsPerBar,
-                                 marksFor (page.takeHits, 0.0, groove->bars * beatsPerBar), {} });
+            section.push_back (tile ({ Part::Kind::whole, 0 }, "Whole take", page.takeHits, 0.0, groove->bars));
 
             for (int i = 0; i < grooves::numPhrases (*pack, *groove); ++i)
             {
                 const auto bars = grooves::phraseBars (*pack, *groove, i);
-                section.push_back ({ { Part::Kind::phrase, i },
-                                     "BARS " + juce::String (bars.getStart() + 1) + "-" + juce::String (bars.getEnd()),
-                                     barsText (bars.getLength()), bars.getLength(), beatsPerBar,
-                                     marksFor (page.takeHits, bars.getStart() * beatsPerBar, bars.getLength() * beatsPerBar), {} });
+                section.push_back (tile ({ Part::Kind::phrase, i }, "Bars " + juce::String (bars.getStart() + 1) + "-" + juce::String (bars.getEnd()),
+                                         page.takeHits, bars.getStart() * beatsPerBar, bars.getLength()));
             }
 
-            addSection ("PHRASES" + dot + juce::String (pack->phraseBars) + " BARS EACH", section);
+            addSection ("PHRASES" + dot + juce::String (pack->phraseBars) + " BARS EACH", std::move (section));
         }
 
         if (page.fillsButton.getToggleState())
@@ -434,13 +595,9 @@ public:
             std::vector<Tile> section;
 
             for (size_t i = 0; i < groove->fills.size() && i < page.fillHits.size(); ++i)
-            {
-                const auto& fill = groove->fills[i];
-                section.push_back ({ { Part::Kind::fill, (int) i }, fill.name.toUpperCase(), barsText (fill.bars), fill.bars,
-                                     beatsPerBar, marksFor (page.fillHits[i], 0.0, fill.bars * beatsPerBar), {} });
-            }
+                section.push_back (tile ({ Part::Kind::fill, (int) i }, groove->fills[i].name, page.fillHits[i], 0.0, groove->fills[i].bars));
 
-            addSection ("FILLS" + dot + "RECORDED WITH THIS GROOVE", section);
+            addSection ("FILLS" + dot + "RECORDED WITH THIS GROOVE", std::move (section));
         }
 
         setSize (width, std::max (tiles.empty() ? 40 : 0, y));
@@ -456,7 +613,7 @@ public:
         return {};
     }
 
-    /** Repaints the tile that's playing, for its progress line. */
+    /** Repaints the card that's playing, for its progress line. */
     void repaintPlaying()
     {
         if (const auto r = boundsOf (page.playingPart); ! r.isEmpty())
@@ -475,8 +632,10 @@ public:
         if (tiles.empty() && page.selectedGroove() != nullptr)
         {
             g.setColour (colours::textMuted);
-            g.setFont (body (14.0f));
-            g.drawText ("No fills were recorded with this groove.", getLocalBounds().withHeight (40), juce::Justification::centredLeft, false);
+            g.setFont (body (type::body));
+            g.drawText (page.beatsButton.getToggleState() ? "This groove has no phrases to show."
+                                                          : "No fills were recorded with this groove. Switch Beats on to see its phrases.",
+                        getLocalBounds().withHeight (40), juce::Justification::centredLeft, false);
         }
 
         for (const auto& h : headings)
@@ -486,18 +645,19 @@ public:
                              juce::Justification::bottomLeft);
         }
 
+        const auto* groove = page.selectedGroove();
         const auto& feedback = page.processor.getGroovePlayer().getFeedback();
         const auto playingThis = page.processor.isGroovePlaying() && feedback.clipId.load() == page.playingClipId
                                   && page.playingGroove.pack == page.selected.pack && page.playingGroove.groove == page.selected.groove;
 
         for (const auto& t : tiles)
         {
-            if (! g.clipRegionIntersects (t.bounds))
+            if (! g.clipRegionIntersects (t.bounds) || groove == nullptr)
                 continue;
 
             const auto progress = playingThis && t.part == page.playingPart
-                                    ? feedback.position.load() / (t.bars * t.beatsPerBar) : -1.0;
-            paintTile (g, t, t.part == page.selectedPart, isMouseOver() && t.bounds.contains (getMouseXYRelative()), progress);
+                                    ? feedback.position.load() / (t.bars * groove->beatsPerBar()) : -1.0;
+            paintTile (g, t, *groove, t.part == page.selectedPart, isMouseOver() && t.bounds.contains (getMouseXYRelative()), progress);
         }
     }
 
@@ -509,7 +669,7 @@ public:
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        // Dragging a tile out of the window drops its MIDI into the host.
+        // Dragging a card out of the window drops its MIDI into the host.
         if (pressed < 0 || dragStarted || e.getDistanceFromDragStart() < 6)
             return;
 
@@ -528,7 +688,7 @@ public:
         const auto isPlaying = page.processor.isGroovePlaying() && part == page.playingPart
                                 && page.playingGroove.pack == page.selected.pack && page.playingGroove.groove == page.selected.groove;
 
-        // Clicking the tile that's playing stops it; any other tile plays.
+        // Clicking the card that's playing stops it; any other card plays.
         if (isPlaying)
             page.togglePlay();
         else
@@ -537,24 +697,24 @@ public:
 
     juce::String getTooltip() override
     {
-        return tileAt (getMouseXYRelative()) >= 0 ? "Click to play, drag into your host for the MIDI" : juce::String();
+        const auto i = tileAt (getMouseXYRelative());
+
+        if (i < 0)
+            return {};
+
+        const auto& t = tiles[(size_t) i];
+        return t.title + ": " + t.summary.feel.toLowerCase() + ", " + juce::String (t.summary.intensity) + " of 3 for how busy it is.\n"
+               "Click to play, drag into your host for the MIDI. The preview shows bar 1: kick, snare (without ghost notes) "
+               "and hi-hat or ride.";
     }
 
 private:
-    struct Mark
-    {
-        float x;          // 0..1 across the tile
-        int lane;
-        int velocity;
-    };
-
     struct Tile
     {
         Part part;
-        juce::String title, length;
+        juce::String title;
         int bars;
-        double beatsPerBar;
-        std::vector<Mark> marks;
+        Summary summary;
         juce::Rectangle<int> bounds;
     };
 
@@ -573,7 +733,32 @@ private:
         return -1;
     }
 
-    static void paintTile (juce::Graphics& g, const Tile& t, bool isSelected, bool hover, double progress)
+    /** Small rounded tags ("Rock", "Shuffle"), as many as fit. */
+    static void paintTags (juce::Graphics& g, juce::StringArray tags, juce::Rectangle<float> area)
+    {
+        using namespace theme;
+        const auto font = body (11.0f, Weight::medium);
+
+        for (const auto& tag : tags)
+        {
+            const auto w = juce::GlyphArrangement::getStringWidth (font, tag) + 14.0f;
+
+            if (w > area.getWidth())
+                break;
+
+            const auto r = area.removeFromLeft (w);
+            area.removeFromLeft (4.0f);
+            g.setColour (colours::background.withAlpha (0.6f));
+            g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+            g.setColour (colours::border);
+            g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() * 0.5f, 1.0f);
+            g.setColour (colours::textMuted);
+            g.setFont (font);
+            g.drawText (tag, r, juce::Justification::centred, false);
+        }
+    }
+
+    static void paintTile (juce::Graphics& g, const Tile& t, const grooves::Groove& groove, bool isSelected, bool hover, double progress)
     {
         using namespace theme;
 
@@ -586,45 +771,84 @@ private:
                                            : (hover ? colours::borderStrong : colours::border));
         g.drawRoundedRectangle (bounds, cornerRadius + 1.0f, playing || isSelected ? 1.5f : 1.0f);
 
-        auto area = bounds.reduced (12.0f, 9.0f);
-        auto top = area.removeFromTop (18.0f);
+        auto area = bounds.reduced (12.0f, 10.0f);
 
-        g.setColour (colours::textMuted);
-        g.setFont (mono (10.5f));
-        g.drawText (t.length, top.removeFromRight (56.0f), juce::Justification::centredRight, false);
+        // Name, with the intensity dots on the right.
+        auto top = area.removeFromTop (20.0f);
+        auto dots = top.removeFromRight (3 * 6.0f + 2 * 4.0f);
 
-        g.setColour (playing ? colours::accent : colours::text);
-        drawTrackedText (g, t.title, label (13.5f, Weight::semibold), 0.06f, top, juce::Justification::centredLeft);
-
-        // The mini roll: bar lines, then the hits.
-        const auto roll = area.withTrimmedTop (8.0f);
-        const auto laneHeight = roll.getHeight() / numLanes;
-        const auto beats = t.bars * t.beatsPerBar;
-        const auto beatStep = beats > 16 ? t.beatsPerBar : 1.0;   // long takes: bar lines only
-
-        for (auto b = beatStep; b < beats - 0.001; b += beatStep)
+        for (int i = 0; i < 3; ++i)
         {
-            const auto isBar = std::fmod (b, t.beatsPerBar) < 0.001;
-            g.setColour (isBar ? colours::borderStrong : colours::border.withAlpha (0.6f));
-            g.fillRect (juce::Rectangle<float> (roll.getX() + (float) (b / beats) * roll.getWidth(), roll.getY(), 1.0f, roll.getHeight()));
+            g.setColour (i < t.summary.intensity ? colours::accent : colours::borderStrong);
+            g.fillEllipse (dots.removeFromLeft (6.0f).withSizeKeepingCentre (6.0f, 6.0f));
+            dots.removeFromLeft (4.0f);
         }
 
-        const auto markWidth = beats > 32 ? 1.0f : 2.0f;
+        top.removeFromRight (6.0f);
+        g.setColour (playing ? colours::accent : colours::text);
+        g.setFont (body (14.5f, Weight::semibold));
+        g.drawText (t.title, top, juce::Justification::centredLeft, true);
 
-        for (const auto& m : t.marks)
+        // The facts.
+        g.setColour (colours::textMuted);
+        g.setFont (mono (type::caption));
+        g.drawText (juce::String (juce::roundToInt (groove.bpm)) + " BPM" + dot + groove.meter() + dot + juce::String (t.bars)
+                        + (t.bars == 1 ? " BAR" : " BARS"),
+                    area.removeFromTop (16.0f), juce::Justification::centredLeft, true);
+        area.removeFromTop (6.0f);
+
+        juce::StringArray tags { groove.styleName };
+
+        if (groove.substyle.isNotEmpty() && groove.substyle != groove.styleName)
+            tags.add (groove.substyle);
+
+        tags.add (t.summary.feel);
+        paintTags (g, tags, area.removeFromTop (18.0f));
+        area.removeFromTop (8.0f);
+
+        // Bar 1 on three rows.
+        constexpr std::array<Lane, 3> rows { Lane::kick, Lane::snare, Lane::hihat };
+        constexpr std::array<const char*, 3> letters { "K", "S", "H" };
+        auto preview = area.removeFromTop (36.0f);
+        auto labels = preview.removeFromLeft (14.0f);
+        const auto rowHeight = preview.getHeight() / 3.0f;
+        const auto stepWidth = preview.getWidth() / (float) t.summary.steps;
+
+        for (size_t r = 0; r < rows.size(); ++r)
         {
-            g.setColour (groupColour (laneGroups[(size_t) m.lane]).withAlpha (0.3f + 0.7f * (float) m.velocity / 127.0f));
-            g.fillRect (juce::Rectangle<float> (roll.getX() + m.x * (roll.getWidth() - markWidth),
-                                                roll.getY() + (float) m.lane * laneHeight + 1.0f, markWidth, laneHeight - 2.0f));
+            const auto row = preview.withY (preview.getY() + rowHeight * (float) r).withHeight (rowHeight);
+            g.setColour (colours::textMuted);
+            g.setFont (label (10.0f));
+            g.drawText (letters[r], labels.withY (row.getY()).withHeight (rowHeight), juce::Justification::centredLeft, false);
+
+            for (int step = 0; step < t.summary.steps; ++step)
+            {
+                const auto centre = juce::Point<float> (row.getX() + stepWidth * ((float) step + 0.5f), row.getCentreY());
+                const auto velocity = t.summary.preview[r][(size_t) step];
+
+                if (velocity == 0)
+                {
+                    // An empty step: a faint mark, a little brighter on the beat.
+                    g.setColour (step % 4 == 0 ? colours::borderStrong : colours::border);
+                    g.fillEllipse (juce::Rectangle<float> (2.0f, 2.0f).withCentre (centre));
+                    continue;
+                }
+
+                // Velocity shows as size and brightness, never smaller than readable.
+                const auto v = (float) velocity / 127.0f;
+                const auto size = std::min (rowHeight - 2.0f, 4.0f + 4.5f * v);
+                g.setColour (laneColour (rows[r]).withAlpha (0.45f + 0.55f * v));
+                g.fillEllipse (juce::Rectangle<float> (size, size).withCentre (centre));
+            }
         }
 
         if (playing)
         {
-            const auto x = roll.getX() + (float) juce::jlimit (0.0, 1.0, progress) * roll.getWidth();
-            g.setColour (colours::accent.withAlpha (0.08f));
-            g.fillRect (roll.withRight (x));
+            const auto line = bounds.reduced (cornerRadius, 0.0f).removeFromBottom (2.0f).translated (0.0f, -2.0f);
+            g.setColour (colours::accent.withAlpha (0.25f));
+            g.fillRect (line);
             g.setColour (colours::accent);
-            g.fillRect (juce::Rectangle<float> (x - 0.75f, roll.getY() - 2.0f, 1.5f, roll.getHeight() + 4.0f));
+            g.fillRect (line.withWidth (line.getWidth() * (float) juce::jlimit (0.0, 1.0, progress)));
         }
     }
 
@@ -634,6 +858,268 @@ private:
     int pressed = -1;
     bool dragStarted = false;
     juce::Rectangle<int> lastPlayingBounds;
+};
+
+//==============================================================================
+/** The selected card in full: a lane per kind of piece across all its bars,
+    every hit as a mark (louder hits brighter), with the playhead while it
+    plays. Long takes scroll sideways, following the playhead. Like the cards,
+    clicking plays it and dragging drops its MIDI into the host. */
+class GroovesPage::DetailPane final : public juce::Component
+{
+public:
+    explicit DetailPane (GroovesPage& p) : page (p), roll (*this)
+    {
+        view.setViewedComponent (&roll, false);
+        view.setScrollBarsShown (false, true);
+        view.setScrollBarThickness (8);
+        view.getHorizontalScrollBar().setColour (juce::ScrollBar::thumbColourId, theme::colours::borderStrong);
+        addAndMakeVisible (view);
+    }
+
+    void show (const juce::String& newTitle, std::vector<grooves::Hit> hits, int numBars, double perBar, const RoleTable& roles)
+    {
+        title = newTitle;
+        bars = std::max (1, numBars);
+        beatsPerBar = perBar;
+        lanes.clear();
+        marks.clear();
+
+        std::array<bool, allLanes.size()> used {};
+
+        for (const auto& h : hits)
+            used[(size_t) laneOf (roles[(size_t) h.note])] = true;
+
+        for (size_t i = 0; i < allLanes.size(); ++i)
+            if (used[i])
+                lanes.push_back (allLanes[i]);
+
+        for (const auto& h : hits)
+        {
+            const auto lane = (int) std::distance (lanes.begin(), std::find (lanes.begin(), lanes.end(), laneOf (roles[(size_t) h.note])));
+            marks.push_back ({ h.beat, lane, h.velocity });
+        }
+
+        playhead = -1.0;
+        view.setViewPosition (0, 0);
+        resized();
+        repaint();
+    }
+
+    void clear()
+    {
+        title = {};
+        lanes.clear();
+        marks.clear();
+        repaint();
+        roll.repaint();
+    }
+
+    /** Where the playhead is, in beats, or -1 when this part isn't playing. */
+    void setPlayhead (double beats)
+    {
+        if (juce::approximatelyEqual (beats, playhead))
+            return;
+
+        // Only the strips the playhead leaves and enters are repainted.
+        roll.repaint (playheadArea (playhead));
+        playhead = beats;
+        roll.repaint (playheadArea (playhead));
+
+        // Keep it in view on long takes.
+        if (beats >= 0.0 && roll.getWidth() > view.getWidth())
+        {
+            const auto x = xOf (beats);
+
+            if (x < view.getViewPositionX() || x > view.getViewPositionX() + view.getWidth() - 40)
+                view.setViewPosition (juce::jlimit (0, roll.getWidth() - view.getWidth(), x - 40), 0);
+        }
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+
+        g.setColour (colours::panel);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), cornerRadius + 2.0f);
+        g.setColour (colours::border);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), cornerRadius + 2.0f, 1.0f);
+
+        auto header = getLocalBounds().reduced (space::md, 0).removeFromTop (headerHeight).toFloat();
+        g.setColour (colours::textMuted);
+        drawTrackedText (g, (title.isEmpty() ? juce::String ("FULL VIEW") : title.toUpperCase() + dot + "FULL VIEW"),
+                         label (12.5f), 0.1f, header, juce::Justification::centredLeft);
+        g.setFont (body (type::small));
+        g.drawText ("Click to play, drag into your host for the MIDI", header, juce::Justification::centredRight, false);
+
+        if (lanes.empty())
+        {
+            g.drawText (title.isEmpty() ? "Pick a phrase or a fill above to see all of its hits." : "No hits in this part.",
+                        getLocalBounds().withTrimmedTop (headerHeight), juce::Justification::centred, false);
+            return;
+        }
+
+        // The lane names, in a column of their own beside the scrolling roll.
+        const auto laneHeight = getLaneHeight();
+
+        for (size_t i = 0; i < lanes.size(); ++i)
+        {
+            const auto r = juce::Rectangle<int> (space::md, view.getY() + barNumberHeight + (int) i * laneHeight, labelWidth - space::sm, laneHeight);
+            g.setColour (laneColour (lanes[i]));
+            g.fillEllipse (r.toFloat().removeFromLeft (6.0f).withSizeKeepingCentre (6.0f, 6.0f));
+            g.setColour (colours::text);
+            g.setFont (body (type::small, Weight::medium));
+            g.drawText (laneName (lanes[i]), r.withTrimmedLeft (12), juce::Justification::centredLeft, true);
+        }
+    }
+
+    void resized() override
+    {
+        using namespace theme;
+        view.setBounds (getLocalBounds().withTrimmedTop (headerHeight).withTrimmedLeft (space::md + labelWidth).withTrimmedRight (space::md)
+                            .withTrimmedBottom (space::xs));
+
+        // At least minBarWidth per bar; wider when the bars fit.
+        const auto height = view.getHeight() - view.getScrollBarThickness();
+        const auto width = std::max (view.getWidth(), bars * minBarWidth);
+        roll.setSize (width, height);
+    }
+
+private:
+    static constexpr int headerHeight = 30, labelWidth = 72, barNumberHeight = 14, minBarWidth = 120;
+
+    struct Mark
+    {
+        double beat;
+        int lane;
+        int velocity;
+    };
+
+    /** The roll itself, inside the viewport. */
+    class Roll final : public juce::Component
+    {
+    public:
+        explicit Roll (DetailPane& p) : pane (p)
+        {
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+
+        void paint (juce::Graphics& g) override       { pane.paintRoll (g); }
+        void mouseDown (const juce::MouseEvent&) override   { dragStarted = false; }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (dragStarted || e.getDistanceFromDragStart() < 6)
+                return;
+
+            dragStarted = true;
+
+            if (const auto file = pane.page.writeMidi (pane.page.selectedPart); file.existsAsFile())
+                juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this);
+        }
+
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (! dragStarted)
+                pane.page.togglePlay();
+        }
+
+    private:
+        DetailPane& pane;
+        bool dragStarted = false;
+    };
+
+    int getLaneHeight() const
+    {
+        return lanes.empty() ? 0 : juce::jlimit (12, 40, (roll.getHeight() - barNumberHeight) / (int) lanes.size());
+    }
+
+    int xOf (double beats) const
+    {
+        return juce::roundToInt (beats / (bars * beatsPerBar) * roll.getWidth());
+    }
+
+    juce::Rectangle<int> playheadArea (double beats) const
+    {
+        return beats < 0.0 ? juce::Rectangle<int>() : juce::Rectangle<int> (xOf (beats) - 2, 0, 4, roll.getHeight());
+    }
+
+    void paintRoll (juce::Graphics& g)
+    {
+        using namespace theme;
+
+        if (lanes.empty())
+            return;
+
+        const auto laneHeight = getLaneHeight();
+        const auto top = barNumberHeight;
+        const auto bottom = top + laneHeight * (int) lanes.size();
+        const auto totalBeats = bars * beatsPerBar;
+        const auto width = (float) roll.getWidth();
+        const auto beatWidth = width / (float) totalBeats;
+
+        // Alternate lanes slightly, for following a row across.
+        for (size_t i = 0; i < lanes.size(); i += 2)
+        {
+            g.setColour (colours::background.withAlpha (0.5f));
+            g.fillRect (0, top + (int) i * laneHeight, roll.getWidth(), laneHeight);
+        }
+
+        // Sixteenths (when there's room), beats and bars, with bar numbers.
+        const auto sixteenths = (int) std::round (totalBeats * 4.0);
+
+        for (int s = 0; s <= sixteenths; ++s)
+        {
+            const auto x = (float) s * beatWidth / 4.0f;
+            const auto isBeat = s % 4 == 0;
+            const auto isBar = std::abs (std::fmod ((double) s / 4.0, beatsPerBar)) < 0.001;
+
+            if (! isBeat && beatWidth < 24.0f)
+                continue;
+
+            g.setColour (isBar ? colours::borderStrong : isBeat ? colours::border : colours::border.withAlpha (0.4f));
+            g.fillRect (juce::Rectangle<float> (x, (float) top, 1.0f, (float) (bottom - top)));
+
+            if (isBar && s < sixteenths)
+            {
+                g.setColour (colours::textMuted);
+                g.setFont (mono (10.0f));
+                g.drawText (juce::String (juce::roundToInt ((double) s / 4.0 / beatsPerBar) + 1),
+                            juce::Rectangle<float> (x + 3.0f, 0.0f, 40.0f, (float) barNumberHeight), juce::Justification::centredLeft, false);
+            }
+        }
+
+        // The hits: short bars, brighter for louder hits.
+        const auto markWidth = juce::jlimit (3.0f, 8.0f, beatWidth / 4.0f * 0.55f);
+
+        for (const auto& m : marks)
+        {
+            if (! juce::isPositiveAndBelow (m.lane, (int) lanes.size()))
+                continue;
+
+            const auto v = (float) m.velocity / 127.0f;
+            const auto x = (float) m.beat * beatWidth;
+            const auto row = juce::Rectangle<float> (x, (float) (top + m.lane * laneHeight), markWidth, (float) laneHeight);
+            g.setColour (laneColour (lanes[(size_t) m.lane]).withAlpha (0.35f + 0.65f * v));
+            g.fillRoundedRectangle (row.reduced (0.0f, (float) laneHeight * (0.42f - 0.28f * v)), 1.5f);
+        }
+
+        if (playhead >= 0.0)
+        {
+            const auto x = (float) playhead * beatWidth;
+            g.setColour (colours::accent);
+            g.fillRect (juce::Rectangle<float> (x - 0.75f, 0.0f, 1.5f, (float) bottom));
+        }
+    }
+
+    GroovesPage& page;
+    Roll roll;
+    juce::Viewport view;
+    juce::String title;
+    int bars = 1;
+    double beatsPerBar = 4.0, playhead = -1.0;
+    std::vector<Lane> lanes;
+    std::vector<Mark> marks;
 };
 
 //==============================================================================
@@ -762,6 +1248,7 @@ GroovesPage::GroovesPage (LithiumDrumsProcessor& p)
       chips (std::make_unique<StyleChips> (*this)),
       list (std::make_unique<GrooveList> (*this)),
       tiles (std::make_unique<TileGrid> (*this)),
+      detail (std::make_unique<DetailPane> (*this)),
       tempoField (std::make_unique<TempoField> (p.getGroovePlayer())),
       dragHandle (std::make_unique<DragHandle> (*this))
 {
@@ -830,6 +1317,7 @@ GroovesPage::GroovesPage (LithiumDrumsProcessor& p)
     tileView.setScrollBarThickness (8);
     tileView.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, colours::borderStrong);
     addAndMakeVisible (tileView);
+    addAndMakeVisible (*detail);
 
     // Transport.
     playButton.onClick = [this] { togglePlay(); };
@@ -1147,6 +1635,56 @@ void GroovesPage::selectPart (Part part, bool play)
     tiles->repaint();
     list->repaint();
     updateTransportButtons();
+    showDetail();
+}
+
+std::array<std::optional<PieceRole>, 128> GroovesPage::roleTable() const
+{
+    std::array<std::optional<PieceRole>, 128> roles {};
+
+    if (const auto* pack = selectedPack())
+    {
+        const auto noteMap = MidiMap::factoryMap (pack->noteMap);
+
+        for (int n = 0; n < 128; ++n)
+            roles[(size_t) n] = grooves::roleOf (noteMap, n);
+    }
+
+    return roles;
+}
+
+void GroovesPage::showDetail()
+{
+    const auto* pack = selectedPack();
+    const auto* groove = selectedGroove();
+
+    if (pack == nullptr || groove == nullptr)
+        return detail->clear();
+
+    const auto perBar = groove->beatsPerBar();
+    const auto roles = roleTable();
+
+    switch (selectedPart.kind)
+    {
+        case Part::Kind::whole:
+            return detail->show ("Whole take", hitsOf (takeHits, 0.0, groove->bars, perBar), groove->bars, perBar, roles);
+
+        case Part::Kind::fill:
+            if (juce::isPositiveAndBelow (selectedPart.index, (int) std::min (groove->fills.size(), fillHits.size())))
+            {
+                const auto& fill = groove->fills[(size_t) selectedPart.index];
+                return detail->show (fill.name, hitsOf (fillHits[(size_t) selectedPart.index], 0.0, fill.bars, perBar), fill.bars, perBar, roles);
+            }
+
+            return detail->clear();
+
+        case Part::Kind::phrase:
+            break;
+    }
+
+    const auto bars = grooves::phraseBars (*pack, *groove, selectedPart.index);
+    detail->show ("Bars " + juce::String (bars.getStart() + 1) + "-" + juce::String (bars.getEnd()),
+                  hitsOf (takeHits, bars.getStart() * perBar, bars.getLength(), perBar), bars.getLength(), perBar, roles);
 }
 
 void GroovesPage::togglePlay()
@@ -1294,6 +1832,11 @@ void GroovesPage::timerCallback()
     if (playing)
         tiles->repaintPlaying();
 
+    // The detail pane's playhead, while the part it shows is the one playing.
+    const auto showsPlaying = playing && feedback.clipId.load() == playingClipId && playingPart == selectedPart
+                              && playingGroove.pack == selected.pack && playingGroove.groove == selected.groove;
+    detail->setPlayhead (showsPlaying ? feedback.position.load() : -1.0);
+
     // The tempo shown: what's playing, or what would play.
     const auto mode = player.tempoMode.load();
     const auto* groove = selectedGroove();
@@ -1356,6 +1899,16 @@ void GroovesPage::paint (juce::Graphics& g)
         g.setFont (mono (12.0f));
         g.drawText (juce::String ((int) filtered.size()) + " / " + juce::String (library.numGrooves()),
                     leftArea.withHeight (22), juce::Justification::centredRight, false);
+
+        // Filters that leave nothing: say so, and how to get grooves back.
+        if (filtered.empty() && library.numGrooves() > 0)
+        {
+            g.setColour (colours::textMuted);
+            g.setFont (body (type::body));
+            g.drawFittedText ("No grooves match. Clear the search, pick All styles, or widen the tempo range.",
+                              list->getBounds().reduced (space::lg, 0).withHeight (60).translated (0, space::xl),
+                              juce::Justification::centredTop, 3);
+        }
 
         const auto filters = list->getBounds().getBottom() + 12;
         g.setColour (colours::border);
@@ -1470,10 +2023,13 @@ void GroovesPage::resized()
     area.reduce (margin, 0);
     area.removeFromTop (12);
 
+    // The chips take what they need; the search box gets the rest.
+    constexpr int minSearchWidth = 240;
     auto top = area.removeFromTop (chipRowHeight);
-    search.setBounds (top.removeFromRight (260));
-    top.removeFromRight (16);
-    chips->setBounds (top);
+    const auto chipsWidth = chips->layOut (top.getWidth() - minSearchWidth - theme::space::lg);
+    chips->setBounds (top.removeFromLeft (chipsWidth));
+    top.removeFromLeft (theme::space::lg);
+    search.setBounds (top);
 
     area.removeFromTop (14);
     area.removeFromBottom (12);
@@ -1518,8 +2074,11 @@ void GroovesPage::resized()
 
     grooveHeaderArea = rightArea.removeFromTop (52);
     rightArea.removeFromTop (4);
+    detail->setBounds (rightArea.removeFromBottom (detailHeight));
+    rightArea.removeFromBottom (theme::space::md);
     tileView.setBounds (rightArea);
     tileView.setVisible (hasGrooves);
+    detail->setVisible (hasGrooves);
     tiles->rebuild (tileView.getMaximumVisibleWidth());
 
     // The transport bar, left to right.

@@ -1,5 +1,6 @@
 #include "KitStage.h"
 
+#include "KitArt.h"
 #include "LithiumAssets.h"
 #include "Theme.h"
 
@@ -71,84 +72,11 @@ namespace
 }
 
 //==============================================================================
-class KitStage::OverlayCard final : public juce::Component
-{
-public:
-    OverlayCard()
-    {
-        editButton.setButtonText ("Edit piece");
-        addAndMakeVisible (editButton);
-    }
-
-    void setPiece (const KitPieceInfo* p)
-    {
-        if (p != nullptr)
-        {
-            name = p->name;
-            group = info (p->role).group;
-            detail = juce::String (p->articulations.size()) + (p->articulations.size() == 1 ? " articulation" : " articulations");
-        }
-        else
-        {
-            name = "No piece";
-            group = PieceGroup::other;
-            detail = "No kit loaded";
-        }
-
-        editButton.setEnabled (p != nullptr);
-        repaint();
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        using namespace theme;
-        const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-
-        g.setColour (colours::panel.withAlpha (0.88f));
-        g.fillRoundedRectangle (bounds, 8.0f);
-        g.setColour (colours::borderStrong);
-        g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
-
-        auto area = getLocalBounds().reduced (16, 14).toFloat();
-
-        auto top = area.removeFromTop (14.0f);
-        g.setColour (groupColour (group));
-        g.fillEllipse (top.removeFromLeft (8.0f).withSizeKeepingCentre (8.0f, 8.0f));
-        top.removeFromLeft (8.0f);
-        g.setColour (colours::textMuted);
-        drawTrackedText (g, "SELECTED PIECE", label (12.0f), 0.1f, top, juce::Justification::centredLeft);
-
-        area.removeFromTop (4.0f);
-        g.setColour (colours::text);
-        g.setFont (body (20.0f, Weight::semibold));
-        g.drawText (name, area.removeFromTop (26.0f), juce::Justification::centredLeft, true);
-
-        g.setColour (colours::textMuted);
-        g.setFont (mono (12.5f));
-        g.drawText (detail, area.removeFromTop (18.0f), juce::Justification::centredLeft, true);
-    }
-
-    void resized() override
-    {
-        editButton.setBounds (getLocalBounds().reduced (16, 14).removeFromBottom (26).removeFromLeft (96));
-    }
-
-    juce::TextButton editButton;
-
-private:
-    juce::String name, detail;
-    PieceGroup group = PieceGroup::other;
-};
-
-//==============================================================================
-KitStage::KitStage (LithiumDrumsProcessor& p) : processor (p), card (std::make_unique<OverlayCard>())
+KitStage::KitStage (LithiumDrumsProcessor& p) : processor (p)
 {
     loadRenders();
 
     slotPiece.fill (-1);
-
-    card->editButton.onClick = [this] { if (onEditPiece) onEditPiece(); };
-    addAndMakeVisible (*card);
 
     processor.getSelection().addListener (this);
     selectedPieceChanged (processor.getSelection().getSelected());
@@ -183,6 +111,7 @@ void KitStage::loadRenders()
 
         Layer layer;
         layer.slot = slotFromRenderKey (name.toStdString());
+        layer.renderKey = name;
         layer.image = loadPng (name);
         layer.renderRect = { (int) rect["x"], (int) rect["y"], (int) rect["w"], (int) rect["h"] };
 
@@ -193,25 +122,81 @@ void KitStage::loadRenders()
         {
             layer.flash = makeFlashImage (layer.image);
             layer.glow = makeGlowImage (layer.image, glowPadding);
+            layer.looks[{}] = { layer.image, layer.glow, layer.flash };   // the default finish
         }
 
         layers.push_back (std::move (layer));
     }
 }
 
-void KitStage::resized()
+void KitStage::showFinishes()
 {
-    // layout.json is in render pixels; divide by renderScale for 1x stage
-    // coordinates, then by how much the stage is scaled relative to 1x.
-    const auto toStage = (float) getWidth() / (float) theme::windowWidth / renderScale;
+    // Each piece in the finish of the kit its recordings come from, so a kit
+    // with swapped pieces shows them as they are: MuldjordKit's black snare
+    // among DRSKit's orange toms. A finish's layers have the same size and
+    // place as the default's, so only the pictures change.
+    // An empty spot (a kit with one rack tom) is faded in the kit's own
+    // finish: that of its pieces that weren't swapped in (for a preset, its
+    // base kit's).
+    juce::String ownKit;
+
+    if (kitInfo != nullptr)
+        for (const auto& p : kitInfo->pieces)
+            if (p.swappedFrom.isEmpty())
+            {
+                ownKit = p.recordedIn;
+                break;
+            }
 
     for (auto& l : layers)
     {
-        l.bounds = l.renderRect.toFloat() * toStage;
-        l.glowBounds = l.renderRect.expanded (glowPadding).toFloat() * toStage;
-    }
+        if (! l.slot.has_value())
+            continue;
 
-    card->setBounds (20, 20, 260, 118);
+        const auto piece = pieceIn (l);
+        const auto kitId = kitInfo == nullptr ? juce::String()
+                         : piece >= 0         ? kitInfo->pieces[(size_t) piece].recordedIn
+                                              : ownKit;
+        // Kits without a finish of their own (and pieces a finish doesn't
+        // cover, like the cymbals) use the default.
+        const auto own = kitart::load ("finish-" + kitart::finishFor (kitId) + "-" + l.renderKey + ".png");
+        const auto finish = own.isValid() && own.getBounds() == l.renderRect.withZeroOrigin() ? kitart::finishFor (kitId) : juce::String();
+        auto look = l.looks.find (finish);
+
+        if (look == l.looks.end())
+            look = l.looks.emplace (finish, Layer::Look { own, makeGlowImage (own, glowPadding), makeFlashImage (own) }).first;
+
+        l.image = look->second.image;
+        l.glow = look->second.glow;
+        l.flash = look->second.flash;
+    }
+}
+
+void KitStage::resized()
+{
+    // The renders are of a 1280 x 744 stage, the Kit tab's size. It's scaled
+    // to cover the whole component, centred, so a component of another shape
+    // crops the room's edges rather than squashing the kit.
+    const auto cover = std::max ((float) getWidth() / (float) theme::windowWidth, (float) getHeight() / (float) theme::stageHeight);
+    stageOrigin = { ((float) getWidth() - (float) theme::windowWidth * cover) * 0.5f,
+                    ((float) getHeight() - (float) theme::stageHeight * cover) * 0.5f };
+
+    // Then zoomed in on the kit, which stays where it was on the page; the
+    // room's edges go past the sides. (The renders are 1.5x, so they stay
+    // sharp at this zoom.)
+    const auto focus = stageOrigin + kitCentre * cover;
+    stageScale = cover * kitZoom;
+    stageOrigin = focus - kitCentre * stageScale;
+
+    // layout.json is in render pixels; divide by renderScale for 1x stage
+    // coordinates, then scale and place them like the stage.
+    const auto toStage = stageScale / renderScale;
+
+    for (auto& l : layers)
+    {
+        l.bounds = (l.renderRect.toFloat() * toStage) + stageOrigin;
+        l.glowBounds = (l.renderRect.expanded (glowPadding).toFloat() * toStage) + stageOrigin;
+    }
 }
 
 void KitStage::setKitInfo (std::shared_ptr<const KitInfo> info)
@@ -223,20 +208,14 @@ void KitStage::setKitInfo (std::shared_ptr<const KitInfo> info)
     else
         slotPiece.fill (-1);
 
+    showFinishes();
+
     // Start each slot's hit counter from now, so a kit change doesn't flash everything.
     for (auto& l : layers)
         if (const auto piece = pieceIn (l); piece >= 0)
             l.lastHitCount = processor.getFeedback().pieceHits[(size_t) piece].load();
 
-    updateCard();
     repaint();
-}
-
-void KitStage::updateCard()
-{
-    const auto selected = processor.getSelection().getSelected();
-    const auto valid = kitInfo != nullptr && juce::isPositiveAndBelow (selected, (int) kitInfo->pieces.size());
-    card->setPiece (valid ? &kitInfo->pieces[(size_t) selected] : nullptr);
 }
 
 int KitStage::pieceIn (const Layer& l) const noexcept
@@ -248,7 +227,8 @@ int KitStage::pieceIn (const Layer& l) const noexcept
 void KitStage::paint (juce::Graphics& g)
 {
     g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-    g.drawImage (room, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
+    g.drawImage (room, juce::Rectangle<float> (stageOrigin.x, stageOrigin.y, (float) theme::windowWidth * stageScale,
+                                               (float) theme::stageHeight * stageScale), juce::RectanglePlacement::stretchToFit);
 
     const auto selected = processor.getSelection().getSelected();
 
@@ -278,14 +258,14 @@ void KitStage::paint (juce::Graphics& g)
 
 std::optional<StageSlot> KitStage::getSlotAt (juce::Point<float> position) const
 {
-    const auto toRender = renderScale * (float) theme::windowWidth / (float) getWidth();
+    const auto toRender = renderScale / stageScale;
 
     for (auto it = layers.rbegin(); it != layers.rend(); ++it)
     {
         if (! it->slot.has_value() || ! it->bounds.contains (position))
             continue;
 
-        const auto pixel = (position * toRender).toInt() - it->renderRect.getPosition();
+        const auto pixel = ((position - stageOrigin) * toRender).toInt() - it->renderRect.getPosition();
 
         if (it->image.getBounds().contains (pixel)
             && it->image.getPixelAt (pixel.x, pixel.y).getAlpha() >= hitAlphaThreshold)
@@ -343,7 +323,6 @@ void KitStage::startFlash (int piece)
 
 void KitStage::selectedPieceChanged (int)
 {
-    updateCard();
     repaint();
 }
 

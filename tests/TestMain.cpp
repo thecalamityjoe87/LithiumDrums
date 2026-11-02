@@ -4,6 +4,7 @@
 //   LithiumDrumsTests --only <words>  run the tests whose name contains them, e.g. --only Groove
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
 //                                     [--mixer-channel piece:<n> | mic:<n> | reverb]
+//                                     [--swap <piece or slot-id>=<kit id>/<piece id>,...]
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
 //   LithiumDrumsTests --sfz-dump <file.sfz> [n]
 //                                     parse an SFZ instrument and print its first n regions (default 5),
@@ -12,6 +13,10 @@
 //                                     check every installed kit and preset against every built-in MIDI map:
 //                                     what each map reaches, what only spare notes reach, and (unless
 //                                     --no-play) that every articulation makes a sound
+//   LithiumDrumsTests --swap-audit
+//                                     swap every installed kit's pieces into every other kit and report where the
+//                                     mics go and anything left silent; then play real swaps (needs DRSKit Full,
+//                                     MuldjordKit and CrocellKit)
 //   LithiumDrumsTests --groove-audit
 //                                     resolve every installed groove against every installed kit and preset:
 //                                     hits a kit can't play, how the hi-hat spreads over its openness steps,
@@ -24,6 +29,12 @@
 //                                     --cold first drops the cache file from the OS page cache (Linux),
 //                                     --map plays it through another MIDI map (roland-vdrums, alesis, ...),
 //                                     and then sweeps the hi-hat pedal and snare position
+//   LithiumDrumsTests --idle-check [seconds] [--replay <aseqdump log>] [--kit <folder>]
+//                                     restore the standalone app's saved state (with its editor open; needs a
+//                                     display), play four kicks (or replay MIDI captured with
+//                                     `aseqdump -p <port> | ts`-style timestamped lines, as fast as it renders),
+//                                     then run in real time with no MIDI and report every hit the engine plays
+//                                     and every sound that starts on its own
 
 #include "AllocationCounter.h"
 #include "KitLibrary.h"
@@ -73,10 +84,20 @@ void* operator new (std::size_t size)
 }
 
 void* operator new[] (std::size_t size)                  { return operator new (size); }
+
+// operator new above allocates with malloc, so free is the right match. GCC
+// can't see that through the replacement and warns that it's mismatched.
+#if defined (__GNUC__) && ! defined (__clang__)
+ #pragma GCC diagnostic push
+ #pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
 void operator delete (void* p) noexcept                   { std::free (p); }
 void operator delete[] (void* p) noexcept                 { std::free (p); }
 void operator delete (void* p, std::size_t) noexcept      { std::free (p); }
 void operator delete[] (void* p, std::size_t) noexcept    { std::free (p); }
+#if defined (__GNUC__) && ! defined (__clang__)
+ #pragma GCC diagnostic pop
+#endif
 
 //==============================================================================
 // Runs the real message loop (so the kit loader's result reaches the UI),
@@ -84,7 +105,8 @@ void operator delete[] (void* p, std::size_t) noexcept    { std::free (p); }
 class SnapshotWriter final : private juce::Timer
 {
 public:
-    SnapshotWriter (juce::File f, float s, juce::String select, const juce::File& kit, juce::String click, const juce::String& mixerChannel)
+    SnapshotWriter (juce::File f, float s, juce::String select, const juce::File& kit, juce::String click, const juce::String& mixerChannel,
+                    const juce::String& swaps)
         : file (std::move (f)), scale (s), selectId (std::move (select)), clickName (std::move (click))
     {
         processor.reverbSelected = mixerChannel.isEmpty() ? false : mixerChannel == "reverb";
@@ -94,6 +116,12 @@ public:
 
         if (kit != juce::File())
             processor.loadKit (kit, true);
+
+        // Pieces from other kits: "snare=muldjordkit/snare,slot-tom3=crocellkit-full/tom1".
+        for (const auto& swap : juce::StringArray::fromTokens (swaps, ",", {}))
+            processor.setPieceSwap ({ swap.upToFirstOccurrenceOf ("=", false, false),
+                                      swap.fromFirstOccurrenceOf ("=", false, false).upToFirstOccurrenceOf ("/", false, false),
+                                      swap.fromFirstOccurrenceOf ("/", false, false) });
 
         startTimer (50);
     }
@@ -163,6 +191,143 @@ private:
     juce::String selectId, clickName;
     int ticks = 0, readyTick = 0;
 };
+
+//==============================================================================
+/** --swap-audit: every installed kit's pieces swapped into every other kit
+    (on the manifests: which mics go where, and whether anything is left to
+    hear), then a few real swaps loaded and played through the processor. */
+static int swapAudit()
+{
+    using namespace lithium;
+
+    const auto library = kitlibrary::scan (juce::SharedResourcePointer<Settings>()->getKitsFolder());
+    std::vector<std::pair<juce::String, KitManifest>> kits;
+
+    for (const auto& e : library.kits)
+    {
+        if (e.summary.isPreset)
+            continue;
+
+        KitManifest m;
+
+        if (KitManifest::parse (e.folder, m).wasOk())
+            kits.emplace_back (e.summary.id, std::move (m));
+    }
+
+    int swapsTried = 0, silent = 0;
+
+    for (const auto& [hostId, host] : kits)
+    {
+        for (const auto& [sourceId, source] : kits)
+        {
+            if (hostId == sourceId)
+                continue;
+
+            for (size_t t = 0; t < host.pieces.size(); ++t)
+            {
+                for (size_t s = 0; s < source.pieces.size(); ++s)
+                {
+                    if (! swaps::canReplace (host.pieces[t].role, source.pieces[s].role))
+                        continue;
+
+                    ++swapsTried;
+                    const auto map = swaps::mapMics (source, (int) s, host, (int) t, true);
+                    const auto kept = std::count_if (map.begin(), map.end(), [] (int m) { return m >= 0; });
+
+                    if (kept == 0)
+                    {
+                        ++silent;
+                        std::cout << "  silent: " << source.pieces[s].name << " (" << sourceId << ") in " << hostId << "'s "
+                                  << host.pieces[t].name << std::endl;
+                    }
+                }
+            }
+
+            // One line per pair: where the snare's mics go.
+            const auto ts = host.findPiece ("snare"), ss = source.findPiece ("snare");
+
+            if (ts >= 0 && ss >= 0)
+            {
+                juce::StringArray parts;
+                const auto map = swaps::mapMics (source, ss, host, ts, true);
+
+                for (size_t m = 0; m < map.size(); ++m)
+                    parts.add (source.mics[m].id + (map[m] >= 0 ? "->" + host.mics[(size_t) map[m]].id : juce::String ("->(dropped)")));
+
+                std::cout << sourceId << " snare in " << hostId << ": " << parts.joinIntoString (", ") << std::endl;
+            }
+        }
+    }
+
+    std::cout << swapsTried << " possible swaps, " << silent << " with nothing left to hear\n" << std::endl;
+
+    // Real swaps, played: MuldjordKit's snare and CrocellKit's (48 kHz) kick in DRSKit Full.
+    int failures = 0;
+    const auto* drs = library.findById ("drskit-full");
+
+    if (drs == nullptr || library.findById ("muldjordkit") == nullptr || library.findById ("crocellkit-full") == nullptr)
+    {
+        std::cout << "DRSKit Full, MuldjordKit and CrocellKit are needed for the playback check; skipped." << std::endl;
+        return 0;
+    }
+
+    LithiumDrumsProcessor processor;
+    processor.loadKit (drs->folder, true);
+    processor.setPieceSwap ({ "snare", "muldjordkit", "snare", true });
+    processor.setPieceSwap ({ "kick", "crocellkit-full", "kick", true });
+
+    juce::AudioBuffer<float> buffer (processor.getTotalNumOutputChannels(), 512);
+    processor.prepareToPlay (44100.0, 512);
+
+    for (int i = 0; i < 6000 && (processor.isKitLoading() || processor.getKitInfo() == nullptr); ++i)
+    {
+        processor.applyPendingKitLoad();
+        juce::MidiBuffer none;
+        processor.processBlock (buffer, none);
+        juce::Thread::sleep (10);
+    }
+
+    const auto info = processor.getKitInfo();
+
+    if (info == nullptr)
+    {
+        std::cout << "The kit didn't load: " << processor.getKitError() << std::endl;
+        return 1;
+    }
+
+    for (const auto* id : { "snare", "kick" })
+    {
+        for (size_t p = 0; p < info->pieces.size(); ++p)
+        {
+            if (info->pieces[p].id != id)
+                continue;
+
+            std::cout << id << ": from " << info->pieces[p].swappedFrom << " (" << info->pieces[p].swappedPiece << ")";
+
+            for (const auto& note : info->pieces[p].swapNotes)
+                std::cout << "; " << note;
+
+            // Play it a few times, and measure the output.
+            float peak = 0.0f;
+
+            for (int block = 0; block < 40; ++block)
+            {
+                juce::MidiBuffer midi;
+
+                if (block % 10 == 0)
+                    processor.audition ((int) p, 110);
+
+                processor.processBlock (buffer, midi);
+                peak = std::max (peak, buffer.getMagnitude (0, 0, 512));
+            }
+
+            std::cout << ", peak " << juce::Decibels::gainToDecibels (peak) << " dB" << std::endl;
+            failures += peak > 0.001f ? 0 : 1;
+        }
+    }
+
+    return failures == 0 ? 0 : 1;
+}
 
 //==============================================================================
 static int grooveAudit()
@@ -469,9 +634,251 @@ static int writeSnapshot (const juce::StringArray& args)
     const auto click = args.contains ("--click") ? args[args.indexOf ("--click") + 1] : juce::String();
 
     const auto mixerChannel = args.contains ("--mixer-channel") ? args[args.indexOf ("--mixer-channel") + 1] : juce::String();
-    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel);
+    const auto swaps = args.contains ("--swap") ? args[args.indexOf ("--swap") + 1] : juce::String();
+    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel, swaps);
     juce::MessageManager::getInstance()->runDispatchLoop();
     return writer.result;
+}
+
+//==============================================================================
+/** Looks for hits nobody played: restores the standalone app's last state,
+    opens the editor (so its timers run too), plays four kicks, then runs in
+    real time with no input. Any piece hit counter that moves afterwards, or
+    any sound starting from silence, is reported.
+
+    A timer drives the blocks, catching up with the wall clock on each tick,
+    so the message loop (kit loading, the editor) runs as it would in the app. */
+class IdleCheck final : private juce::Timer
+{
+public:
+    IdleCheck (int secondsToRun, const juce::File& replayLog, const juce::File& kitFolder) : seconds (secondsToRun)
+    {
+        if (replayLog.existsAsFile())
+            readReplay (replayLog);
+
+        // The standalone keeps the plugin's state as base 64 in its settings file.
+        juce::PropertiesFile::Options settings;
+        settings.applicationName = "Lithium Drums";
+        settings.filenameSuffix = ".settings";
+        settings.osxLibrarySubFolder = "Application Support";
+        settings.folderName = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getFullPathName();
+        juce::PropertiesFile props (settings.getDefaultFile(), settings);
+        juce::MemoryBlock state;
+
+        if (state.fromBase64Encoding (props.getValue ("filterState")))
+            processor.setStateInformation (state.getData(), (int) state.getSize());
+        else
+            std::cout << "No saved standalone state; using the default kit" << std::endl;
+
+        if (kitFolder.isDirectory())
+            processor.loadKit (kitFolder, true);
+
+        processor.prepareToPlay (sampleRate, blockSize);
+        editor.reset (processor.createEditor());
+        editor->setVisible (true);   // not on the desktop: its timers run all the same
+
+        start = juce::Time::getMillisecondCounterHiRes();
+        startTimer (2);
+    }
+
+    int result = 1;
+
+private:
+    static constexpr double sampleRate = 44100.0;
+    static constexpr int blockSize = 64;
+
+    enum class Phase { loading, kicks, idle };
+
+    /** Lines like "16:12:27.388  24:0   Note on   9, note 36, velocity 127":
+        a wall-clock time, then aseqdump's own output (channels from 0). */
+    void readReplay (const juce::File& log)
+    {
+        juce::StringArray lines;
+        log.readLines (lines);
+        std::optional<double> first;
+
+        for (const auto& line : lines)
+        {
+            auto tokens = juce::StringArray::fromTokens (line.removeCharacters (","), " ", {});
+            tokens.removeEmptyStrings();   // runs of spaces give empty tokens
+
+            if (tokens.size() < 6 || ! tokens[1].containsChar (':'))
+                continue;
+
+            const auto clock = juce::StringArray::fromTokens (tokens[0], ":", {});
+            const auto time = clock[0].getIntValue() * 3600.0 + clock[1].getIntValue() * 60.0 + clock[2].getDoubleValue();
+            const auto channel = tokens[4].getIntValue() + 1;   // after the time, port and two-word event name
+            std::optional<juce::MidiMessage> message;
+
+            if (line.contains ("Note on"))
+                message = juce::MidiMessage::noteOn (channel, tokens[tokens.indexOf ("note") + 1].getIntValue(),
+                                                     (juce::uint8) tokens[tokens.indexOf ("velocity") + 1].getIntValue());
+            else if (line.contains ("Note off"))
+                message = juce::MidiMessage::noteOff (channel, tokens[tokens.indexOf ("note") + 1].getIntValue());
+            else if (line.contains ("Control change"))
+                message = juce::MidiMessage::controllerEvent (channel, tokens[tokens.indexOf ("controller") + 1].getIntValue(),
+                                                              tokens[tokens.indexOf ("value") + 1].getIntValue());
+
+            if (! message.has_value())
+                continue;
+
+            first = first.value_or (time);
+            replay.push_back ({ (juce::int64) ((time - *first + 0.5) * sampleRate), *message });
+        }
+
+        // aseqdump's times come from when lines were read, so a few are out of order.
+        std::stable_sort (replay.begin(), replay.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+        std::cout << "Replaying " << replay.size() << " MIDI events" << std::endl;
+    }
+
+    void timerCallback() override
+    {
+        auto due = (juce::int64) ((juce::Time::getMillisecondCounterHiRes() - start) * sampleRate / (1000.0 * blockSize));
+
+        // A replay runs as fast as it renders (a few hundred blocks per tick,
+        // so the message loop keeps up), and the idle time after it in real time.
+        if (phase == Phase::kicks && ! replay.empty())
+        {
+            due = blocks + 400;
+            start -= 400.0 * blockSize * 1000.0 / sampleRate;
+        }
+
+        while (blocks < due)
+            if (! step())
+            {
+                stopTimer();
+                editor.reset();
+                juce::MessageManager::getInstance()->stopDispatchLoop();
+                return;
+            }
+    }
+
+    std::vector<std::uint32_t> hitCounts() const
+    {
+        std::vector<std::uint32_t> now;
+
+        for (size_t p = 0; p < info->pieces.size(); ++p)
+            now.push_back (processor.getFeedback().pieceHits[p].load());
+
+        return now;
+    }
+
+    /** One block. False when the check is over. */
+    bool step()
+    {
+        juce::MidiBuffer midi;
+        processor.applyPendingKitLoad();
+
+        if (phase == Phase::kicks && replay.empty() && phaseBlocks % (juce::int64) (sampleRate / blockSize) == 0)
+            midi.addEvent (juce::MidiMessage::noteOn (10, 36, (juce::uint8) 100), 0);
+
+        for (const auto blockStart = phaseBlocks * blockSize;
+             phase == Phase::kicks && nextReplay < replay.size() && replay[nextReplay].first < blockStart + blockSize; ++nextReplay)
+            midi.addEvent (replay[nextReplay].second, (int) juce::jmax ((juce::int64) 0, replay[nextReplay].first - blockStart));
+
+        processor.processBlock (buffer, midi);
+        const auto peak = buffer.getMagnitude (0, blockSize);
+        ++blocks;
+        ++phaseBlocks;
+
+        if (phase == Phase::loading)
+        {
+            if (! processor.isKitLoading() && ! processor.isPresetLoading() && (info = processor.getKitInfo()) != nullptr)
+            {
+                std::cout << "Kit: " << info->id << ", " << info->pieces.size() << " pieces. " << (replay.empty() ? "Four kicks" : "The replay") << ", then "
+                          << seconds << " s of nothing..." << std::endl;
+                phase = Phase::kicks;
+                phaseBlocks = 0;
+            }
+            else if (blocks * blockSize > 60 * sampleRate)
+            {
+                std::cout << "The kit didn't load" << std::endl;
+                return false;
+            }
+
+            return true;
+        }
+
+        if (phase == Phase::kicks)
+        {
+            const auto done = replay.empty() ? phaseBlocks >= (juce::int64) (4 * sampleRate / blockSize)
+                                             : nextReplay >= replay.size() && phaseBlocks * blockSize > replay.back().first + (juce::int64) sampleRate;
+
+            if (done)
+            {
+                std::cout << "Input over; " << processor.getFeedback().activeVoices.load() << " voices playing" << std::endl;
+                phase = Phase::idle;
+                phaseBlocks = 0;
+                counts = hitCounts();
+            }
+
+            return true;
+        }
+
+        const auto t = (double) phaseBlocks * blockSize / sampleRate;
+
+        if (const auto now = hitCounts(); now != counts)
+        {
+            for (size_t p = 0; p < now.size(); ++p)
+                if (now[p] != counts[p])
+                    std::cout << juce::String (t, 2) << " s: " << info->pieces[p].name << " was hit "
+                              << (int) (now[p] - counts[p]) << " time(s) with no input" << std::endl;
+
+            counts = now;
+            ++problems;
+        }
+
+        // Sound starting again after at least half a second of silence.
+        if (peak > onset && quietFor >= 0.5)
+        {
+            std::cout << juce::String (t, 2) << " s: sound from silence, peak " << juce::String (juce::Decibels::gainToDecibels (peak), 1)
+                      << " dB, " << processor.getFeedback().activeVoices.load() << " voices" << std::endl;
+            ++problems;
+        }
+
+        quietFor = peak < silence ? quietFor + blockSize / sampleRate : 0.0;
+
+        if (t > 10.0)
+            loudest = std::max (loudest, peak);
+
+        if (t < seconds)
+            return true;
+
+        std::cout << "Loudest block after the first 10 s: " << juce::String (juce::Decibels::gainToDecibels (loudest), 1) << " dB" << std::endl
+                  << (problems == 0 ? "IDLE CHECK PASSED" : "IDLE CHECK FOUND " + juce::String (problems) + " PROBLEMS") << std::endl;
+        result = problems == 0 ? 0 : 1;
+        return false;
+    }
+
+    const int seconds;
+    lithium::LithiumDrumsProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor;
+    juce::AudioBuffer<float> buffer { processor.getTotalNumOutputChannels(), blockSize };   // (declared after the processor, so made after it)
+    std::shared_ptr<const lithium::KitInfo> info;
+    double start = 0.0;
+    juce::int64 blocks = 0, phaseBlocks = 0;
+    Phase phase = Phase::loading;
+    std::vector<std::uint32_t> counts;
+    std::vector<std::pair<juce::int64, juce::MidiMessage>> replay;   // by sample
+    size_t nextReplay = 0;
+    int problems = 0;
+    double quietFor = 0.0;
+    float loudest = 0.0f;
+    const float silence = juce::Decibels::decibelsToGain (-80.0f);
+    const float onset = juce::Decibels::decibelsToGain (-50.0f);
+};
+
+static int idleCheck (const juce::StringArray& args)
+{
+    const auto value = args[args.indexOf ("--idle-check") + 1].getIntValue();
+    const auto file = [&] (const char* option)
+    {
+        return args.contains (option) ? juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf (option) + 1]) : juce::File();
+    };
+
+    IdleCheck check (value > 0 ? value : 60, file ("--replay"), file ("--kit"));
+    juce::MessageManager::getInstance()->runDispatchLoop();
+    return check.result;
 }
 
 //==============================================================================
@@ -966,6 +1373,12 @@ int main (int argc, char* argv[])
 
     if (args.contains ("--groove-audit"))
         return grooveAudit();
+
+    if (args.contains ("--swap-audit"))
+        return swapAudit();
+
+    if (args.contains ("--idle-check"))
+        return idleCheck (args);
 
     if (args.contains ("--measure-kit"))
         return measureKit (juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--measure-kit") + 1]), args);

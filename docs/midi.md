@@ -227,3 +227,18 @@ carries the serial of the kit it was made for. A table for a kit that is still
 waiting to be swapped in is held until that kit plays; one for an older kit is
 dropped. When a new kit arrives, the processor resolves the current map for it
 and sends it again, so a map changed during a kit load is never lost.
+
+## Tracking down unexpected hits
+
+Start Lithium with `LITHIUM_HIT_LOG` set to a file name and it appends a line
+for every hit and where it came from (a MIDI note and what it played, a click,
+an on-screen key, a groove), every MIDI controller, any sound that starts
+with no hit behind it, and any audio block that came late (the audio device
+ran short):
+
+```
+LITHIUM_HIT_LOG=~/lithium-hits.log "Lithium Drums"
+```
+
+The audio thread only queues these; the processor's timer writes them, five
+times a second.

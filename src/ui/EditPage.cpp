@@ -58,7 +58,7 @@ public:
 
 private:
     const juce::String name;
-    juce::Slider slider;
+    ControlSlider slider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 };
 
@@ -175,6 +175,7 @@ private:
 //==============================================================================
 EditPage::EditPage (LithiumDrumsProcessor& p)
     : processor (p),
+      model (p),
       envelope (std::make_unique<EnvelopeGraph> (p.getParameters())),
       eq (p.getParameters()),
       comp (p.getParameters()),
@@ -183,8 +184,6 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
       routing (p.getParameters(), true)
 {
     // Piece bar
-    previous.setTooltip ("Previous drum");
-    next.setTooltip ("Next drum");
     previous.onClick = [this] { stepPiece (-1); };
     next.onClick = [this] { stepPiece (1); };
     pieceBox.setTooltip ("The drum to edit");
@@ -210,7 +209,7 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     crossfade.attach (processor.getParameters(), params::velocityCrossfade);
     mute.setColour (juce::TextButton::buttonOnColourId, theme::colours::textMuted);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &previous, &next, &pieceBox, &play, &crossfade, &mute, &solo })
+    for (auto* c : std::initializer_list<juce::Component*> { &previous, &next, &pieceBox, &model, &play, &crossfade, &mute, &solo })
         addAndMakeVisible (c);
 
     addChildComponent (articulationBox);
@@ -340,6 +339,7 @@ void EditPage::showPiece (int p)
     }
 
     pieceBox.setSelectedId (p + 1, juce::dontSendNotification);
+    model.setPiece (shownKit, p);
 
     auto& state = processor.getParameters();
     auto attachKnob = [&] (Knob& k, std::string_view name) { k.attach (state, params::pieceParamId (p, name)); };
@@ -533,7 +533,9 @@ void EditPage::resized()
     bar.removeFromLeft (4);
     next.setBounds (bar.removeFromLeft (30).reduced (0, 5));
     bar.removeFromLeft (8);
-    pieceBox.setBounds (bar.removeFromLeft (210).reduced (0, 5));
+    pieceBox.setBounds (bar.removeFromLeft (190).reduced (0, 5));
+    bar.removeFromLeft (8);
+    model.setBounds (bar.removeFromLeft (220).reduced (0, 5));
 
     // The menu's text starts after the group dot drawn over it.
     if (auto* text = dynamic_cast<juce::Label*> (pieceBox.getChildren().getFirst()))

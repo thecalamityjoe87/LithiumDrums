@@ -94,6 +94,14 @@ PieceGroup groupOf (const MidiMap& packMap, int note)
     return PieceGroup::other;
 }
 
+std::optional<PieceRole> roleOf (const MidiMap& packMap, int note)
+{
+    if (const auto* e = packMap.find (note))
+        return e->anyTom ? PieceRole::tom : e->role;
+
+    return std::nullopt;
+}
+
 std::vector<int> notesForArticulations (const NoteTable& table, int numArticulations)
 {
     std::vector<int> notes ((size_t) std::max (0, numArticulations), -1);

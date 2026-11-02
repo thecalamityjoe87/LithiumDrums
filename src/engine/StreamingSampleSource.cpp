@@ -41,8 +41,12 @@ StreamingSampleSource::StreamingSampleSource (std::shared_ptr<const SampleLayout
     readBuffer.resize ((size_t) chunkFrames * 3);
     candidates.reserve ((size_t) numSlots);
 
-    if (auto stream = std::make_unique<juce::FileInputStream> (map->dataFile); stream->openedOk())
-        file = std::move (stream);
+    for (const auto& dataFile : map->dataFiles)
+    {
+        auto stream = std::make_unique<juce::FileInputStream> (dataFile);
+        valid = valid && stream->openedOk();
+        files.push_back (std::move (stream));
+    }
 
     streamer->add (*this);
 }
@@ -194,7 +198,7 @@ void StreamingSampleSource::close (SampleCursor& cursor) noexcept
 //==============================================================================
 bool StreamingSampleSource::service()
 {
-    if (file == nullptr)
+    if (! valid)
         return false;
 
     const auto& samples = getLayout().samples;
@@ -257,6 +261,7 @@ void StreamingSampleSource::fill (Slot& slot, const Candidate& c)
 
     const auto& s = getLayout().samples[id];
     const auto& region = map->regions[id];
+    auto& file = files[(size_t) region.pack];
     const auto bytes = region.bytesPerSample;
     const auto start = slot.diskFrame;
     const auto n = (int) std::min<std::int64_t> (chunkFrames, s.numFrames - start);
@@ -328,7 +333,8 @@ juce::Array<juce::File> DiskStreamer::getPacksInUse() const
     juce::Array<juce::File> packs;
 
     for (const auto* s : sources)
-        packs.addIfNotAlreadyThere (s->getDataFile().getParentDirectory());
+        for (const auto& dataFile : s->getDataFiles())
+            packs.addIfNotAlreadyThere (dataFile.getParentDirectory());
 
     return packs;
 }

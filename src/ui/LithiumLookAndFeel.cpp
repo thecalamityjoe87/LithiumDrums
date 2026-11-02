@@ -172,11 +172,21 @@ void LithiumLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& 
 
     g.setColour (on ? fill : (isMouseOverButton ? borderStrong : border));
     g.drawRoundedRectangle (bounds, theme::cornerRadius - 1.0f, 1.0f);
+
+    if (button.hasKeyboardFocus (false))
+        drawFocusRing (g, bounds, theme::cornerRadius - 1.0f);
+}
+
+void LithiumLookAndFeel::drawFocusRing (juce::Graphics& g, juce::Rectangle<float> area, float radius)
+{
+    g.setColour (theme::colours::focus);
+    g.drawRoundedRectangle (area.reduced (0.5f), radius, (float) theme::size::focusRing);
 }
 
 juce::Font LithiumLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
 {
-    return theme::label (juce::jmin (14.0f, (float) buttonHeight * 0.5f), theme::Weight::semibold);
+    // Half the height, but never below a readable size (the mixer strips' small switches).
+    return theme::label (juce::jlimit (9.5f, 14.0f, (float) buttonHeight * 0.5f), theme::Weight::semibold);
 }
 
 void LithiumLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool, bool)
@@ -293,6 +303,9 @@ void LithiumLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
     const auto thumb = juce::Rectangle<float> (6.0f, 14.0f).withCentre ({ sliderPos, bounds.getCentreY() });
     g.setColour (slider.findColour (juce::Slider::thumbColourId).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
     g.fillRoundedRectangle (thumb, 2.0f);
+
+    if (slider.hasKeyboardFocus (false))
+        drawFocusRing (g, thumb.expanded (3.0f), 3.0f);
 }
 
 int LithiumLookAndFeel::getSliderThumbRadius (juce::Slider& slider)
@@ -332,6 +345,9 @@ void LithiumLookAndFeel::drawFader (juce::Graphics& g, juce::Rectangle<int> area
     g.drawRoundedRectangle (cap.reduced (0.5f), 3.0f, 1.0f);
     g.setColour (text);
     g.fillRect (cap.withSizeKeepingCentre (cap.getWidth() - 8.0f, 1.5f));
+
+    if (slider.hasKeyboardFocus (false))
+        drawFocusRing (g, cap.expanded (2.0f), 4.0f);
 }
 
 void LithiumLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float position,
@@ -377,9 +393,25 @@ void LithiumLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int 
     const auto root = centre.getPointOnCircumference (body * 0.35f, angle);
     g.setColour (enabled ? text : textMuted);
     g.drawLine ({ root, tip }, std::max (1.5f, size * 0.05f));
+
+    if (slider.hasKeyboardFocus (false))
+    {
+        g.setColour (theme::colours::focus);
+        g.drawEllipse (juce::Rectangle<float> (body * 2.0f, body * 2.0f).withCentre (centre), (float) theme::size::focusRing);
+    }
 }
 
 //==============================================================================
+void LithiumLookAndFeel::drawCallOutBoxBackground (juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image&)
+{
+    // A soft shadow, then the panel with its border, like the overlay cards.
+    juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 14, { 0, 3 }).drawForPath (g, path);
+    g.setColour (theme::colours::panel);
+    g.fillPath (path);
+    g.setColour (theme::colours::borderStrong);
+    g.strokePath (path, juce::PathStrokeType (1.0f));
+}
+
 void LithiumLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
 {
     const auto bounds = juce::Rectangle<int> (width, height).toFloat();

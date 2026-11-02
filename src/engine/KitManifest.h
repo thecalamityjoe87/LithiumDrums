@@ -2,6 +2,7 @@
 
 #include "Articulations.h"
 #include "Kit.h"
+#include "KitSlots.h"
 #include "MidiMap.h"
 
 #include <juce_core/juce_core.h>
@@ -32,9 +33,10 @@ inline constexpr int maxRoundRobins = 1024;
 struct MicSource
 {
     int mic = 0;                           // index into KitManifest::mics
-    juce::String file;                     // relative to the kit's audio folder
+    juce::String file;                     // relative to its audio folder
     std::array<int, 2> fileChannels {};    // 1-based channels in the file; [1] is 0 for mono mics
     std::int64_t start = 0;                // frames skipped at the start of the file
+    int source = 0;                        // which audio folder: 0 = the kit's, n = KitManifest::swapSources[n - 1]
 };
 
 struct HitManifest
@@ -64,6 +66,18 @@ struct ArticulationManifest
     std::optional<float> position;         // strike position: 0 = centre (or near the bell) .. 1 = edge
 };
 
+/** A piece taken from another kit (see PieceSwap.h): where it came from,
+    and how its mics were mapped onto this kit's. */
+struct SwapManifest
+{
+    juce::String kitId;                    // the kit it came from: its id
+    juce::String kitName;                  // and as shown in the UI
+    juce::String pieceName;                // the piece's name in that kit
+    double sampleRate = 0.0;               // its recordings' sample rate
+    std::array<float, maxMics> micGain {}; // per mic of this kit: the source mic's level (and polarity) relative to this one's
+    juce::StringArray dropped;             // source mics with nowhere to go, by name
+};
+
 struct PieceManifest
 {
     juce::String id, name;
@@ -73,6 +87,9 @@ struct PieceManifest
     float volumeDb = 0.0f;                 // the kit's own level, under the Volume parameter
     float decay = 1.0f;                    // 0..1, the kit's own decay, scaling the Decay parameter
     std::vector<ArticulationManifest> articulations;
+    std::optional<SwapManifest> swap;      // set if this piece was swapped in from another kit
+    juce::String swapProblem;              // why a swap asked for couldn't be made
+    int slot = -1;                         // its place on the Kit tab's slots (see KitSlots.h); set by swaps::apply()
 };
 
 struct MicManifest
@@ -84,12 +101,22 @@ struct MicManifest
     bool invertPolarity = false;
 };
 
+/** Where a swapped-in piece's audio lives: another kit's audio folder. */
+struct AudioSource
+{
+    juce::File folder;
+    double sampleRate = 0.0;
+};
+
 struct KitManifest
 {
     juce::File folder;                     // the kit (or preset) folder
     juce::File audioFolder;                // where the audio paths point: the kit folder, or a preset's base kit
+    std::vector<AudioSource> swapSources;  // other kits' audio, for swapped-in pieces (MicSource::source)
+    kitslots::Owners slotOwners;           // the kit's own piece in each slot, before any swaps (set by swaps::apply())
     juce::String id;
     bool isPreset = false;
+    juce::String baseId;                   // a preset's base kit (the kit whose recordings it plays); empty for a kit
     juce::StringArray tags;
     KitCredits credits;
     double sampleRate = 0.0;
@@ -108,6 +135,11 @@ struct KitManifest
 
     int findMic (const juce::String& micId) const;
     int findPiece (const juce::String& pieceId) const;
+
+    /** The folder and sample rate of a MicSource::source. */
+    juce::File folderOf (int source) const       { return source == 0 ? audioFolder : swapSources[(size_t) source - 1].folder; }
+    double sampleRateOf (int source) const       { return source == 0 ? sampleRate : swapSources[(size_t) source - 1].sampleRate; }
+    int numSources() const noexcept              { return 1 + (int) swapSources.size(); }
 };
 
 /** What kit menus and the kit browser show, read without loading any audio. */
@@ -119,6 +151,14 @@ struct KitSummary
     juce::StringArray tags;
     int numPieces = 0, numMics = 0;
     std::int64_t ramBytes = 0;             // from the importer's "stats"; 0 = not known
+
+    struct Piece
+    {
+        juce::String id, name;
+        PieceRole role = PieceRole::other;
+    };
+
+    std::vector<Piece> pieces;             // kits only (not presets): what piece swapping can offer
 };
 
 /** Reads a kit folder's summary. Returns false if the folder doesn't hold a

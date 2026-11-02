@@ -1,13 +1,17 @@
 #pragma once
 
 #include "KitStage.h"
-#include "PieceStrip.h"
+#include "SlotGrid.h"
 
 namespace lithium
 {
 
-/** The Kit tab: the stage on top, one strip per piece of the loaded kit
-    below, scrolling sideways when there are more than fit. */
+/** The Kit tab, in one of two views (switched at the top right):
+      - Stage: the rendered kit, filling the tab. Clicking a piece selects
+        and plays it; a card at the bottom left has the selected piece's model,
+        volume, mute, solo and play, and a way to the Edit tab.
+      - Slots: a card per piece (see SlotGrid), for building a kit of your
+        own by swapping pieces in from other kits. */
 class KitPage final : public juce::Component, private juce::ChangeListener
 {
 public:
@@ -20,15 +24,20 @@ public:
     void resized() override;
 
 private:
+    class PieceCard;
+
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void updateKitInfo();
+    void showSlots (bool);
 
     LithiumDrumsProcessor& processor;
-    KitStage stage;
-    juce::Viewport stripView;
-    juce::Component stripRow;                         // the strips, inside the viewport
-    std::vector<std::unique_ptr<PieceStrip>> strips;
     std::shared_ptr<const KitInfo> shownKit;
+
+    KitStage stage;
+    std::unique_ptr<PieceCard> card;
+    juce::TextButton stageButton { "Stage" }, slotsButton { "Slots" };
+    juce::Viewport slotView;
+    SlotGrid slots;
 };
 
 /** Placeholder for the tabs that later milestones fill in. */

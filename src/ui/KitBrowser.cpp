@@ -330,13 +330,15 @@ public:
         g.setFont (body (12.5f));
         g.drawText (subtitleFor (entry, pack), area.removeFromTop (18.0f), juce::Justification::centredLeft, true);
 
-        // Sizes, at the bottom.
+        // Sizes, at the bottom: pieces and mics on the left, RAM on the
+        // right, so the size is never the part that gets cut off.
         const auto& s = entry.summary;
-        juce::String sizes;
-        sizes << s.numPieces << " pcs   " << s.numMics << " mics   " << formatBytes (s.ramBytes);
+        auto row = area.removeFromBottom (16.0f);
         g.setColour (colours::text.withAlpha (0.75f));
-        g.setFont (mono (11.5f));
-        g.drawText (sizes, area.removeFromBottom (16.0f), juce::Justification::centredLeft, true);
+        g.setFont (mono (type::caption));
+        g.drawText (formatBytes (s.ramBytes), row, juce::Justification::centredRight, false);
+        g.drawText (juce::String (s.numPieces) + " pcs  " + juce::String (s.numMics) + " mics", row.withTrimmedRight (64.0f),
+                    juce::Justification::centredLeft, true);
     }
 
     void mouseDown (const juce::MouseEvent&) override          { if (onClick) onClick (index); }

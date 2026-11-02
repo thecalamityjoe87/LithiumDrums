@@ -109,6 +109,7 @@ private:
         // The four-sample window the Hermite interpolator works on, per channel:
         // the frames at x-1, x0, x1, x2 around the current position.
         std::array<std::array<float, 4>, maxChannelsPerMic> window {};
+        float sourceGain = 1.0f;                                          // the piece's PieceData::micGain for this mic
         std::array<float, 2> lastGain {};                                 // left and right, as last rendered
         std::array<std::array<dsp::SvfState, maxChannelsPerMic>, 2> tone {};   // [high-pass, low-pass][channel]
     };
