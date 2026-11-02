@@ -195,6 +195,36 @@ namespace
             options.phase->store (phase, std::memory_order_relaxed);
     }
 
+    /** Where each step of a ladder plays alone. The kit's own ranges
+        (positionRange) where it gives them; otherwise the step plays alone up
+        to (1 - crossfade) / 2 of the way to its neighbours, so only the
+        middle of each gap crossfades. Mostly playing single real
+        recordings keeps the sound natural; the crossfade means a slowly
+        moving pedal or a roll across the head never jumps. */
+    void setRanges (Ladder& ladder, const std::vector<KitArticulationInfo>& articulations, int firstArticulation, bool positions)
+    {
+        constexpr float alone = (1.0f - Ladder::crossfadeWidth) * 0.5f;
+        const auto n = ladder.numSteps;
+
+        for (int i = 0; i < n; ++i)
+        {
+            const auto v = ladder.value[(size_t) i];
+            ladder.low[(size_t) i] = i == 0 ? 0.0f : v - alone * (v - ladder.value[(size_t) i - 1]);
+            ladder.high[(size_t) i] = i == n - 1 ? 1.0f : v + alone * (ladder.value[(size_t) i + 1] - v);
+
+            const auto local = ladder.articulation[(size_t) i] - firstArticulation;
+
+            if (positions && juce::isPositiveAndBelow (local, (int) articulations.size()))
+            {
+                if (const auto& t = articulations[(size_t) local].traits; t.positionLow >= 0.0f)
+                {
+                    ladder.low[(size_t) i] = t.positionLow;
+                    ladder.high[(size_t) i] = t.positionHigh;
+                }
+            }
+        }
+    }
+
     /** Fills a piece's ladders from its articulations' traits (KitArticulationInfo::traits).
 
         Each ladder is sorted by value, with one articulation per value (the
@@ -203,7 +233,7 @@ namespace
         the pedal half up still sounds half open. */
     void buildLadders (PieceData& pd, KitPieceInfo& info)
     {
-        auto build = [&] (Ladder& ladder, auto&& valueOf)
+        auto build = [&] (Ladder& ladder, auto&& valueOf, bool positions)
         {
             std::vector<std::pair<float, int>> steps;
 
@@ -223,6 +253,8 @@ namespace
                 ladder.value[(size_t) i] = steps[(size_t) i].first;
                 ladder.articulation[(size_t) i] = steps[(size_t) i].second;
             }
+
+            setRanges (ladder, info.articulations, pd.firstArticulation, positions);
         };
 
         auto opennessOf = [] (HatStroke stroke)
@@ -230,8 +262,8 @@ namespace
             return [stroke] (const ArticulationTraits& t) { return t.stroke == stroke ? t.openness : -1.0f; };
         };
 
-        build (pd.hatLadders[0], opennessOf (HatStroke::tip));
-        build (pd.hatLadders[1], opennessOf (HatStroke::shank));
+        build (pd.hatLadders[0], opennessOf (HatStroke::tip), false);
+        build (pd.hatLadders[1], opennessOf (HatStroke::shank), false);
 
         if (pd.hatLadders[1].numSteps > 0)
         {
@@ -257,13 +289,15 @@ namespace
                     edge.articulation[(size_t) j] = tip.articulation[(size_t) i];
                 }
             }
+
+            setRanges (edge, info.articulations, pd.firstArticulation, false);
         }
         else
         {
             pd.hatLadders[1] = pd.hatLadders[0];   // no edge recordings: edge hits use the bow's steps
         }
 
-        build (pd.positionLadder, [] (const ArticulationTraits& t) { return t.position; });
+        build (pd.positionLadder, [] (const ArticulationTraits& t) { return t.position; }, true);
 
         info.hatSteps = { pd.hatLadders[0].numSteps, pd.hatLadders[1].numSteps };
         info.positionSteps = pd.positionLadder.numSteps;
@@ -505,6 +539,16 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
             if (am.position.has_value())
                 traits.position = *am.position;
 
+            if (am.positionRange.has_value())
+                std::tie (traits.positionLow, traits.positionHigh) = *am.positionRange;
+
+            // The hits a position controller still changes when the kit has
+            // no positional recordings: a drum's centre hit, a ride's bow.
+            const auto standard = articulations::standardName (pm.role, idString);
+            traits.emulatesPosition = (pm.role == PieceRole::ride && standard == "bow")
+                                      || ((pm.role == PieceRole::snare || pm.role == PieceRole::tom || pm.role == PieceRole::floorTom)
+                                          && (standard == "center" || standard == "hit"));
+
             if (pm.role != PieceRole::hihat)
                 traits.openness = -1.0f;
 
@@ -564,6 +608,37 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
             kit->articulations.push_back (a);
         }
+
+        // The hits the hi-hat pedal plays by itself, and the ride's edge, by
+        // their standard names. Only the kit's own ids count here (no
+        // fallback): a kit without a foot splash plays none, rather than a
+        // closed hit standing in for it.
+        auto find = [&] (PieceRole role, std::string_view standard) -> int
+        {
+            if (pm.role != role)
+                return -1;
+
+            for (const auto match : articulations::matchesFor (role, standard))
+            {
+                if (match.empty())
+                    break;
+
+                // The aliases' last resorts (a closed hit for "pedal", the bow
+                // for "edge", the chick for "splash") don't count.
+                if (match == "closed" || match == "bow" || (standard == "splash" && match == "pedal"))
+                    continue;
+
+                for (size_t a = 0; a < pieceInfo.articulations.size(); ++a)
+                    if (pieceInfo.articulations[a].id == juce::String (match.data(), match.size()))
+                        return pd.firstArticulation + (int) a;
+            }
+
+            return -1;
+        };
+
+        pd.pedalArticulation = find (PieceRole::hihat, "pedal");
+        pd.splashArticulation = find (PieceRole::hihat, "splash");
+        pd.edgeArticulation = find (PieceRole::ride, "edge");
 
         buildLadders (pd, pieceInfo);
         kit->pieces.push_back (pd);
@@ -726,10 +801,15 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
 
         if (micChannels == 2 && header.numChannels == 1)
             channels = { 1, 1 };     // a mono file on a stereo mic plays centred
+        else if (micChannels == 2 && channels[1] < 1)
+            channels[1] = channels[0];   // so does a mono source on a stereo mic
 
+        // Checked here, on the loader thread: a channel outside the file
+        // would have the decoding threads read and write outside their
+        // buffers, which takes the whole host down.
         for (int ch = 0; ch < micChannels; ++ch)
         {
-            if (channels[(size_t) ch] > header.numChannels)
+            if (channels[(size_t) ch] < 1 || channels[(size_t) ch] > header.numChannels)
             {
                 error = file.path + " has " + juce::String (header.numChannels) + " channels, but the kit reads channel "
                         + juce::String (channels[(size_t) ch]) + " of it for mic \"" + manifest.mics[(size_t) s.source.mic].id + "\"";

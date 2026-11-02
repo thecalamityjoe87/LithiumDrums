@@ -1,0 +1,40 @@
+{
+  "format": "lithium-midi-map",
+  "version": 1,
+  "id": "2box-drumit-five",
+  "name": "2BOX DrumIt Five MkII",
+  "description": "The factory notes of the 2BOX DrumIt Five MkII (its manual, channel overview), with cymbal 1 as the crash, cymbal 2 as the ride and cymbal 3 as a second crash. Set the module's PED to CC4. The cymbals' choke notes (67, 74, 79) aren't used: grab the cymbal or use Lithium's choke notes.",
+  "controllers": {
+    "hihatPedal": 4,
+    "pedalInverted": false,
+    "snarePosition": -1,
+    "ridePosition": -1,
+    "tomPosition": -1,
+    "hihatPosition": -1
+  },
+  "notes": [
+    {"note": 36, "role": "kick", "articulation": "hit"},
+    {"note": 41, "role": "snare", "articulation": "center"},
+    {"note": 42, "role": "snare", "articulation": "rimshot"},
+    {"note": 45, "role": "hihat", "articulation": "closed", "follow": "pedal"},
+    {"note": 46, "role": "hihat", "articulation": "closed_edge", "follow": "pedal"},
+    {"note": 47, "role": "hihat", "articulation": "pedal"},
+    {"note": 50, "role": "toms", "articulation": "center"},
+    {"note": 51, "role": "toms", "articulation": "rimshot"},
+    {"note": 53, "role": "toms", "nth": 1, "articulation": "center"},
+    {"note": 54, "role": "toms", "nth": 1, "articulation": "rimshot"},
+    {"note": 57, "role": "toms", "nth": 2, "articulation": "center"},
+    {"note": 58, "role": "toms", "nth": 2, "articulation": "rimshot"},
+    {"note": 60, "role": "toms", "nth": 3, "articulation": "center"},
+    {"note": 61, "role": "toms", "nth": 3, "articulation": "rimshot"},
+    {"note": 64, "role": "crash", "articulation": "bell"},
+    {"note": 65, "role": "crash", "articulation": "bow"},
+    {"note": 66, "role": "crash", "articulation": "edge"},
+    {"note": 71, "role": "ride", "articulation": "bell"},
+    {"note": 72, "role": "ride", "articulation": "bow"},
+    {"note": 73, "role": "ride", "articulation": "edge"},
+    {"note": 76, "role": "crash", "nth": 1, "articulation": "bell"},
+    {"note": 77, "role": "crash", "nth": 1, "articulation": "bow"},
+    {"note": 78, "role": "crash", "nth": 1, "articulation": "edge"}
+  ]
+}

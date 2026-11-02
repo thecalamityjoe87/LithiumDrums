@@ -23,6 +23,11 @@ struct VoiceTrigger
     float pitchEnvDecay = 0.0f;       // per-sample multiplier that takes the offset back to 0
     int attackSamples = 0;
     int holdSamples = 0;
+
+    // A strike position the kit has no recordings of, made by filtering this
+    // one hit (see DrumEngine::positionTone): a low shelf and a high shelf.
+    // Pass-through by default.
+    std::array<dsp::SvfCoefficients, 2> positionTone {};
 };
 
 /** Per-block values shared by all voices. */
@@ -112,6 +117,7 @@ private:
         float sourceGain = 1.0f;                                          // the piece's PieceData::micGain for this mic
         std::array<float, 2> lastGain {};                                 // left and right, as last rendered
         std::array<std::array<dsp::SvfState, maxChannelsPerMic>, 2> tone {};   // [high-pass, low-pass][channel]
+        std::array<std::array<dsp::SvfState, maxChannelsPerMic>, 2> position {};   // [low shelf, high shelf][channel]
     };
 
     void closeStreams (Kit&) noexcept;
@@ -132,6 +138,7 @@ private:
     std::int64_t nextFrame = 0;           // next source frame to read (same for every stream)
     std::int64_t longestStream = 0;
     float pitchOffset = 0.0f, pitchDecay = 0.0f;
+    std::array<dsp::SvfCoefficients, 2> positionTone {};
 
     float gain = 1.0f;
     float decayEnvelope = 1.0f;

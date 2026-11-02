@@ -1,0 +1,31 @@
+{
+  "format": "lithium-midi-map",
+  "version": 1,
+  "id": "yamaha-dtx402",
+  "name": "Yamaha DTX402 / 432 / 452",
+  "description": "The factory notes of Yamaha's DTX402K, DTX432K and DTX452K modules (Yamaha's MIDI Reference). Their hi-hat controller is a switch, so the hats play open or closed as the module sends them.",
+  "controllers": {
+    "hihatPedal": -1,
+    "pedalInverted": false,
+    "snarePosition": -1,
+    "ridePosition": -1,
+    "tomPosition": -1,
+    "hihatPosition": -1
+  },
+  "notes": [
+    {"note": 36, "role": "kick", "articulation": "hit"},
+    {"note": 37, "role": "snare", "articulation": "sidestick"},
+    {"note": 38, "role": "snare", "articulation": "center"},
+    {"note": 40, "role": "snare", "articulation": "rimshot"},
+    {"note": 42, "role": "hihat", "articulation": "closed"},
+    {"note": 43, "role": "toms", "nth": 2, "articulation": "center"},
+    {"note": 44, "role": "hihat", "articulation": "pedal"},
+    {"note": 46, "role": "hihat", "articulation": "open"},
+    {"note": 47, "role": "toms", "nth": 1, "articulation": "center"},
+    {"note": 48, "role": "toms", "articulation": "center"},
+    {"note": 49, "role": "crash", "articulation": "hit"},
+    {"note": 51, "role": "ride", "articulation": "bow"},
+    {"note": 57, "role": "crash", "nth": 1, "articulation": "hit"},
+    {"note": 83, "role": "hihat", "articulation": "splash"}
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "format": "lithium-midi-map",
+  "version": 1,
+  "id": "lemon-t950",
+  "name": "Lemon T-950",
+  "description": "The Lemon T-950 in USB mode, from a note chart rather than Lemon's own documentation (Lemon publishes none). The chart gave 51 to both the ride bow and crash 2's edge, and 59 to both the ride bell and edge; here 51 is the ride bow and 59 its edge, and crash 2's edge and the ride bell are left for Learn. The hi-hat follows the pedal (CC4).",
+  "controllers": {
+    "hihatPedal": 4,
+    "pedalInverted": false,
+    "snarePosition": -1,
+    "ridePosition": -1,
+    "tomPosition": -1,
+    "hihatPosition": -1
+  },
+  "notes": [
+    {"note": 36, "role": "kick", "articulation": "hit"},
+    {"note": 37, "role": "snare", "articulation": "rim"},
+    {"note": 38, "role": "snare", "articulation": "center"},
+    {"note": 42, "role": "hihat", "articulation": "closed", "follow": "pedal"},
+    {"note": 43, "role": "toms", "nth": 2, "articulation": "center"},
+    {"note": 45, "role": "toms", "nth": 1, "articulation": "center"},
+    {"note": 46, "role": "hihat", "articulation": "open", "follow": "pedal"},
+    {"note": 48, "role": "toms", "articulation": "center"},
+    {"note": 49, "role": "crash", "articulation": "bow"},
+    {"note": 51, "role": "ride", "articulation": "bow"},
+    {"note": 55, "role": "crash", "nth": 1, "articulation": "bow"},
+    {"note": 57, "role": "crash", "articulation": "edge"},
+    {"note": 59, "role": "ride", "articulation": "edge"}
+  ]
+}

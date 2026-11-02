@@ -36,6 +36,9 @@ public:
     /** The kit piece (index) shown at a point, if any. Dimmed slots don't count. */
     std::optional<int> getPieceAt (juce::Point<float>) const;
 
+    /** Where a slot's piece is drawn, in this component's coordinates. */
+    std::optional<juce::Rectangle<float>> getSlotBounds (StageSlot) const;
+
     void paint (juce::Graphics&) override;
     void resized() override;
 

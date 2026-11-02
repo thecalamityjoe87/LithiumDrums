@@ -9,7 +9,8 @@
     "pedalInverted": false,
     "snarePosition": -1,
     "ridePosition": -1,
-    "tomPosition": -1
+    "tomPosition": -1,
+    "hihatPosition": -1
   },
   "notes": [
     {"note": 21, "role": "hihat", "articulation": "splash"},

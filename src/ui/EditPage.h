@@ -28,6 +28,9 @@ public:
     explicit EditPage (LithiumDrumsProcessor&);
     ~EditPage() override;
 
+    /** Asks for an FX return's effect to be shown on the FX page (a send's name was clicked). */
+    std::function<void (params::FxReturn)> onOpenReturn;
+
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;

@@ -281,6 +281,21 @@ namespace
         result.openness = unitValue ("openness");
         result.position = unitValue ("position");
 
+        // A range of positions the articulation plays alone; between two
+        // ranges, the steps crossfade. Without a "position", it's the middle.
+        if (! art["positionRange"].isVoid())
+        {
+            const auto& range = getArray (art, "positionRange", where);
+
+            if (range.size() != 2 || (double) range[0] < 0.0 || (double) range[1] > 1.0 || (double) range[0] > (double) range[1])
+                fail (where, "\"positionRange\" must be [low, high], within 0..1");
+
+            result.positionRange = std::pair { (float) (double) range[0], (float) (double) range[1] };
+
+            if (! result.position.has_value())
+                result.position = 0.5f * (result.positionRange->first + result.positionRange->second);
+        }
+
         if (const auto stroke = getString (art, "stroke", where, false); stroke.isNotEmpty())
         {
             result.stroke = articulations::strokeFromKey (stroke.toStdString());

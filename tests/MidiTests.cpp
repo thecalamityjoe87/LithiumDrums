@@ -16,10 +16,10 @@ namespace
     /** The test kit, loaded with its own MIDI map, plus a DrumEngine to play it. */
     struct MidiRig
     {
-        MidiRig()
+        explicit MidiRig (const juce::File& folder = testKitFolder)
         {
             juce::String error;
-            kit = KitLoader::loadKit (testKitFolder, MidiMap::kitDefault(), info, error);
+            kit = KitLoader::loadKit (folder, MidiMap::kitDefault(), info, error);
             jassert (kit != nullptr);
 
             // Every mic to its own bus channel, so nothing depends on how close mics are routed.
@@ -35,7 +35,36 @@ namespace
 
         void useMap (const MidiMap& map)        { kit->notes = resolveMidiMap (map, info); }
         void note (int n, int velocity = 100)   { engine.noteOn (*kit, n, velocity, params); }
-        void cc (int controller, int value)     { engine.controlChange (*kit, controller, value); }
+        void cc (int controller, int value)     { engine.controlChange (*kit, 0, controller, value, params); }
+
+        /** A message at a time in milliseconds, on a MIDI channel. */
+        void noteAt (double ms, int channel, int n, int velocity = 100)
+        {
+            engine.setTime ((std::int64_t) (ms * 0.001 * sampleRate));
+            engine.noteOn (*kit, n, velocity, params, channel);
+        }
+
+        void ccAt (double ms, int channel, int controller, int value)
+        {
+            engine.setTime ((std::int64_t) (ms * 0.001 * sampleRate));
+            engine.controlChange (*kit, channel, controller, value, params);
+        }
+
+        /** The monitor events since the last call. */
+        std::vector<MidiMonitorEvent> events()
+        {
+            std::vector<MidiMonitorEvent> result;
+
+            for (MidiMonitorEvent e; engine.popMonitorEvent (e);)
+                result.push_back (e);
+
+            return result;
+        }
+
+        void setControllers (const std::function<void (ControllerSettings&)>& change)
+        {
+            change (kit->notes.controllers);
+        }
         int voices() const                      { return engine.getNumActiveVoices(); }
 
         void render (int numSamples)
@@ -121,6 +150,77 @@ namespace
     }
 
     using Played = std::pair<juce::String, juce::String>;
+
+    /** A copy of the test kit with what it lacks for the e-kit tests: a
+        hi-hat foot splash, a ride edge, and position ranges on the snare. */
+    juce::File makeExtendedKit()
+    {
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("LithiumExtendedTestKit");
+        folder.deleteRecursively();
+        testKitFolder.copyDirectoryTo (folder);
+
+        auto json = juce::JSON::parse (folder.getChildFile ("kit.json"));
+
+        for (auto& piece : *json["pieces"].getArray())
+        {
+            auto* articulations = piece["articulations"].getArray();
+
+            auto copyOf = [&] (const char* from, const char* id, const char* name)
+            {
+                for (const auto& a : *articulations)
+                {
+                    if (a["id"].toString() == from)
+                    {
+                        auto copy = juce::JSON::parse (juce::JSON::toString (a));
+                        copy.getDynamicObject()->setProperty ("id", id);
+                        copy.getDynamicObject()->setProperty ("name", name);
+                        articulations->add (copy);
+                        return;
+                    }
+                }
+            };
+
+            if (piece["id"].toString() == "hihat")
+                copyOf ("open", "splash", "Foot splash");
+
+            if (piece["id"].toString() == "ride")
+                copyOf ("bow", "edge", "Edge");
+
+            if (piece["id"].toString() == "snare")
+            {
+                for (auto& a : *articulations)
+                {
+                    if (a["id"].toString() == "center")
+                        a.getDynamicObject()->setProperty ("positionRange", juce::Array<juce::var> { 0.0, 0.2 });
+
+                    if (a["id"].toString() == "off_center")
+                        a.getDynamicObject()->setProperty ("positionRange", juce::Array<juce::var> { 0.4, 1.0 });
+                }
+            }
+        }
+
+        folder.getChildFile ("kit.json").replaceWithText (juce::JSON::toString (json));
+        return folder;
+    }
+
+    /** The share of a signal's energy in its highs (its first difference against itself). */
+    double brightness (const juce::AudioBuffer<float>& b)
+    {
+        double all = 0.0, highs = 0.0;
+
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        {
+            const auto* x = b.getReadPointer (ch);
+
+            for (int i = 1; i < b.getNumSamples(); ++i)
+            {
+                all += (double) x[i] * x[i];
+                highs += (double) (x[i] - x[i - 1]) * (x[i] - x[i - 1]);
+            }
+        }
+
+        return highs / std::max (1.0e-20, all);
+    }
 }
 
 class MidiMapTests final : public juce::UnitTest
@@ -133,7 +233,7 @@ public:
         beginTest ("The factory maps parse, and survive a round trip through JSON");
         {
             const auto maps = MidiMap::factoryMaps();
-            expectEquals ((int) maps.size(), 5);
+            expectEquals ((int) maps.size(), 10);
             expectEquals (maps.front().id, juce::String ("lithium-standard"));
 
             for (const auto& m : maps)
@@ -871,6 +971,369 @@ public:
     }
 };
 
+//==============================================================================
+class EdrumTests final : public juce::UnitTest
+{
+public:
+    EdrumTests() : juce::UnitTest ("E-drum controllers", "Lithium") {}
+
+    void runTest() override
+    {
+        beginTest ("Calibration, invert and the curve shape the pedal and the pads");
+        {
+            ControllerSettings c;
+            expectWithinAbsoluteError (DrumEngine::pedalOpenness (127, c), 0.0f, 1.0e-6f, "Roland: 127 is closed");
+            expectWithinAbsoluteError (DrumEngine::pedalOpenness (0, c), 1.0f, 1.0e-6f);
+
+            c.pedalMin = 20;
+            c.pedalMax = 100;
+            expectWithinAbsoluteError (DrumEngine::pedalOpenness (100, c), 0.0f, 1.0e-6f, "the calibrated top is fully closed");
+            expectWithinAbsoluteError (DrumEngine::pedalOpenness (10, c), 1.0f, 1.0e-6f, "below the calibrated bottom is fully open");
+            expectWithinAbsoluteError (DrumEngine::pedalOpenness (60, c), 0.5f, 1.0e-6f);
+
+            c.pedalInverted = true;
+            expectWithinAbsoluteError (DrumEngine::pedalOpenness (100, c), 1.0f, 1.0e-6f);
+
+            c.pedalCurve = 1.0f;
+            expect (DrumEngine::pedalOpenness (60, c) > 0.75f, "a positive curve opens the hats sooner");
+            c.pedalCurve = -1.0f;
+            expect (DrumEngine::pedalOpenness (60, c) < 0.1f, "a negative curve opens them later");
+
+            c.positionMin[0] = 10;
+            c.positionMax[0] = 110;
+            expectWithinAbsoluteError (DrumEngine::padPosition (0, 60, c), 0.5f, 1.0e-6f);
+            expectWithinAbsoluteError (DrumEngine::padPosition (0, 120, c), 1.0f, 1.0e-6f);
+        }
+
+        beginTest ("The thresholds move where the hats change step");
+        {
+            ControllerSettings c;
+
+            for (const auto v : { 0.0f, 0.1f, 0.375f, 0.6f, 1.0f })
+                expectWithinAbsoluteError (DrumEngine::hatLadderValue (v, c), v, 1.0e-5f, "the default thresholds change nothing");
+
+            c.hatThresholds = { 0.3f, 0.5f, 0.7f, 0.9f };
+            expectWithinAbsoluteError (DrumEngine::hatLadderValue (0.3f, c), 0.125f, 1.0e-5f);
+            expectWithinAbsoluteError (DrumEngine::hatLadderValue (0.15f, c), 0.0625f, 1.0e-5f);
+            expectWithinAbsoluteError (DrumEngine::hatLadderValue (0.95f, c), 0.9375f, 1.0e-5f);
+        }
+
+        MidiRig rig (makeExtendedKit());
+        rig.useMap (MidiMap::rolandVDrums());
+        const auto closed = rig.articulation ("hihat", "closed"), open = rig.articulation ("hihat", "open");
+        const auto pedal = rig.articulation ("hihat", "pedal"), splash = rig.articulation ("hihat", "splash");
+
+        beginTest ("The kit's pedal, foot splash and ride edge are found");
+        {
+            const auto& hat = rig.kit->pieces[(size_t) rig.piece ("hihat")];
+            expectEquals (hat.pedalArticulation, pedal);
+            expectEquals (hat.splashArticulation, splash);
+            expectEquals (rig.kit->pieces[(size_t) rig.piece ("ride")].edgeArticulation, rig.articulation ("ride", "edge"));
+        }
+
+        beginTest ("A pedal resting on a value doesn't wobble, and a real move is taken as it is");
+        {
+            rig.ccAt (0.0, 10, 4, 64);
+            const auto resting = rig.feedback.hihatOpenness.load();
+            rig.ccAt (10.0, 10, 4, 65);
+            expectEquals (rig.feedback.hihatOpenness.load(), resting, "one step is sensor noise");
+            rig.ccAt (20.0, 10, 4, 80);
+            expectWithinAbsoluteError (rig.feedback.hihatOpenness.load(), 1.0f - 80.0f / 127.0f, 1.0e-6f);
+            rig.events();
+        }
+
+        beginTest ("Controllers latch per MIDI channel, so a note uses its own channel's pedal");
+        {
+            rig.ccAt (100.0, 2, 4, 0);      // channel 2: open
+            rig.ccAt (101.0, 10, 4, 127);   // channel 10: closed
+            rig.noteAt (102.0, 2, 46);
+            expectEquals (rig.lastPlayed ("hihat"), open);
+            rig.noteAt (103.0, 10, 46);
+            expectEquals (rig.lastPlayed ("hihat"), closed);
+            rig.noteAt (104.0, 5, 46);
+            expectEquals (rig.lastPlayed ("hihat"), closed, "a channel with no pedal of its own uses the latest");
+            rig.engine.stopAll (*rig.kit);
+            rig.events();
+        }
+
+        beginTest ("A pedal on another channel than the one set is ignored, and the monitor says so");
+        {
+            rig.setControllers ([] (auto& c) { c.hihatChannel = 10; });
+            const auto before = rig.feedback.hihatOpenness.load();
+            rig.ccAt (200.0, 3, 4, 0);
+            expectEquals (rig.feedback.hihatOpenness.load(), before);
+            const auto events = rig.events();
+            expect (events.size() == 1 && events[0].detail == MidiMonitorEvent::Detail::ignored);
+            rig.setControllers ([] (auto& c) { c.hihatChannel = 0; });
+        }
+
+        beginTest ("Closing the pedal fast plays a chick, until the module sends pedal notes itself");
+        {
+            auto chicks = [&rig]
+            {
+                int n = 0;
+
+                for (const auto& e : rig.events())
+                    n += e.kind == MidiMonitorEvent::Kind::pedalChick ? 1 : 0;
+
+                return n;
+            };
+
+            rig.ccAt (1000.0, 10, 4, 0);
+            rig.ccAt (1020.0, 10, 4, 127);
+            expectEquals (chicks(), 1, "open to shut in 20 ms is a stomp");
+            expectEquals (rig.lastPlayed ("hihat"), pedal);
+
+            // Slowly, over a second: no chick.
+            rig.ccAt (2000.0, 10, 4, 0);
+
+            for (int i = 1; i <= 20; ++i)
+                rig.ccAt (2000.0 + i * 50.0, 10, 4, i * 127 / 20);
+
+            expectEquals (chicks(), 0, "a slow close isn't a chick");
+
+            // Once the module sends its own chick (note 44), the pedal stops making them.
+            rig.noteAt (3000.0, 10, 44, 80);
+            rig.ccAt (3100.0, 10, 4, 0);
+            rig.ccAt (3115.0, 10, 4, 127);
+            expectEquals (chicks(), 0, "automatic mode leaves chicks to the module once it sends them");
+
+            rig.setControllers ([] (auto& c) { c.chickFromPedal = ChickMode::always; });
+            rig.ccAt (3200.0, 10, 4, 0);
+            rig.ccAt (3215.0, 10, 4, 127);
+            expectEquals (chicks(), 1, "always means always");
+            rig.setControllers ([] (auto& c) { c.chickFromPedal = ChickMode::off; });
+            rig.ccAt (3300.0, 10, 4, 0);
+            rig.ccAt (3315.0, 10, 4, 127);
+            expectEquals (chicks(), 0);
+            rig.engine.stopAll (*rig.kit);
+        }
+
+        beginTest ("Closing and quickly reopening the pedal plays the foot splash");
+        {
+            auto splashes = [&rig]
+            {
+                int n = 0;
+
+                for (const auto& e : rig.events())
+                    n += e.kind == MidiMonitorEvent::Kind::footSplash ? 1 : 0;
+
+                return n;
+            };
+
+            rig.ccAt (4000.0, 10, 4, 0);
+            rig.ccAt (4015.0, 10, 4, 127);
+            rig.ccAt (4080.0, 10, 4, 60);
+            rig.ccAt (4100.0, 10, 4, 0);
+            expectEquals (splashes(), 1);
+            expectEquals (rig.lastPlayed ("hihat"), splash);
+
+            // Reopening a second later is just opening the hats.
+            rig.ccAt (5000.0, 10, 4, 127);
+            rig.ccAt (6000.0, 10, 4, 0);
+            expectEquals (splashes(), 0);
+
+            rig.setControllers ([] (auto& c) { c.footSplash = false; });
+            rig.ccAt (7000.0, 10, 4, 0);
+            rig.ccAt (7015.0, 10, 4, 127);
+            rig.ccAt (7080.0, 10, 4, 0);
+            expectEquals (splashes(), 0, "switched off");
+            rig.setControllers ([] (auto& c) { c.footSplash = true; });
+            rig.engine.stopAll (*rig.kit);
+        }
+
+        beginTest ("Shutting the pedal on ringing open hats fades them out, not cuts them");
+        {
+            rig.ccAt (8000.0, 10, 4, 0);
+            rig.noteAt (8001.0, 10, 46);
+            rig.render (512);
+            rig.ccAt (8020.0, 10, 4, 127);
+            rig.render (64);
+            expect (rig.voices() >= 1, "still sounding just after the pedal shuts");
+            rig.render ((int) (0.1 * sampleRate));
+            expectEquals (rig.voices(), 0, "gone within 100 ms");
+            rig.events();
+        }
+
+        beginTest ("Position ranges from kit.json decide where each step plays alone");
+        {
+            const auto& ladder = rig.kit->pieces[(size_t) rig.piece ("snare")].positionLadder;
+            expectEquals (ladder.numSteps, 2);
+            expectWithinAbsoluteError (ladder.high[0], 0.2f, 1.0e-6f);
+            expectWithinAbsoluteError (ladder.low[1], 0.4f, 1.0e-6f);
+
+            rig.ccAt (9000.0, 10, 16, juce::roundToInt (0.5f * 127.0f));
+            rig.noteAt (9001.0, 10, 38);
+            expectEquals (rig.voices(), 1, "0.5 is inside the off-centre range");
+            expectEquals (rig.lastPlayed ("snare"), rig.articulation ("snare", "off_center"));
+            rig.engine.stopAll (*rig.kit);
+
+            rig.ccAt (9100.0, 10, 16, juce::roundToInt (0.3f * 127.0f));
+            rig.noteAt (9101.0, 10, 38);
+            expectEquals (rig.voices(), 2, "between the ranges, both");
+            rig.engine.stopAll (*rig.kit);
+            rig.events();
+        }
+
+        beginTest ("On a drum without positional recordings, the edge sounds brighter");
+        {
+            auto hit = [&rig] (int position)
+            {
+                rig.engine.stopAll (*rig.kit);
+                rig.ccAt (0.0, 10, 18, position);
+                rig.noteAt (0.0, 10, 48, 100);
+                rig.render (8192);
+                juce::AudioBuffer<float> copy (rig.bus);
+                return copy;
+            };
+
+            const auto centre = hit (0), edge = hit (127);
+            expect (brightness (edge) > brightness (centre) * 1.3, "the edge has more highs, relative to its body");
+            expect (edge.getMagnitude (0, edge.getNumSamples()) < centre.getMagnitude (0, centre.getNumSamples()) * 1.2f);
+
+            const auto events = rig.events();
+            expect (! events.empty() && events.back().detail == MidiMonitorEvent::Detail::emulated);
+
+            rig.setControllers ([] (auto& c) { c.positionEnabled[(size_t) PositionSource::toms] = false; });
+            rig.ccAt (0.0, 10, 18, 127);
+            rig.noteAt (0.0, 10, 48, 100);
+            expect (rig.events().back().detail == MidiMonitorEvent::Detail::none, "a pad switched off doesn't follow its position");
+            rig.setControllers ([] (auto& c) { c.positionEnabled[(size_t) PositionSource::toms] = true; });
+            rig.engine.stopAll (*rig.kit);
+        }
+
+        beginTest ("A digital hi-hat's bow position brightens the hats, on top of the pedal's openness");
+        {
+            auto hit = [&rig] (int position)
+            {
+                rig.engine.stopAll (*rig.kit);
+                rig.ccAt (0.0, 10, 4, 127);        // pedal shut: closed hats
+                rig.ccAt (0.0, 10, 19, position);
+                rig.noteAt (0.0, 10, 42, 100);
+                rig.render (4096);
+                juce::AudioBuffer<float> copy (rig.bus);
+                return copy;
+            };
+
+            // At full strength, so the tilt is easy to measure.
+            rig.setControllers ([] (auto& c) { c.positionEmulation[(size_t) PositionSource::hihat] = 1.0f; });
+            const auto bell = hit (0), edge = hit (127);
+            expectEquals (rig.lastPlayed ("hihat"), closed, "the pedal still picks how open they are");
+            expect (brightness (edge) > brightness (bell), "the hats played at the edge are brighter");
+
+            // The filters themselves, at the far edge: less body, more sizzle.
+            const auto [tone, level] = DrumEngine::positionTone (PieceRole::hihat, 1.0f, sampleRate);
+            auto db = [&tone] (double hz)
+            {
+                return 20.0 * std::log10 (std::abs (dsp::response (tone[0], hz, sampleRate) * dsp::response (tone[1], hz, sampleRate)));
+            };
+
+            expectWithinAbsoluteError (db (60.0), -3.0, 0.3);
+            expectWithinAbsoluteError (db (15000.0), 4.0, 0.5);
+            expect (level < 1.0f, "and a little quieter");
+            rig.setControllers ([] (auto& c) { c.positionEmulation[(size_t) PositionSource::hihat] = 0.5f; });
+
+            const auto events = rig.events();
+            expect (! events.empty() && events.back().detail == MidiMonitorEvent::Detail::pedal);
+            expectWithinAbsoluteError (events.back().position, 1.0f, 1.0e-6f, "the monitor shows the bow position");
+
+            rig.setControllers ([] (auto& c) { c.positionEnabled[(size_t) PositionSource::hihat] = false; });
+            hit (127);
+            expectEquals (rig.events().back().position, -1.0f, "switched off, the hats ignore it");
+            rig.setControllers ([] (auto& c) { c.positionEnabled[(size_t) PositionSource::hihat] = true; });
+            rig.engine.stopAll (*rig.kit);
+        }
+
+        beginTest ("The ride's bow blends towards its edge with the position; the bell stays itself");
+        {
+            rig.ccAt (0.0, 10, 17, 127);
+            rig.noteAt (0.0, 10, 51);
+            expectEquals (rig.voices(), 2);
+            auto events = rig.events();
+            expect (events.back().detail == MidiMonitorEvent::Detail::rideBlend);
+            expectEquals ((int) events.back().blendedWith, rig.articulation ("ride", "edge"));
+            expectWithinAbsoluteError (events.back().blend, 0.5f, 0.01f, "the default emulation blends half the edge in at the far edge");
+            rig.engine.stopAll (*rig.kit);
+
+            rig.ccAt (0.0, 10, 17, 0);
+            rig.noteAt (0.0, 10, 51);
+            expectEquals (rig.voices(), 1, "near the bell, the bow alone");
+            rig.engine.stopAll (*rig.kit);
+
+            rig.noteAt (0.0, 10, 53);
+            expectEquals (rig.lastPlayed ("ride"), rig.articulation ("ride", "bell"));
+            expectEquals (rig.voices(), 1);
+            rig.engine.stopAll (*rig.kit);
+            rig.events();
+        }
+
+        beginTest ("Controller settings survive a round trip through JSON");
+        {
+            auto map = MidiMap::rolandVDrums();
+            auto& c = map.controllers;
+            c.hihatChannel = 10;
+            c.pedalMin = 12;
+            c.pedalMax = 120;
+            c.pedalCurve = -0.25f;
+            c.hatThresholds = { 0.2f, 0.4f, 0.6f, 0.8f };
+            c.chickFromPedal = ChickMode::always;
+            c.chickSensitivity = 0.75f;
+            c.footSplash = false;
+            c.positionChannel = { 10, 11, 12, 13 };
+            c.positionEnabled = { true, false, true, false };
+            c.positionMin = { 5, 6, 7, 8 };
+            c.positionMax = { 120, 121, 122, 123 };
+            c.positionCurve = { 0.5f, -0.5f, 0.0f, 0.25f };
+            c.positionEmulation = { 0.25f, 1.0f, 0.75f, 0.6f };
+
+            MidiMap parsed;
+            expect (MidiMap::parse (map.toJson(), parsed).wasOk());
+            expect (parsed.controllers == c);
+
+            MidiMap old;
+            expect (MidiMap::parse (R"({ "controllers": { "hihatPedal": 4 }, "notes": [] })", old).wasOk());
+            expect (old.controllers == ControllerSettings(), "maps saved before these settings get the defaults");
+        }
+
+        beginTest ("The Millenium MPS-1000's notes play what its pads are");
+        {
+            const auto map = MidiMap::factoryMap ("millenium-mps1000");
+            expectEquals (map.name, juce::String ("Millenium MPS-1000 / 600 / 850"));
+            const auto table = resolveMidiMap (map, rig.info);
+            auto plays = [&] (int note) { return played (rig.info, table, note); };
+
+            expect (plays (36) == Played { "kick", "hit" });
+            expect (plays (38) == Played { "snare", "center" });
+            expect (plays (40) == Played { "snare", "rimshot" });
+            expect (plays (37) == Played { "snare", "sidestick" });
+            expect (plays (48) == Played { "tom1", "center" });
+            expect (plays (45) == Played { "tom2", "center" });
+            expect (plays (43) == Played { "floor", "center" });
+            expect (plays (46) == Played { "hihat", "open" });
+            expect (plays (42) == Played { "hihat", "closed" });
+            expect (plays (23) == Played { "hihat", "half_open" });
+            expect (plays (44) == Played { "hihat", "pedal" });
+            expect (plays (22).first == "hihat" && plays (26).first == "hihat", "the MPS-600's hi-hat edge notes");
+            expect (plays (51) == Played { "ride", "bow" });
+            expect (plays (53) == Played { "ride", "bell" });
+            expect (plays (49).first == "crash");
+            expect (table.targets[46].follow == Follow::pedal, "the hats follow the pedal once it sends CC4");
+        }
+
+        beginTest ("The factory e-kit maps have the controllers of their module family");
+        {
+            const auto roland = MidiMap::rolandVDrums().controllers;
+            expectEquals (roland.hihatPedal, 4);
+            expect (roland.position == std::array<int, numPositionSources> { 16, 17, 18, 19 });
+            const auto alesis = MidiMap::alesis().controllers;
+            expectEquals (alesis.hihatPedal, 4);
+            expectEquals (alesis.position[0], -1, "Alesis modules don't send positional sensing");
+            expectEquals (alesis.position[(size_t) PositionSource::hihat], -1);
+        }
+    }
+};
+
+static EdrumTests edrumTests;
 static MidiMapTests midiMapTests;
 static ControllerTests controllerTests;
 static MidiProcessorTests midiProcessorTests;

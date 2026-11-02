@@ -1,6 +1,6 @@
 # MIDI maps and e-kits
 
-A MIDI map says which note plays what. Lithium Drums ships five, picked in the
+A MIDI map says which note plays what. Lithium Drums ships ten, picked in the
 MIDI panel (the round MIDI button in the header, which also lights up when
 notes arrive):
 
@@ -11,13 +11,28 @@ notes arrive):
 | General MIDI | MIDI files, keyboards and most drum MIDI packs. |
 | Roland V-Drums | The factory note map of Roland modules (TD-17, TD-27, TD-50 and others), with continuous hi-hat and positional sensing. |
 | Alesis | The factory note map of Alesis Nitro, Nitro Mesh, Turbo and Surge kits. |
+| 2BOX DrumIt Five MkII | Its factory notes (the manual's channel overview), with cymbal 1 as the crash, 2 as the ride and 3 as a second crash. Set the module's PED to CC4. |
+| EFNOTE 3 / 5 | Their factory notes (EFNOTE's Reference Guide): Roland-like, with the hi-hat pedal on CC4. |
+| Lemon T-950 | Its notes in USB mode, from a note chart rather than Lemon's own documentation. The chart gave 51 and 59 to two pads each; 51 plays the ride bow and 59 its edge, and crash 2's edge and the ride bell are left for Learn. |
+| Millenium MPS-1000 / 600 / 850 | The MPS-1000's and MPS-600's factory notes (their manuals' MIDI note lists, which agree), including the half-open hat (23), the hi-hat edges (26, 24, 22) and the pedal splash (21). The MPS-850's manual doesn't list its notes, so for it they're inferred from the other two; the MPS-450 and 150 appear to share the layout too. |
+| Yamaha DTX402 / 432 / 452 | Their factory notes (Yamaha's MIDI Reference). Their hi-hat controller is a switch, so the hats play as the module sends them. |
+
+Each of these comes from the maker's own documentation. Some modules aren't
+here because their makers don't publish a default map: the Yamaha DTX-PRO,
+DTX6 and DTX8/10 set notes per kit (their pedal is CC4 and their snare and
+ride positions are CC16 and CC17, as in the Roland map). (The Lemon T-950 map is the
+exception to the rule above: Lemon publishes no MIDI documentation, so it
+comes from a note chart; check it with the monitor.) For those, start from General MIDI or the closest map and use
+Learn, with the MIDI monitor to see what the module sends.
 
 The Roland notes come from Roland's published TD-27 default note map, and the
 controller behaviour from the TD-50X data list: CC4 runs from open (0) to
 closed (127), and positional sensing sends a CC before each hit, running from
 the centre of the head (0) to its edge (127). The snare, ride and tom position
-CC numbers are a setting on the module (SETUP > MIDI > CONTROL); the map
-expects 16, 17 and 18, and the MIDI panel changes them. The Alesis notes are
+CC numbers are a setting on the module (SETUP > MIDI > CONTROL: Snare CC,
+Ride CC, Toms/AUXs CC, and Hi-Hat CC for a digital hi-hat such as the
+VH-14D); the map expects 16, 17, 18 and 19, and the E-Drums view changes
+them, or learns them from the module. The Alesis notes are
 from the appendix of the Nitro module's manual, plus the General MIDI ride bell
 (53) and edge (59), which aren't on the Nitro chart but are what modules with
 three-zone rides send. Alesis modules that send CC4
@@ -107,22 +122,85 @@ openness lends the tip recording. Pedal hits (`pedal`), splashes and brush
 strokes are not on the ladder; they play as they are.
 
 **`"follow": "position"`** (snare, tom and ride hits). The position CC for the
-piece picks the strike position from a ladder: `center` 0, `off_center` 0.5,
-`edge` 1 on drums, or `"position"` values set in `kit.json`. Rides only have
-positions where the kit records the bow at several places and says so; none of
-the installed libraries does, so on today's kits ride position has no effect.
-Positions are recordings, never synthesized blends between bow and bell.
+piece picks the strike position, 0 (centre, or the bell side of a ride's bow)
+to 1 (edge). Where the kit has recordings at several positions (`center` 0,
+`off_center` 0.5, `edge` 1, or `"position"` and `"positionRange"` in
+`kit.json`), it moves between them. Where it hasn't:
 
-Between two steps, the nearer step plays alone. Only in the middle 30% of the
-gap do both play, with an equal-power crossfade, so a slowly moving pedal never
-jumps and most hits are still a single real recording. Openness of 0.1 plays
-the closed recording; 0.25 (halfway between closed and half open) plays both at
--3 dB.
+- A drum's centre hit is filtered on that hit alone: a low shelf takes some
+  body out, a high shelf brings up the ring and overtones, and the hit is up
+  to 2.5 dB quieter at the edge. **Edge tone** sets how strongly (at 50%, the
+  edge of a snare loses about 3.5 dB below 220 Hz and gains 3 dB above 3 kHz).
+- A ride's bow crossfades (equal-power) with the ride's own edge hit, two real
+  recordings; **Edge blend** is how much edge the far edge of the bow gets.
+  The bell is its own note, as modules send it. A ride with no edge recording
+  gets the tone change instead.
+
+Between two steps, each step plays alone across its range, and the two
+crossfade (equal-power) between ranges. Without `positionRange`, a step's
+range reaches 35% of the way to each neighbour, so only the middle 30% of each
+gap crossfades: a slowly moving pedal never jumps, and most hits are still a
+single real recording. Openness of 0.1 plays the closed recording; 0.25
+(halfway between closed and half open) plays both at -3 dB.
 
 Closing the pedal on ringing hats damps them, as on real hats: a voice played
 more than 0.4 more open than the pedal now is fades out over 80 ms, and once
-the pedal is shut every open step fades out over 30 ms, like a closed hit.
+the pedal is shut every open step fades into the closed sound over 50 ms.
 Opening the pedal never damps anything.
+
+## E-drums: the hi-hat pedal and positional pads
+
+The MIDI panel's **E-Drums** view (the switch in its toolbar) sets up how the
+e-kit's controllers are read, and has a MIDI monitor.
+
+**Hi-hat pedal.** Its controller (CC 4 by default) and MIDI channel, both of
+which **Learn** sets from the next controller that arrives. **Invert** is for
+pedals that send 0 when closed. **Calibrate**: click it, press the pedal fully
+down and let it fully up, click Done, and the range it really sends becomes
+closed to open. **Curve** bends the travel: below the middle the hats open
+later, above it sooner. **Pedal zones** is an upright bar of the pedal's travel
+(closed at the bottom) with four handles: where the pedal moves the sound from
+closed to a quarter open, a quarter to half, half to three quarters, and three
+quarters to open. They map the pedal onto
+the standard steps; a kit with fewer steps is spread over the same curve. A
+pedal sensor wobbles by a step even when the foot is still, so changes of
+under 1.5/127 are ignored (hysteresis), while a real move is taken exactly.
+
+**Pedal chick and foot splash.** A pedal closed quickly (at least 20% of its
+travel within 150 ms, faster than Sensitivity allows) plays the kit's pedal
+chick, with a velocity from how fast it closed. Most modules send their own
+chick as a note (44 on Roland), which plays as mapped, so by default the pedal
+only makes chicks until such a note arrives; Always and Off are the other
+choices. Closing quickly and opening past 30% within 250 ms plays the kit's
+foot splash, if it has one.
+
+**Positional pads** (snare, hi-hat, ride, toms): On, controller and channel
+(Learn), Calibrate, Curve, and Edge tone or Edge blend (above). A digital
+hi-hat sends where its bow was struck as well as how far the pedal is down:
+the pedal still picks how open the hats play, and the bow position changes
+their tone, brighter and washier from the bell side to the edge (no kit has
+hats recorded at several positions). Edge tone sets how strongly.
+
+**Order.** E-kit modules send the controller just before the note, with the
+same timestamp. Messages are handled in the order they arrive, and each
+controller is latched per MIDI channel, so a note plays with the value that
+came on its own channel just before it (or the latest on any channel, if its
+channel sent none). A controller on another channel than the one set is
+ignored.
+
+**MIDI monitor.** Every note, controller and aftertouch as it arrives, with
+what it played: the articulation (and the step it blended with), the openness
+or position it used, chicks and splashes the pedal played, controllers that
+were ignored. Pause holds it still.
+
+**Hardware, not sound.** These settings describe the player's kit, so they
+live in the MIDI map (`controllers` in its JSON), saved with each map and with
+the project. Presets don't hold the MIDI map, so loading a preset never
+changes them. The factory Roland map listens on CC 4 and CC 16-18; the Alesis
+map on CC 4, with no positional pads.
+
+The Kit page shows the pedal's openness beside the hi-hat, with lights for
+incoming notes and pedal messages, once MIDI has arrived.
 
 ## Cymbals and hats ring on
 
@@ -192,7 +270,7 @@ just its name, so it plays the same on a machine without that saved map.
   "id": "roland-vdrums",
   "name": "Roland V-Drums",
   "controllers": { "hihatPedal": 4, "pedalInverted": false,
-                   "snarePosition": 16, "ridePosition": 17, "tomPosition": 18 },
+                   "snarePosition": 16, "ridePosition": 17, "tomPosition": 18, "hihatPosition": 19 },
   "notes": [
     { "note": 38, "role": "snare", "articulation": "center", "follow": "position" },
     { "note": 43, "role": "toms", "nth": 2, "articulation": "center", "follow": "position" },
@@ -203,7 +281,7 @@ just its name, so it plays the same on a machine without that saved map.
 
 | Field | Meaning |
 |---|---|
-| `controllers` | Controller numbers, 0-127, or -1 for off. `pedalInverted` is for pedals that send 127 when open. |
+| `controllers` | Controller numbers, 0-127, or -1 for off. `pedalInverted` is for pedals that send 127 when open. Also `hihatChannel` (0 = any), `pedalRange` (`min`, `max`), `pedalCurve` (-1..1), `hatThresholds` (four, rising), `chickFromPedal` (`off`, `auto`, `always`), `chickSensitivity`, `footSplash`, and `pads` (`snare`, `ride`, `toms`, `hihat`: `channel`, `enabled`, `min`, `max`, `curve`, `emulation`). All optional. |
 | `role` | A piece role (`kick`, `snare`, `hihat`, `tom`, `floor_tom`, `crash`, `ride`, `china`, `other`), or `toms` for any tom. |
 | `nth` | Which piece of the role, from 0. Optional. |
 | `articulation` | A standard articulation name (or any kit's own name). |

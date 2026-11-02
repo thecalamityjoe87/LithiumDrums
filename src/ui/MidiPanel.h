@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EdrumsView.h"
 #include "InfoPanels.h"
 #include "MidiKeyboard.h"
 #include "MidiMapLibrary.h"
@@ -20,7 +21,10 @@ namespace lithium
        the next note that comes in (or the next key clicked), a note chip
        removes its note, and the follow button makes the articulation's
        notes follow the hi-hat pedal or the strike position;
-     - the keyboard: every note labelled with what it plays. */
+     - the keyboard: every note labelled with what it plays.
+
+    The E-Drums view (the switch in the toolbar) sets up the e-kit's hi-hat
+    pedal and positional pads, and has the MIDI monitor (see EdrumsView). */
 class MidiPanel final : public OverlayPanel,
                         private juce::ChangeListener,
                         private juce::Timer
@@ -55,6 +59,7 @@ private:
     void showNameEditor (bool);
     void saveAs();
     void setControllers (const std::function<void (ControllerSettings&)>&);
+    void showEdrums (bool);
 
     LithiumDrumsProcessor& processor;
     juce::SharedResourcePointer<Settings> settings;
@@ -68,6 +73,9 @@ private:
     juce::TextEditor nameEditor;
     juce::TextButton confirmSave { "Save" }, cancelSave { "Cancel" };
     juce::Rectangle<int> modifiedTag;
+    juce::TextButton mappingView { "Mapping" }, edrumsView { "E-Drums" };
+    EdrumsView edrums;
+    bool showingEdrums = false;
     double deleteArmedUntil = 0.0, defaultSavedUntil = 0.0;
 
     // The mapping table

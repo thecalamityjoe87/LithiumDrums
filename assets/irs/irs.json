@@ -1,0 +1,66 @@
+{
+  "format": "lithium-irs",
+  "version": 1,
+  "irs": [
+    {
+      "id": "studio",
+      "name": "Studio",
+      "file": "studio.flac",
+      "description": "A small, treated tracking room. Short and warm.",
+      "author": "Lithium Drums",
+      "source": "Synthesized by tools/irgen (image-source early reflections and a band-split noise tail)",
+      "sourceUrl": "",
+      "licenseName": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "changes": ""
+    },
+    {
+      "id": "seminar-room",
+      "name": "Seminar Room",
+      "file": "seminar-room.flac",
+      "description": "A real seminar room at Politecnico di Milano, measured with a linear microphone array. Medium size, natural.",
+      "author": "Federico Miotello, Paolo Ostan, Mirco Pezzoli, Luca Comanducci, Alberto Bernardini, Fabio Antonacci and Augusto Sarti (Politecnico di Milano)",
+      "source": "HOMULA-RIR (doi:10.5281/zenodo.10479726), source S1, linear-array microphones 0 and 33",
+      "sourceUrl": "https://zenodo.org/records/10479726",
+      "licenseName": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "changes": "Two array microphones combined into a stereo pair, the silence before the first arrival trimmed, the sides level-matched on their reverberation, the direct sound lowered by 9 dB, high-passed at 30 Hz, faded out, converted to FLAC."
+    },
+    {
+      "id": "tiled-room",
+      "name": "Tiled Room",
+      "file": "tiled-room.flac",
+      "description": "A garage with hard block walls and a concrete floor: bright, with a flutter echo.",
+      "author": "Lithium Drums",
+      "source": "Synthesized by tools/irgen",
+      "sourceUrl": "",
+      "licenseName": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "changes": ""
+    },
+    {
+      "id": "hall",
+      "name": "Hall",
+      "file": "hall.flac",
+      "description": "A large concert hall: long, dark tail, late first reflections.",
+      "author": "Lithium Drums",
+      "source": "Synthesized by tools/irgen",
+      "sourceUrl": "",
+      "licenseName": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "changes": ""
+    },
+    {
+      "id": "plate",
+      "name": "Plate",
+      "file": "plate.flac",
+      "description": "A plate: dense from the first millisecond, bright, light in the lows.",
+      "author": "Lithium Drums",
+      "source": "Synthesized by tools/irgen",
+      "sourceUrl": "",
+      "licenseName": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "changes": ""
+    }
+  ]
+}

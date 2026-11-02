@@ -183,6 +183,8 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
       saturation (p.getParameters(), TwoKnobModule::Kind::saturation),
       routing (p.getParameters(), true)
 {
+    routing.onOpenReturn = [this] (params::FxReturn r) { if (onOpenReturn) onOpenReturn (r); };
+
     // Piece bar
     previous.onClick = [this] { stepPiece (-1); };
     next.onClick = [this] { stepPiece (1); };

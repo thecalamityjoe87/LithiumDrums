@@ -268,6 +268,58 @@ public:
             }
         }
 
+        beginTest ("A mono room mic swapped onto a stereo one plays in the middle (it used to crash the load)");
+        {
+            // A kit whose room mic is mono, a channel of the same multichannel
+            // files as its other mics, as in the DrumGizmo kits.
+            const auto monoRoom = copyTestKit (kits, "swap-mono-room", {});
+            auto json = juce::JSON::parse (monoRoom.getChildFile ("kit.json"));
+
+            for (auto& mic : *json["mics"].getArray())
+                if (mic["id"].toString() == "room")
+                    mic.getDynamicObject()->setProperty ("channels", 1);
+
+            for (auto& piece : *json["pieces"].getArray())
+                for (auto& art : *piece["articulations"].getArray())
+                    if (auto* map = art["channelMap"].getDynamicObject(); map != nullptr && map->hasProperty ("room"))
+                    {
+                        const juce::var left = map->getProperty ("room")[0];   // a copy: the array is about to be replaced
+                        map->setProperty ("room", left);
+                    }
+
+            monoRoom.getChildFile ("kit.json").replaceWithText (juce::JSON::toString (json));
+
+            KitLoader::Options options;
+            options.swaps = { { "snare", "swap-mono-room", "snare", true } };
+            KitInfo info;
+            juce::String error;
+            std::shared_ptr<const LoadPlan> plan;
+            const auto kit = KitLoader::loadKit (host, MidiMap::lithiumStandard(), info, error, options, &plan);
+            expect (kit != nullptr, error);
+
+            if (kit != nullptr)
+            {
+                const auto room = [&] { for (size_t m = 0; m < info.mics.size(); ++m) if (info.mics[m].id == "room") return (int) m; return -1; }();
+                int checked = 0;
+
+                for (const auto& f : plan->files)
+                {
+                    for (const auto& t : f.targets)
+                    {
+                        expect (t.fileChannels[0] >= 0 && t.fileChannels[1] >= 0 && t.fileChannels[1] < f.numChannels, f.path);
+
+                        if (f.source == 1 && t.mic == room)
+                        {
+                            expectEquals (t.fileChannels[1], t.fileChannels[0], "the same channel on both sides");
+                            ++checked;
+                        }
+                    }
+                }
+
+                expect (checked > 0, "the swapped snare reaches the room mic");
+            }
+        }
+
         beginTest ("A swap from a kit that isn't installed leaves the piece as it was, and says so");
         {
             KitLoader::Options options;

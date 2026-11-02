@@ -31,6 +31,15 @@ struct ArticulationTraits
     float openness = -1.0f;
     HatStroke stroke = HatStroke::none;
     float position = -1.0f;
+
+    // Where the articulation plays alone on its piece's position ladder, if
+    // the kit says (kit.json "positionRange"); -1 = worked out from its
+    // neighbours' positions.
+    float positionLow = -1.0f, positionHigh = -1.0f;
+
+    // A drum's centre hit or a ride's bow: without positional recordings, a
+    // position controller still changes how it sounds (see DrumEngine).
+    bool emulatesPosition = false;
 };
 
 namespace articulations

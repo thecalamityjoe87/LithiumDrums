@@ -25,6 +25,7 @@ public:
 
 private:
     class PieceCard;
+    class HihatIndicator;
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void updateKitInfo();
@@ -35,6 +36,7 @@ private:
 
     KitStage stage;
     std::unique_ptr<PieceCard> card;
+    std::unique_ptr<HihatIndicator> hihat;
     juce::TextButton stageButton { "Stage" }, slotsButton { "Slots" };
     juce::Viewport slotView;
     SlotGrid slots;

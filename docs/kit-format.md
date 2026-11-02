@@ -137,6 +137,19 @@ MIDI maps find an articulation, and tell the e-kit controllers what it is (see
 | `openness` | Hi-hats: the articulation's step on the pedal's openness ladder, 0 (closed) to 1 (fully open). |
 | `stroke`   | Hi-hats: `"tip"` (bow hits) or `"shank"` (edge hits). Default `tip`. |
 | `position` | Drums and cymbals: the strike position, 0 (centre, or near the bell) to 1 (edge). A ride with several bow recordings uses this to follow positional sensing. |
+| `positionRange` | Optional, `[low, high]` within 0..1: the positions this articulation plays alone. Between one articulation's range and the next, the two crossfade. Without it, each position plays alone to 35% of the way to its neighbours. Implies `position` (the middle of the range) if that isn't given. |
+
+A snare recorded at the centre and off-centre, where the off-centre hit should
+take over from just under halfway:
+
+```json
+{ "id": "center",     "positionRange": [0.0, 0.2], "zones": [ ... ] },
+{ "id": "off_center", "positionRange": [0.4, 1.0], "zones": [ ... ] }
+```
+
+Hits at 0.2-0.4 blend the two. Kits without positional recordings still follow
+positional sensing: the engine filters the centre hit towards the edge, and a
+ride's bow blends towards its own `edge` hit (see [midi.md](midi.md)).
 
 **Zones** split the velocity range 1-127. They must not overlap; a velocity in
 a gap uses the nearest zone. Each zone has:

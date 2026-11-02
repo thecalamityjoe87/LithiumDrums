@@ -36,9 +36,15 @@ enum class Follow : std::uint8_t
 };
 
 /** Which strike position controller a piece listens to. Roland modules send
-    one CC for the snare, one for the ride's bow and one shared by the toms. */
-enum class PositionSource : std::uint8_t { snare, ride, toms };
-inline constexpr int numPositionSources = 3;
+    one CC for the snare, one for the ride's bow, one shared by the toms, and
+    one for the hi-hat's bow (with a digital hi-hat, the VH-14D). The order
+    is the saved order; the UI shows them snare, hi-hat, ride, toms. */
+enum class PositionSource : std::uint8_t { snare, ride, toms, hihat };
+inline constexpr int numPositionSources = 4;
+
+/** The order the UI shows the positional pads in. */
+inline constexpr std::array<PositionSource, numPositionSources> positionDisplayOrder {
+    PositionSource::snare, PositionSource::hihat, PositionSource::ride, PositionSource::toms };
 
 constexpr std::optional<PositionSource> positionSourceFor (PieceRole role) noexcept
 {
@@ -48,8 +54,8 @@ constexpr std::optional<PositionSource> positionSourceFor (PieceRole role) noexc
         case PieceRole::ride:     return PositionSource::ride;
         case PieceRole::tom:
         case PieceRole::floorTom: return PositionSource::toms;
+        case PieceRole::hihat:    return PositionSource::hihat;
         case PieceRole::kick:
-        case PieceRole::hihat:
         case PieceRole::crash:
         case PieceRole::china:
         case PieceRole::other:    break;
@@ -58,12 +64,51 @@ constexpr std::optional<PositionSource> positionSourceFor (PieceRole role) noexc
     return std::nullopt;
 }
 
-/** The controller numbers a map listens to. -1 = off. */
+/** When to play a pedal chick from the hi-hat pedal's controller alone. */
+enum class ChickMode : std::uint8_t
+{
+    off,
+    automatic,   // until the module sends a pedal note of its own (most do: note 44)
+    always
+};
+
+/** How the e-kit's controllers are read: the hi-hat pedal (openness), and
+    the positional pads (strike position). These describe the player's
+    hardware, not the sound, so they're kept in the MIDI map (saved with
+    each map, and with the project), never in a preset. Plain data, copied
+    to the audio thread inside a NoteTable. Controller numbers: -1 = off;
+    MIDI channels 1-16, 0 = any. */
 struct ControllerSettings
 {
+    static constexpr int numThresholds = 4;
+
+    // The hi-hat pedal.
     int hihatPedal = 4;
+    int hihatChannel = 0;
     bool pedalInverted = false;    // Roland and most others send 0 = open, 127 = closed
-    std::array<int, numPositionSources> position { 16, 17, 18 };
+    int pedalMin = 0, pedalMax = 127;   // calibration: the lowest and highest values the pedal really sends
+    float pedalCurve = 0.0f;       // -1..1: below 0 the hats open later in the pedal's travel, above 0 sooner
+
+    // Where (in pedal openness, 0..1) the sound moves up a step: from closed
+    // to a quarter open, a quarter to half, half to three quarters, and three
+    // quarters to fully open. A kit with fewer steps is spread over the same
+    // curve (see DrumEngine::hatLadderValue).
+    std::array<float, numThresholds> hatThresholds { 0.125f, 0.375f, 0.625f, 0.875f };
+
+    ChickMode chickFromPedal = ChickMode::automatic;
+    float chickSensitivity = 0.5f; // 0..1: how slow a close still plays a chick
+    bool footSplash = true;        // closing and quickly reopening plays the kit's foot splash
+
+    // The positional pads, by PositionSource (snare, ride, toms).
+    std::array<int, numPositionSources> position { 16, 17, 18, 19 };
+    std::array<int, numPositionSources> positionChannel {};
+    std::array<bool, numPositionSources> positionEnabled { true, true, true, true };
+    std::array<int, numPositionSources> positionMin {}, positionMax { 127, 127, 127, 127 };
+    std::array<float, numPositionSources> positionCurve {};
+
+    // For kits without positional recordings: how much the tone changes at
+    // the edge (drums), or how much of the edge hit is blended in (ride).
+    std::array<float, numPositionSources> positionEmulation { 0.5f, 0.5f, 0.5f, 0.5f };
 
     bool operator== (const ControllerSettings&) const = default;
 };
@@ -140,8 +185,9 @@ struct MidiMap
     static MidiMap rolandVDrums();
     static MidiMap alesis();
 
-    /** Lithium Standard, Kit default, General MIDI, Roland, Alesis: the maps
-        that ship with the plugin, in menu order. */
+    /** Lithium Standard, Kit default, General MIDI, Roland, Alesis, then 2BOX,
+        EFNOTE, Lemon, Millenium and Yamaha: the maps that ship with the plugin, in
+        menu order. */
     static std::vector<MidiMap> factoryMaps();
     static MidiMap factoryMap (const juce::String& id);   // lithiumStandard() if the id is unknown
 

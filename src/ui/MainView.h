@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditPage.h"
+#include "FxPage.h"
 #include "GroovesPage.h"
 #include "HeaderBar.h"
 #include "InfoPanels.h"
@@ -27,13 +28,14 @@ public:
 
 private:
     void showPanel (OverlayPanel*);
+    void openReturn (params::FxReturn);
 
     HeaderBar header;
     KitPage kitPage;
     EditPage editPage;
     MixerPage mixerPage;
     GroovesPage groovesPage;
-    ComingSoonPage fxPage;
+    FxPage fxPage;
     AboutPanel aboutPanel;
     SettingsPanel settingsPanel;
     MidiPanel midiPanel;

@@ -91,12 +91,16 @@ private:
     Knob first, second;
 };
 
-/** Where the channel goes: its reverb send and output, and optionally (on
-    the Edit page) its fader and pan. */
+/** Where the channel goes: its sends to the three FX returns (before or
+    after the fader) and its output, and optionally (on the Edit page) its
+    fader and pan. A send's name opens its effect on the FX page. */
 class RoutingModule final : public Module
 {
 public:
     RoutingModule (juce::AudioProcessorValueTreeState&, bool withFaderAndPan);
+
+    /** Called with a params::FxReturn when a send's name is clicked. */
+    std::function<void (params::FxReturn)> onOpenReturn;
 
     void attach (params::ChannelId);
     void resized() override;
@@ -106,7 +110,8 @@ private:
     juce::AudioProcessorValueTreeState& state;
     const bool withFader;
     Knob fader { "Channel", Knob::Style::labelled, Knob::Size::large }, pan { "Pan", Knob::Style::labelled, Knob::Size::large };
-    Knob send { "Reverb", Knob::Style::labelled, Knob::Size::large };
+    std::array<Knob, params::numFxReturns> sends { Knob { "Room" }, Knob { "Plate" }, Knob { "Delay" } };
+    ParamToggle pre { "Pre", "Sends before the fader: they don't follow it" };
     ParamCombo output;
 };
 

@@ -16,6 +16,8 @@ namespace
     const juce::Identifier stateMidiMap { "midiMap" };
     const juce::Identifier stateMidiMapModified { "midiMapModified" };
     const juce::Identifier statePresetFile { "presetFile" };
+    const juce::Identifier stateRoomIrFile { "roomIrFile" };   // on the parameters' own state, so presets carry it
+    const juce::Identifier stateFxAB { "fxAB" }, stateFxSlot { "slot" };
     const juce::Identifier grooveTempo { "tempo" }, grooveCustomBpm { "customBpm" }, grooveSpeed { "speed" }, grooveLoop { "loop" };
 
     constexpr double kitSwapFadeSeconds = 0.01;
@@ -69,6 +71,7 @@ LithiumDrumsProcessor::LithiumDrumsProcessor()
         }
     }
 
+    updateRoomIr();
     startTimerHz (5);
 }
 
@@ -100,8 +103,16 @@ void LithiumDrumsProcessor::prepareToPlay (double sampleRate, int maximumExpecte
 {
     currentSampleRate = sampleRate;
     engine.prepare (sampleRate);
-    mixer.prepare (sampleRate, std::max (64, maximumExpectedSamplesPerBlock));
+
+    {
+        // The IR loader hands the Room reverb new IRs from its own thread;
+        // this keeps it from doing so while the reverb is being prepared.
+        std::scoped_lock lock (irLoader.getEngineLock());
+        mixer.prepare (sampleRate, std::max (64, maximumExpectedSamplesPerBlock));
+    }
+
     loadMeasurer.reset (sampleRate, maximumExpectedSamplesPerBlock);
+    updateLatency();
 
     // The audio thread is guaranteed not to be running here, so a kit that
     // arrived while playback was stopped can be swapped in straight away.
@@ -183,6 +194,7 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         if (acceptNotes && request.note >= 0)
         {
             logHit (HitLogEntry::Source::key, request.note, request.velocity);
+            engine.setTime (engineClock);
             engine.noteOn (*kit, request.note, request.velocity, engineParams);
         }
         else if (acceptNotes && juce::isPositiveAndBelow (request.piece, (int) kit->pieces.size()))
@@ -205,7 +217,10 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         if (const auto info = host->getPosition())
         {
             if (const auto bpm = info->getBpm())
-                transport.hostBpm = *bpm;
+            {
+                transport.hostBpm = engineParams.hostBpm = *bpm;
+                hostBpm.store (*bpm, std::memory_order_relaxed);
+            }
 
             if (const auto ppq = info->getPpqPosition())
                 transport.hostPpq = *ppq;
@@ -257,20 +272,27 @@ void LithiumDrumsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         // Drums are one-shots, so note-offs (and All Notes Off, which many hosts
         // send when the transport stops) leave ringing cymbals alone. Only All
         // Sound Off silences the kit.
+        //
+        // Messages are handled in the order they arrive, so the hi-hat
+        // pedal's or a pad's position controller, which e-kit modules send
+        // just before the note, is always latched before the note plays.
+        engine.setTime (engineClock + eventTime);
+
         if (message.isAllSoundOff())
             engine.fadeOutAll (kitSwapFadeSeconds);
         else if (! acceptNotes)
             continue;
         else if (message.isNoteOn())
-            engine.noteOn (*kit, message.getNoteNumber(), message.getVelocity(), engineParams);
+            engine.noteOn (*kit, message.getNoteNumber(), message.getVelocity(), engineParams, message.getChannel());
         else if (message.isAftertouch())
-            engine.polyAftertouch (*kit, message.getNoteNumber(), message.getAfterTouchValue());
+            engine.polyAftertouch (*kit, message.getNoteNumber(), message.getAfterTouchValue(), message.getChannel());
         else if (message.isController())
-            engine.controlChange (*kit, message.getControllerNumber(), message.getControllerValue());
+            engine.controlChange (*kit, message.getChannel(), message.getControllerNumber(), message.getControllerValue(), engineParams);
     }
 
     playGrooveHitsBefore (numSamples + 1);
     render (kit, position, numSamples, mainOut, auxOuts);
+    engineClock += numSamples;
 
     if (hitLogOn)
         endHitLogBlock (mainBus.getMagnitude (0, numSamples), numSamples);
@@ -675,6 +697,8 @@ void LithiumDrumsProcessor::applySelection()
 void LithiumDrumsProcessor::timerCallback()
 {
     writeHitLog();
+    updateRoomIr();
+    updateLatency();
 
     // Keep the loader's idea of which mics should be in RAM in line with the
     // mute buttons: unmuted mics load straight away, muted ones unload once
@@ -863,6 +887,16 @@ void LithiumDrumsProcessor::getStateInformation (juce::MemoryBlock& destData)
         state.setProperty (stateMidiMap, midiMap.toJson(), nullptr);
         state.setProperty (stateMidiMapModified, midiMapModified, nullptr);
 
+        // FX A/B: which slot is live, and the other one's settings. Kept out
+        // of the parameters' state, so presets don't carry it.
+        juce::ValueTree ab (stateFxAB);
+        ab.setProperty (stateFxSlot, fxSlot, nullptr);
+
+        if (const auto& other = fxSlots[(size_t) (1 - fxSlot)]; other.isValid())
+            ab.appendChild (other.createCopy(), nullptr);
+
+        state.appendChild (ab, nullptr);
+
         auto grooves = grooveState.createCopy();
         grooves.setProperty (grooveTempo, (int) groovePlayer.tempoMode.load(), nullptr);
         grooves.setProperty (grooveCustomBpm, groovePlayer.customBpm.load(), nullptr);
@@ -904,6 +938,26 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
         std::scoped_lock lock (stateMutex);
         swapsChanged = savedSwaps != pieceSwaps;
         pieceSwaps = std::move (savedSwaps);
+    }
+
+    // FX A/B. (Hosts may restore on another thread; the slots are the
+    // message thread's, so they're set there.)
+    if (auto ab = state.getChildWithName (stateFxAB); ab.isValid())
+    {
+        state.removeChild (ab, nullptr);
+        const auto slot = juce::jlimit (0, 1, (int) ab[stateFxSlot]);
+        const auto other = ab.getChild (0).createCopy();
+
+        juce::MessageManager::callAsync ([this, safe = juce::WeakReference<LithiumDrumsProcessor> (this), slot, other]
+        {
+            if (safe == nullptr)
+                return;
+
+            std::scoped_lock lock (stateMutex);
+            fxSlot = slot;
+            fxSlots[(size_t) slot] = {};
+            fxSlots[(size_t) (1 - slot)] = other;
+        });
     }
 
     // The Grooves page's state isn't a parameter; it's kept apart from them.
@@ -1099,6 +1153,126 @@ bool LithiumDrumsProcessor::isPresetModified() const
     {
         return std::abs (pv.first->getValue() - pv.second) > 1.0e-4f;
     });
+}
+
+//==============================================================================
+void LithiumDrumsProcessor::updateRoomIr()
+{
+    // The IR choice and Decay are parameters, but changing them means
+    // loading or re-trimming an IR, which the loader's thread does; it
+    // ignores requests for what it already has.
+    const auto choice = juce::roundToInt (parameters.getRawParameterValue (params::roomIr)->load());
+    const auto decay = parameters.getRawParameterValue (params::roomDecay)->load() / 100.0f;
+    const auto custom = choice >= (int) irs::builtIn().size();
+
+    IrLoader::Request request;
+    request.builtIn = custom ? -1 : choice;
+    request.file = custom ? getRoomIrFile() : juce::File();
+    request.decay = decay;
+
+    // A custom choice with no file yet (picked from the menu before choosing
+    // one) keeps the first built-in IR until a file is chosen.
+    if (custom && request.file == juce::File())
+        request.builtIn = 0;
+
+    irLoader.request (request);
+}
+
+void LithiumDrumsProcessor::updateLatency()
+{
+    // Hosts are told about latency from the message thread, never the audio
+    // thread. It only changes when the limiter's lookahead is switched (or
+    // the sample rate changes), and hosts re-align the track when it does.
+    if (const auto latency = mixer.getLatencySamples (snapshot.readLookahead()); latency != getLatencySamples())
+        setLatencySamples (latency);
+}
+
+void LithiumDrumsProcessor::setRoomIrFile (const juce::File& file)
+{
+    parameters.state.setProperty (stateRoomIrFile, file.getFullPathName(), nullptr);
+
+    if (auto* p = parameters.getParameter (params::roomIr))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (p->convertTo0to1 ((float) irs::builtIn().size()));
+        p->endChangeGesture();
+    }
+
+    updateRoomIr();
+}
+
+juce::File LithiumDrumsProcessor::getRoomIrFile() const
+{
+    const auto path = parameters.state[stateRoomIrFile].toString();
+    return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+}
+
+juce::ValueTree LithiumDrumsProcessor::captureFx() const
+{
+    juce::ValueTree tree ("fx");
+
+    // AudioProcessor's own list of parameters (getParameters() on this class is the APVTS).
+    for (auto* p : AudioProcessor::getParameters())
+    {
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p); ranged != nullptr && params::isFxParameter (ranged->getParameterID()))
+        {
+            juce::ValueTree child ("PARAM");
+            child.setProperty ("id", ranged->getParameterID(), nullptr);
+            child.setProperty ("value", ranged->getValue(), nullptr);   // normalised
+            tree.appendChild (child, nullptr);
+        }
+    }
+
+    tree.setProperty (stateRoomIrFile, parameters.state[stateRoomIrFile], nullptr);
+    return tree;
+}
+
+void LithiumDrumsProcessor::applyFx (const juce::ValueTree& tree)
+{
+    parameters.state.setProperty (stateRoomIrFile, tree[stateRoomIrFile], nullptr);
+
+    for (const auto& child : tree)
+    {
+        if (auto* p = parameters.getParameter (child["id"].toString()))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost ((float) child["value"]);
+            p->endChangeGesture();
+        }
+    }
+
+    updateRoomIr();
+    updateLatency();
+}
+
+void LithiumDrumsProcessor::selectFxSlot (int slot)
+{
+    slot = juce::jlimit (0, 1, slot);
+
+    if (slot == fxSlot)
+        return;
+
+    // The other slot starts as a copy of this one, the first time it's used.
+    // (The slots are under the state lock, as hosts may save from other threads.)
+    auto leaving = captureFx();
+    juce::ValueTree coming;
+
+    {
+        std::scoped_lock lock (stateMutex);
+        fxSlots[(size_t) fxSlot] = std::move (leaving);
+        coming = fxSlots[(size_t) slot];
+        fxSlot = slot;
+    }
+
+    if (coming.isValid())
+        applyFx (coming);
+}
+
+void LithiumDrumsProcessor::copyFxSlot()
+{
+    auto live = captureFx();
+    std::scoped_lock lock (stateMutex);
+    fxSlots[(size_t) (1 - fxSlot)] = std::move (live);
 }
 
 juce::AudioProcessorEditor* LithiumDrumsProcessor::createEditor()

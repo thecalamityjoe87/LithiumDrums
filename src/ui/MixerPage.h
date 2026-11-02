@@ -7,23 +7,27 @@ namespace lithium
 {
 
 /** One fader strip in the Mixer page's bank: a drum's channel, an overhead
-    or room mic's channel, a close mic's trim, the reverb return or the
-    master. Clicking a channel (or the reverb) shows it in the inspector.
+    or room mic's channel, a close mic's trim, an FX return or the master.
+    Clicking a channel shows it in the inspector; clicking a return opens
+    its effect on the FX page.
 
     Every strip is the same fixed stack, top to bottom: name and colour dot;
-    the insert switches (EQ, compressor, transient, saturation); the reverb
-    send and pan; the fader beside its meter, with a dB scale and readout;
+    the insert switches (EQ, compressor, transient, saturation); the three
+    sends (Room, Plate, Delay), whose names open their effect; the Pre
+    switch and pan; the fader beside its meter, with a dB scale and readout;
     then mute, solo and the output. Strips without some of these leave
     their rows empty, so every fader in the bank lines up. The fader's
     travel is fixed by the theme (theme::size::faderTravel), never stretched. */
 class MixerStrip final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    enum class Kind { piece, mic, trim, reverb, master };
+    enum class Kind { piece, mic, trim, fxReturn, master };
 
+    /** slot: the piece or mic, or for a return its params::FxReturn. */
     MixerStrip (LithiumDrumsProcessor&, Kind, int slot = -1, const KitInfo* = nullptr);
 
     std::function<void()> onSelect;
+    std::function<void (params::FxReturn)> onOpenReturn;
 
     const Kind kind;
     const int slot;
@@ -40,15 +44,22 @@ public:
 
 private:
     juce::Rectangle<int> getReadoutArea() const;
+    juce::Rectangle<int> getSendCaption (int index) const;
     bool hasInserts() const noexcept     { return kind == Kind::piece || kind == Kind::mic; }
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
 
     juce::String name, tag;
     juce::Colour dot;
     bool selected = false, silent = false;
+    int hoveredCaption = -1;
 
     ControlSlider fader;
     LevelMeter meter;
-    Knob send { {}, Knob::Style::compact }, pan { {}, Knob::Style::compact };
+    std::array<Knob, params::numFxReturns> sends { Knob { {}, Knob::Style::compact }, Knob { {}, Knob::Style::compact },
+                                                    Knob { {}, Knob::Style::compact } };
+    Knob pan { {}, Knob::Style::compact };
+    ParamToggle pre { "Pre", "Sends before the fader" };
     ParamToggle eq { "EQ", "EQ on/off" }, comp { "Cmp", "Compressor on/off" };
     ParamToggle transient { "Trn", "Transient shaper on/off" }, saturation { "Sat", "Saturation on/off" };
     ParamToggle mute { "M", "Mute" }, solo { "S", "Solo" };
@@ -57,17 +68,18 @@ private:
 };
 
 /** The top of the Mixer page: everything about the selected channel (its
-    EQ, transient shaper, compressor, saturation, send and output), or the
-    reverb's room. The same modules are re-attached to whichever channel is
-    selected. */
+    EQ, transient shaper, compressor, saturation, sends and output). The
+    same modules are re-attached to whichever channel is selected. The FX
+    returns' own effects are on the FX page. */
 class MixerInspector final : public juce::Component
 {
 public:
     explicit MixerInspector (LithiumDrumsProcessor&);
     ~MixerInspector() override;
 
+    std::function<void (params::FxReturn)> onOpenReturn;
+
     void showChannel (params::ChannelId, juce::String name, juce::String description);
-    void showReverb();
     void showNothing();
 
     void pushReduction (float db)            { comp.pushReduction (db); }
@@ -76,9 +88,7 @@ public:
     void resized() override;
 
 private:
-    class DecayGraph;
-
-    enum class Mode { none, channel, reverb };
+    enum class Mode { none, channel };
     void setMode (Mode);
 
     LithiumDrumsProcessor& processor;
@@ -89,18 +99,10 @@ private:
     CompModule comp;
     TwoKnobModule transient, saturation;
     RoutingModule routing;
-
-    Module room { "Room" }, returnModule { "Return" };
-    std::unique_ptr<DecayGraph> decay;
-    Knob size { "Size" }, decayTime { "Decay" }, preDelay { "Pre-delay" }, damping { "Damping" }, lowCut { "Low cut" }, width { "Width" };
-    Knob returnLevel { "Return" };
-    ParamToggle returnMute { "Mute", "Mute the reverb return" };
-    juce::Label outputLabel { {}, "OUTPUT" };
-    ParamCombo returnOutput;
 };
 
 /** The Mixer tab: the inspector on top; below, a fader bank with a channel
-    per drum, then the overhead and room mics, the reverb return and the
+    per drum, then the overhead and room mics, the three FX returns and the
     master. A second view of the bank trims the close mics that feed the
     drum channels. */
 class MixerPage final : public juce::Component, private juce::ChangeListener, private juce::Timer
@@ -108,6 +110,9 @@ class MixerPage final : public juce::Component, private juce::ChangeListener, pr
 public:
     explicit MixerPage (LithiumDrumsProcessor&);
     ~MixerPage() override;
+
+    /** Asks for an FX return's effect to be shown on the FX page. */
+    std::function<void (params::FxReturn)> onOpenReturn;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -118,8 +123,8 @@ private:
     void updateKitInfo();
     void rebuildStrips();
     void select (params::ChannelId);
-    void selectReverb();
     void updateSelection();
+    void openReturn (params::FxReturn r)         { if (onOpenReturn) onOpenReturn (r); }
 
     LithiumDrumsProcessor& processor;
     std::shared_ptr<const KitInfo> shownKit;
@@ -130,7 +135,8 @@ private:
     juce::Component stripRow;
     std::vector<std::unique_ptr<MixerStrip>> strips;
     std::vector<int> dividers;   // x positions in the row, between groups of strips
-    MixerStrip reverbStrip, masterStrip;
+    std::array<std::unique_ptr<MixerStrip>, params::numFxReturns> returnStrips;
+    MixerStrip masterStrip;
 };
 
 } // namespace lithium

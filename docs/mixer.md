@@ -1,6 +1,6 @@
 # Shaping and mixing
 
-Lithium Drums mixes like a drummer's console: a channel for each drum, plus shared channels for the overhead and room mics, a reverb and the master. This note describes what happens to a hit on its way out, how the per-hit shaping and the channel effects work, and how the Edit page and the meters get live data without breaking the audio thread's rules.
+Lithium Drums mixes like a drummer's console: a channel for each drum, plus shared channels for the overhead and room mics, three FX returns and the master. This note describes what happens to a hit on its way out, how the per-hit shaping and the channel effects work, and how the Edit page and the meters get live data without breaking the audio thread's rules.
 
 ## Signal flow
 
@@ -10,8 +10,9 @@ hit ─► shaping: dynamics, pitch bend, tone, attack / hold / decay
        ├─ close mics ──► the drum's channel ──┐
        │                                     ├─► EQ ─► transient ─► compressor ─► saturation ─► fader & pan ─┬─► main out (through the master)
        └─ overhead and room mics ──► their own channels ──┘                                                │   or an aux out (skips the master)
-                                                                                                           └─► reverb send (post-fader)
-reverb send bus ─► room reverb ─► return fader ─► main out or an aux out
+                                                                                                           └─► Room, Plate and Delay sends (pre or post fader)
+each send bus ─► its effect ─► return fader & pan ─► the master bus or an aux out
+master bus ─► EQ ─► glue ─► crush ─► tape ─► transient ─► limiter ─► main out
 ```
 
 Every sample in a kit is an isolated recording of one hit, so a hit's close-mic signal can go to that drum's channel alone. This includes its bleed into the other close mics: a kick hit as heard by the snare mic belongs to the kick's channel. Compressing the snare channel therefore compresses snare hits only, with no kick leaking into it. The overheads and room hear every drum, so they stay shared.
@@ -42,25 +43,21 @@ Each channel runs the same four effects, in this order. Each one costs nothing w
 
 **Saturation:** a smooth soft-clipping curve (a rational approximation of tanh). The signal is driven into the curve and scaled back by the same amount, so quiet passages stay at their level and only the peaks are rounded off. It isn't oversampled, so heavy drive on cymbals can alias a little.
 
-## Reverb
+## The returns and the master chain
 
-One shared stereo room, fed by every channel's post-fader reverb send (`src/engine/dsp/RoomReverb.cpp`). It's a feedback delay network:
-
-1. The send is high-passed (Low cut), pre-delayed, and smeared by four allpass diffusers per side. The diffused signal is also heard directly, as the early reflections.
-2. It then circulates through eight delay lines of unrelated lengths (scaled by Size). On each trip, an 8×8 Hadamard matrix mixes the lines without adding or losing energy. A one-pole low-pass (Damping) makes the highs die first, and each line's gain makes the tail fall 60 dB in exactly the Decay time.
-3. The line lengths wobble very slightly, which stops long cymbal tails from ringing metallically.
-
-Its memory is allocated in `prepare()`. When nothing has been sent for longer than the tail lasts, it clears its buffers and goes idle. A test checks that its measured decay is within 15% of the setting.
+Every channel sends to three returns: Room (convolution), Plate (the
+algorithmic reverb, `src/engine/dsp/FdnReverb.cpp`) and Delay. Their effects
+and the master bus chain are on the FX page; [fx.md](fx.md) describes them.
 
 ## Routing
 
-Besides the stereo main out there are sixteen stereo aux outs, Aux 1 to Aux 16, which hosts leave disabled until you enable them. Every channel and the reverb return has an Output setting, and channels can share an aux out (all the toms on one, say). A channel on an aux out skips the master fader. If its aux out isn't enabled in the host, it plays through the main out instead.
+Besides the stereo main out there are sixteen stereo aux outs, Aux 1 to Aux 16, which hosts leave disabled until you enable them. Every channel and FX return has an Output setting, and channels can share an aux out (all the toms on one, say). A channel on an aux out skips the master fader. If its aux out isn't enabled in the host, it plays through the main out instead.
 
 ## Live data for the UI
 
 The audio thread never waits for the UI, and the UI never touches the audio thread's data. Two structs of atomics carry what the UI shows:
 
-- `MixerFeedback`: each channel's post-fader peak and compressor gain reduction, plus the reverb's and the master's peaks. The audio thread raises each value; the UI reads and clears it in one atomic exchange, 30 times a second.
+- `MixerFeedback`: each channel's post-fader peak and compressor gain reduction, plus the returns', the master chain's and the master's peaks and gain reduction. The audio thread raises each value; the UI reads and clears it in one atomic exchange, 30 times a second.
 - `EngineFeedback`: per drum, a hit counter and the last hit (articulation, zone, round-robin and velocity), packed into one 64-bit atomic so it's always read whole. The engine stores the hit, then bumps the counter with release ordering. The Edit page polls the counter and then reads the hit, which is how its zone strip lights up what just played and follows the articulation you're playing.
 
 The graphs (EQ, compressor curve, envelope, reverb tail) read their parameters on a timer rather than through parameter listeners, because hosts can set parameters from the audio thread, and listeners run on whichever thread that is.
@@ -69,11 +66,11 @@ The graphs (EQ, compressor curve, envelope, reverb tail) read their parameters o
 
 Each piece slot `pieceN_` has the whole drum's `volume`, `tune`, `decay`, `mute`, `solo`, `send_close`, `send_overheads`, `send_room` and `choke_note`; the shaping `dynamics`, `pitch_env`, `pitch_env_time`, `tone_hp`, `tone_lp`, `attack` and `hold`; and its channel's `fader` and `pan`. Each mic slot `micN_` has `volume`, `pan`, `mute` and `solo`: a close mic's trim, or an overhead or room channel's fader.
 
-Every piece and mic slot also has a channel: `output`, `reverb_send`; `eq_on`, `eq_hpf`, `eq_low_freq`, `eq_low_gain`, `eq_mid1_freq`, `eq_mid1_gain`, `eq_mid1_q`, `eq_mid2_freq`, `eq_mid2_gain`, `eq_mid2_q`, `eq_high_freq`, `eq_high_gain`; `comp_on`, `comp_threshold`, `comp_ratio`, `comp_attack`, `comp_release`, `comp_makeup`, `comp_mix`; `trans_on`, `trans_attack`, `trans_sustain`; `sat_on`, `sat_drive`, `sat_mix`. A close mic's channel parameters exist but do nothing, because hosts need the same parameters in every slot.
+Every piece and mic slot also has a channel: `output`, `room_send`, `reverb_send` (the Plate), `delay_send`, `send_pre`; `eq_on`, `eq_hpf`, `eq_low_freq`, `eq_low_gain`, `eq_mid1_freq`, `eq_mid1_gain`, `eq_mid1_q`, `eq_mid2_freq`, `eq_mid2_gain`, `eq_mid2_q`, `eq_high_freq`, `eq_high_gain`; `comp_on`, `comp_threshold`, `comp_ratio`, `comp_attack`, `comp_release`, `comp_makeup`, `comp_mix`; `trans_on`, `trans_attack`, `trans_sustain`; `sat_on`, `sat_drive`, `sat_mix`. A close mic's channel parameters exist but do nothing, because hosts need the same parameters in every slot.
 
-The reverb bus has `reverb_return`, `reverb_mute`, `reverb_output`, `reverb_size`, `reverb_decay`, `reverb_predelay`, `reverb_damping`, `reverb_lowcut` and `reverb_width`.
+The returns and the master chain's parameters are listed in `src/Parameters.h`; the Plate keeps the old reverb's `reverb_*` IDs.
 
-Defaults come from the structs the DSP uses (`ChannelSettings`, `PieceParams`, `ReverbSettings`), so the parameters and the engine can't disagree about what neutral means; a test checks it. Choosing a kit from the menu puts every piece and mic parameter back to its default. The reverb bus and master keep their settings, since they aren't part of a kit.
+Defaults come from the structs the DSP uses (`ChannelSettings`, `PieceParams`, `ReverbSettings`), so the parameters and the engine can't disagree about what neutral means; a test checks it. Choosing a kit from the menu puts every piece and mic parameter back to its default. The returns and the master chain keep their settings, since they aren't part of a kit.
 
 ## Cost
 

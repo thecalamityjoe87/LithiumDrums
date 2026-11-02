@@ -348,8 +348,22 @@ private:
 };
 
 //==============================================================================
-MidiPanel::MidiPanel (LithiumDrumsProcessor& p) : OverlayPanel ("MIDI Mapping", 1240, 770), processor (p)
+MidiPanel::MidiPanel (LithiumDrumsProcessor& p) : OverlayPanel ("MIDI Mapping", 1240, 770), processor (p), edrums (p)
 {
+    for (auto* b : { &mappingView, &edrumsView })
+    {
+        b->setRadioGroupId (4);
+        b->setClickingTogglesState (true);
+        addAndMakeVisible (b);
+    }
+
+    mappingView.setTooltip ("Which note plays what");
+    edrumsView.setTooltip ("Set up an e-kit: the hi-hat pedal, positional sensing, and a monitor of the MIDI coming in");
+    mappingView.setToggleState (true, juce::dontSendNotification);
+    mappingView.onClick = [this] { showEdrums (false); };
+    edrumsView.onClick = [this] { showEdrums (true); };
+    addChildComponent (edrums);
+
     keyboard.onPlay = [this] (int note, int velocity)
     {
         // A key works like a pad: while a row is learning, it takes the note.
@@ -433,6 +447,7 @@ MidiPanel::MidiPanel (LithiumDrumsProcessor& p) : OverlayPanel ("MIDI Mapping", 
     controllers[1 + (size_t) PositionSource::snare] = std::make_unique<ControllerRow> ("Snare position", "centre", "edge");
     controllers[1 + (size_t) PositionSource::ride] = std::make_unique<ControllerRow> ("Ride position", "bell side", "edge");
     controllers[1 + (size_t) PositionSource::toms] = std::make_unique<ControllerRow> ("Tom position", "centre", "edge");
+    controllers[1 + (size_t) PositionSource::hihat] = std::make_unique<ControllerRow> ("Hi-hat position", "bell side", "edge");
 
     controllers[0]->onControllerChanged = [this] (int cc) { setControllers ([cc] (auto& c) { c.hihatPedal = cc; }); };
 
@@ -455,6 +470,23 @@ MidiPanel::~MidiPanel()
 {
     processor.getMidiMapBroadcaster().removeChangeListener (this);
     processor.removeChangeListener (this);
+}
+
+void MidiPanel::showEdrums (bool show)
+{
+    showingEdrums = show;
+    startLearning (-1);
+    edrums.stopListening();
+    setTitle (show ? "E-Drums" : "MIDI Mapping");
+    edrums.setVisible (show);
+
+    for (auto* c : std::initializer_list<juce::Component*> { &viewport, &keyboard, &invertButton })
+        c->setVisible (! show);
+
+    for (auto& c : controllers)
+        c->setVisible (! show);
+
+    repaint();
 }
 
 void MidiPanel::refresh()
@@ -488,12 +520,19 @@ void MidiPanel::visibilityChanged()
         for (size_t p = 0; p < seenHits.size(); ++p)
             seenHits[p] = feedback.pieceHits[p].load();
 
+        // What came in while the panel was closed is old news.
+        MidiMonitorEvent stale;
+
+        while (processor.popMonitorEvent (stale)) {}
+
+        edrums.refresh();
         startTimerHz (30);
     }
     else
     {
         stopTimer();
         startLearning (-1);
+        edrums.stopListening();
         showNameEditor (false);
     }
 }
@@ -511,6 +550,7 @@ void MidiPanel::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     updateRows();
     updateToolbar();
+    edrums.refresh();
 }
 
 //==============================================================================
@@ -769,6 +809,12 @@ void MidiPanel::timerCallback()
 {
     const auto& feedback = processor.getFeedback();
 
+    // The monitor, and the E-Drums view's Learn and Calibrate, see every message.
+    for (MidiMonitorEvent e; processor.popMonitorEvent (e);)
+        edrums.handle (e);
+
+    edrums.tick();
+
     // A new note: show it, and if a row is learning, give it the note.
     if (const auto bits = feedback.lastNote.load(); bits != seenNote)
     {
@@ -856,6 +902,9 @@ void MidiPanel::paint (juce::Graphics& g)
         drawTrackedText (g, "MODIFIED", label (12.0f, Weight::semibold), 0.12f, modifiedTag.toFloat(), juce::Justification::centredLeft);
     }
 
+    if (showingEdrums)
+        return;
+
     // The monitor column.
     g.setColour (colours::raised);
     g.fillRoundedRectangle (monitorArea.toFloat(), 8.0f);
@@ -894,6 +943,9 @@ void MidiPanel::layoutContent (juce::Rectangle<int> area)
     mapBox.setBounds (toolbar.removeFromLeft (260));
     toolbar.removeFromLeft (10);
     modifiedTag = toolbar.removeFromLeft (80);
+    mappingView.setBounds (toolbar.removeFromLeft (96));
+    edrumsView.setBounds (toolbar.removeFromLeft (96));
+    edrums.setBounds (area);
 
     for (auto* b : { &defaultButton, &deleteButton, &revertButton, &saveButton })
     {
@@ -920,9 +972,13 @@ void MidiPanel::layoutContent (juce::Rectangle<int> area)
     lastNoteArea = monitor.removeFromTop (92);
     monitor.removeFromTop (14);
 
-    for (auto& c : controllers)
+    // The pedal, then the pads in their display order.
+    controllers[0]->setBounds (monitor.removeFromTop (64));
+    monitor.removeFromTop (14);
+
+    for (const auto source : positionDisplayOrder)
     {
-        c->setBounds (monitor.removeFromTop (64));
+        controllers[1 + (size_t) source]->setBounds (monitor.removeFromTop (64));
         monitor.removeFromTop (14);
     }
 

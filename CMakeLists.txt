@@ -74,6 +74,7 @@ target_sources(LithiumDrums PRIVATE
     src/KitLibrary.cpp
     src/MidiMapLibrary.cpp
     src/Presets.cpp
+    src/FxPresets.cpp
     src/importer/Importer.cpp
     src/importer/KitWriter.cpp
     src/importer/DrumGizmoImporter.cpp
@@ -97,11 +98,15 @@ target_sources(LithiumDrums PRIVATE
     src/engine/Voice.cpp
     src/engine/DrumEngine.cpp
     src/engine/GroovePlayer.cpp
+    src/engine/IrLoader.cpp
     src/engine/Mixer.cpp
     src/engine/dsp/ChannelEq.cpp
     src/engine/dsp/Compressor.cpp
     src/engine/dsp/ChannelChain.cpp
-    src/engine/dsp/RoomReverb.cpp
+    src/engine/dsp/FdnReverb.cpp
+    src/engine/dsp/ConvolutionReverb.cpp
+    src/engine/dsp/TempoDelay.cpp
+    src/engine/dsp/MasterChain.cpp
     src/ui/LithiumLookAndFeel.cpp
     src/ui/MainView.cpp
     src/ui/HeaderBar.cpp
@@ -117,9 +122,11 @@ target_sources(LithiumDrums PRIVATE
     src/ui/ZoneMap.cpp
     src/ui/EditPage.cpp
     src/ui/MixerPage.cpp
+    src/ui/FxPage.cpp
     src/ui/KitBrowser.cpp
     src/ui/InfoPanels.cpp
     src/ui/MidiPanel.cpp
+    src/ui/EdrumsView.cpp
     src/ui/MidiKeyboard.cpp
     src/ui/GroovesPage.cpp)
 
@@ -173,7 +180,18 @@ juce_add_binary_data(LithiumAssets
         assets/midi-maps/general-midi.json
         assets/midi-maps/roland-vdrums.json
         assets/midi-maps/alesis.json
-        assets/packs/catalog.json)
+        assets/midi-maps/drumit-five.json
+        assets/midi-maps/efnote.json
+        assets/midi-maps/lemon-t950.json
+        assets/midi-maps/millenium-mps1000.json
+        assets/midi-maps/yamaha-dtx402.json
+        assets/packs/catalog.json
+        assets/irs/irs.json
+        assets/irs/studio.flac
+        assets/irs/seminar-room.flac
+        assets/irs/tiled-room.flac
+        assets/irs/hall.flac
+        assets/irs/plate.flac)
 
 # The importer's built-in mappings for known kits.
 juce_add_binary_data(LithiumImportMaps
@@ -211,6 +229,7 @@ target_link_libraries(LithiumDrums
     PUBLIC
         juce::juce_audio_utils
         juce::juce_audio_formats
+        juce::juce_dsp
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
@@ -293,12 +312,26 @@ target_link_libraries(LithiumRoomGen PRIVATE
     juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------
+# Room reverb impulse responses
+
+# Synthesizes the built-in IRs and converts measured ones (assets/irs/).
+# Like the room backdrop, its output is committed; run it by hand.
+juce_add_console_app(LithiumIrGen PRODUCT_NAME "LithiumIrGen")
+target_sources(LithiumIrGen PRIVATE tools/irgen/IrGenerator.cpp)
+target_compile_definitions(LithiumIrGen PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_USE_FLAC=1 JUCE_USE_OGGVORBIS=0)
+target_link_libraries(LithiumIrGen PRIVATE
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)
+
+# ---------------------------------------------------------------------------
 # Tests
 
 if(LITHIUM_BUILD_TESTS)
     # The tests link the plugin's shared-code library (the processor, engine
     # and UI, compiled once) rather than recompiling the sources.
-    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp tests/GrooveTests.cpp tests/PackTests.cpp tests/SwapTests.cpp)
+    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp tests/GrooveTests.cpp tests/PackTests.cpp tests/SwapTests.cpp tests/FxTests.cpp)
     target_include_directories(LithiumDrumsTests PRIVATE src)
     target_compile_definitions(LithiumDrumsTests PRIVATE
         LITHIUM_TEST_KIT_DIR="${LITHIUM_TEST_KIT_DIR}"

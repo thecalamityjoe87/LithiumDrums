@@ -11,7 +11,7 @@ MainView::MainView (LithiumDrumsProcessor& p)
       editPage (p),
       mixerPage (p),
       groovesPage (p),
-      fxPage ("FX", "Master bus effects."),
+      fxPage (p),
       aboutPanel (p),
       settingsPanel (p),
       midiPanel (p),
@@ -25,6 +25,8 @@ MainView::MainView (LithiumDrumsProcessor& p)
     header.onPrompt = [this] (PromptPanel::Request r) { showPrompt (std::move (r)); };
     prompt.onFinished = [this] { prompt.setVisible (false); };
     kitPage.onEditPiece = [this] { header.setTab (Tab::edit); };
+    mixerPage.onOpenReturn = [this] (params::FxReturn r) { openReturn (r); };
+    editPage.onOpenReturn = [this] (params::FxReturn r) { openReturn (r); };
 
     aboutPanel.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onClose = [this] { showPanel (nullptr); };
@@ -49,6 +51,12 @@ MainView::MainView (LithiumDrumsProcessor& p)
     enableKeyboardNavigation (*this);
 
     showTab (Tab::kit);
+}
+
+void MainView::openReturn (params::FxReturn r)
+{
+    fxPage.selectModule ((int) r);
+    header.setTab (Tab::fx);
 }
 
 void MainView::showPrompt (PromptPanel::Request request)

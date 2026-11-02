@@ -511,6 +511,12 @@ void apply (KitManifest& kit, const PieceSwaps& swaps)
                     {
                         if (const auto t = micMap[(size_t) s.mic]; t >= 0)
                         {
+                            // A mono mic has no second channel (0). On a stereo
+                            // mic it plays in the middle: the same channel twice.
+                            // (A stereo mic on a mono one plays its left: [0].)
+                            if (kit.mics[(size_t) t].channels == 2 && s.fileChannels[1] < 1)
+                                s.fileChannels[1] = s.fileChannels[0];
+
                             s.mic = t;
                             s.source = audio;
                             mapped.push_back (s);

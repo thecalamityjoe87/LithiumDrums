@@ -1,5 +1,7 @@
 #include "Parameters.h"
 
+#include "engine/IrLoader.h"
+
 #include <map>
 
 namespace lithium::params
@@ -218,34 +220,38 @@ namespace
 
         juce::ParameterID id (std::string_view name) const   { return { channel.param (name), 1 }; }
 
+        // The master bus's parameters have fixed names; a slot's follow its piece or mic.
         void addFloat (std::string_view name, const juce::String& what, juce::NormalisableRange<float> range,
                        float defaultValue, juce::AudioParameterFloatAttributes attributes) const
         {
-            group.addChild (std::make_unique<Float> (names, ! channel.isPiece, channel.slot, what, id (name), label + " " + what,
-                                                     range, defaultValue, std::move (attributes)));
+            if (channel.isMaster)
+                group.addChild (std::make_unique<juce::AudioParameterFloat> (id (name), label + " " + what, range, defaultValue,
+                                                                             std::move (attributes)));
+            else
+                group.addChild (std::make_unique<Float> (names, ! channel.isPiece, channel.slot, what, id (name), label + " " + what,
+                                                         range, defaultValue, std::move (attributes)));
         }
 
         void addBool (std::string_view name, const juce::String& what, bool defaultValue) const
         {
-            group.addChild (std::make_unique<Bool> (names, ! channel.isPiece, channel.slot, what, id (name), label + " " + what,
-                                                    defaultValue, juce::AudioParameterBoolAttributes()));
+            if (channel.isMaster)
+                group.addChild (std::make_unique<juce::AudioParameterBool> (id (name), label + " " + what, defaultValue));
+            else
+                group.addChild (std::make_unique<Bool> (names, ! channel.isPiece, channel.slot, what, id (name), label + " " + what,
+                                                        defaultValue, juce::AudioParameterBoolAttributes()));
         }
     };
 
-    /** A mixer channel: its routing and its chain (EQ, transient shaper,
-        compressor, saturation). The defaults come from the DSP's own
-        settings structs, so the parameters' idea of "flat" and the engine's
-        can't drift apart. */
-    void addChannelParameters (const SlotAdder& add)
+    juce::AudioParameterFloatAttributes ratioAttributes()
     {
-        // Routing isn't something to automate, so hosts are told not to offer it.
-        add.group.addChild (std::make_unique<Choice> (add.names, ! add.channel.isPiece, add.channel.slot, "Output",
-                                                      add.id (output), add.label + " Output", outputNames(), 0,
-                                                      juce::AudioParameterChoiceAttributes().withAutomatable (false)));
-        add.addFloat (reverbSend, "Reverb Send", volumeRange (6.0f), minVolumeDb, volumeAttributes());
+        return juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        {
+            return juce::String (v, v >= 10.0f ? 0 : 1) + ":1";
+        });
+    }
 
-        const ChannelSettings defaults;
-        const auto& eq = defaults.eq;
+    void addEqParameters (const SlotAdder& add, const EqSettings& eq)
+    {
         add.addBool (eqOn, "EQ On", eq.enabled);
         add.addFloat (eqHighPass, "High-Pass", logRange (EqSettings::hpfOffHz, 1000.0f), eq.hpfHz, hzAttributes (true));
         add.addFloat (eqLowFreq, "Low Freq", logRange (20.0f, 1000.0f), eq.lowHz, hzAttributes());
@@ -258,30 +264,108 @@ namespace
         add.addFloat (eqMid2Q, "Mid 2 Q", logRange (0.3f, 10.0f), eq.mid2Q, unitAttributes ({}, 2));
         add.addFloat (eqHighFreq, "High Freq", logRange (1000.0f, 20000.0f), eq.highHz, hzAttributes());
         add.addFloat (eqHighGain, "High Gain", { -18.0f, 18.0f, 0.1f }, eq.highDb, signedDbAttributes());
+    }
 
-        const auto& comp = defaults.comp;
+    void addCompressorParameters (const SlotAdder& add, const CompSettings& comp)
+    {
         add.addBool (compOn, "Comp On", comp.enabled);
         add.addFloat (compThreshold, "Threshold", { -60.0f, 0.0f, 0.1f }, comp.thresholdDb, signedDbAttributes());
-        add.addFloat (compRatio, "Ratio", logRange (1.0f, 20.0f), comp.ratio,
-                      juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-                      {
-                          return juce::String (v, v >= 10.0f ? 0 : 1) + ":1";
-                      }));
+        add.addFloat (compRatio, "Ratio", logRange (1.0f, 20.0f), comp.ratio, ratioAttributes());
         add.addFloat (compAttack, "Attack", logRange (0.1f, 100.0f), comp.attackMs, unitAttributes ("ms", 1));
         add.addFloat (compRelease, "Release", logRange (10.0f, 2000.0f), comp.releaseMs, unitAttributes ("ms", 0));
         add.addFloat (compMakeup, "Makeup", { 0.0f, 24.0f, 0.1f }, comp.makeupDb, signedDbAttributes());
         add.addFloat (compMix, "Comp Mix", { 0.0f, 100.0f, 0.1f }, comp.mix * 100.0f, percentAttributes());
+    }
+
+    void addTransientParameters (const SlotAdder& add, const TransientSettings& transient)
+    {
+        add.addBool (transientOn, "Transient On", transient.enabled);
+        add.addFloat (transientAttack, "Transient Attack", { -100.0f, 100.0f, 0.1f }, transient.attack * 100.0f, bipolarPercentAttributes());
+        add.addFloat (transientSustain, "Transient Sustain", { -100.0f, 100.0f, 0.1f }, transient.sustain * 100.0f, bipolarPercentAttributes());
+    }
+
+    /** A mixer channel: its routing, its sends and its chain (EQ, transient
+        shaper, compressor, saturation). The defaults come from the DSP's own
+        settings structs, so the parameters' idea of "flat" and the engine's
+        can't drift apart. */
+    void addChannelParameters (const SlotAdder& add)
+    {
+        // Routing isn't something to automate, so hosts are told not to offer it.
+        add.group.addChild (std::make_unique<Choice> (add.names, ! add.channel.isPiece, add.channel.slot, "Output",
+                                                      add.id (output), add.label + " Output", outputNames(), 0,
+                                                      juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+
+        // "Reverb Send" is the Plate send: the ID is the old reverb's (see Parameters.h).
+        add.addFloat (reverbSend, "Plate Send", volumeRange (6.0f), minVolumeDb, volumeAttributes());
+        add.addFloat (roomSend, "Room Send", volumeRange (6.0f), minVolumeDb, volumeAttributes());
+        add.addFloat (delaySend, "Delay Send", volumeRange (6.0f), minVolumeDb, volumeAttributes());
+        add.addBool (sendPre, "Sends Pre-Fader", false);
+
+        const ChannelSettings defaults;
+        addEqParameters (add, defaults.eq);
+        addCompressorParameters (add, defaults.comp);
 
         const auto& sat = defaults.saturation;
         add.addBool (satOn, "Saturation On", sat.enabled);
         add.addFloat (satDrive, "Drive", { 0.0f, 24.0f, 0.1f }, sat.driveDb, signedDbAttributes());
         add.addFloat (satMix, "Saturation Mix", { 0.0f, 100.0f, 0.1f }, sat.mix * 100.0f, percentAttributes());
 
-        const auto& transient = defaults.transient;
-        add.addBool (transientOn, "Transient On", transient.enabled);
-        add.addFloat (transientAttack, "Transient Attack", { -100.0f, 100.0f, 0.1f }, transient.attack * 100.0f, bipolarPercentAttributes());
-        add.addFloat (transientSustain, "Transient Sustain", { -100.0f, 100.0f, 0.1f }, transient.sustain * 100.0f, bipolarPercentAttributes());
+        addTransientParameters (add, defaults.transient);
     }
+
+    /** A plain (not per-slot) parameter group, for the returns and the master chain. */
+    struct GroupAdder
+    {
+        juce::AudioProcessorParameterGroup& group;
+
+        void addFloat (const char* id, const juce::String& name, juce::NormalisableRange<float> range, float defaultValue,
+                       juce::AudioParameterFloatAttributes attributes) const
+        {
+            group.addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { id, 1 }, name, range, defaultValue,
+                                                                         std::move (attributes)));
+        }
+
+        void addBool (const char* id, const juce::String& name, bool defaultValue) const
+        {
+            group.addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id, 1 }, name, defaultValue));
+        }
+
+        void addChoice (const char* id, const juce::String& name, const juce::StringArray& choices, int defaultIndex,
+                        bool automatable = true) const
+        {
+            group.addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { id, 1 }, name, choices, defaultIndex,
+                                                                          juce::AudioParameterChoiceAttributes().withAutomatable (automatable)));
+        }
+
+        /** A return's channel: its fader, mute, pan, output and mix. */
+        void addReturn (const juce::String& name, const char* level, const char* mute, const char* out, const char* pan,
+                        const char* mix) const
+        {
+            addFloat (level, name + " Return", volumeRange (6.0f), 0.0f, volumeAttributes());
+            addBool (mute, name + " Mute", false);
+            addChoice (out, name + " Output", outputNames(), 0, false);
+            addFloat (pan, name + " Pan", { -100.0f, 100.0f, 1.0f }, 0.0f, panAttributes());
+            addFloat (mix, name + " Mix", { 0.0f, 100.0f, 0.1f }, 100.0f, percentAttributes());
+        }
+    };
+}
+
+juce::StringArray roomIrNames()
+{
+    juce::StringArray names;
+
+    for (const auto& ir : irs::builtIn())
+        names.add (ir.name);
+
+    names.add ("Custom file");
+    return names;
+}
+
+bool isFxParameter (const juce::String& id)
+{
+    // The master fader is the Mixer page's, not part of the chain.
+    return id.startsWith ("room_") || id.startsWith ("reverb_") || id.startsWith ("delay_")
+           || (id.startsWith ("master_") && id != masterVolume) || id == fxBypass;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const SlotNames& names)
@@ -374,28 +458,95 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const SlotName
         layout.add (std::move (group));
     }
 
-    // The reverb bus: one shared room, fed by every channel's reverb send.
+    // The FX returns.
     {
-        const ReverbSettings room;
-        auto group = std::make_unique<Group> ("reverb", "Reverb", " | ");
-        auto add = [&group] (const char* id, const juce::String& name, juce::NormalisableRange<float> range,
-                             float defaultValue, juce::AudioParameterFloatAttributes attributes)
-        {
-            group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { id, 1 }, name, range,
-                                                                          defaultValue, std::move (attributes)));
-        };
+        const ConvolutionSettings room;
+        auto group = std::make_unique<Group> ("room", "Room", " | ");
+        const GroupAdder add { *group };
+        add.addReturn ("Room", roomReturn, roomMute, roomOutput, roomPan, roomMix);
 
-        add (reverbReturn, "Reverb Return", volumeRange (6.0f), 0.0f, volumeAttributes());
-        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { reverbMute, 1 }, "Reverb Mute", false));
-        group->addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { reverbOutput, 1 }, "Reverb Output",
-                                                                       outputNames(), 0,
-                                                                       juce::AudioParameterChoiceAttributes().withAutomatable (false)));
-        add (reverbSize, "Reverb Size", { 0.0f, 100.0f, 0.1f }, room.size * 100.0f, percentAttributes());
-        add (reverbDecay, "Reverb Decay", logRange (0.2f, 8.0f), room.decaySeconds, unitAttributes ("s", 2));
-        add (reverbPreDelay, "Reverb Pre-Delay", { 0.0f, 200.0f, 0.1f }, room.preDelayMs, unitAttributes ("ms", 0));
-        add (reverbDamping, "Reverb Damping", logRange (1000.0f, 20000.0f), room.dampingHz, hzAttributes());
-        add (reverbLowCut, "Reverb Low Cut", logRange (20.0f, 1000.0f), room.lowCutHz, hzAttributes());
-        add (reverbWidth, "Reverb Width", { 0.0f, 100.0f, 0.1f }, room.width * 100.0f, percentAttributes());
+        // Changing the IR loads a file on another thread, so it isn't automatable.
+        add.addChoice (roomIr, "Room IR", roomIrNames(), 0, false);
+        add.addFloat (roomPreDelay, "Room Pre-Delay", { 0.0f, 200.0f, 0.1f }, room.preDelayMs, unitAttributes ("ms", 0));
+        add.addFloat (roomDecay, "Room Decay", { 10.0f, 100.0f, 0.1f }, 100.0f,
+                      juce::AudioParameterFloatAttributes()
+                          .withLabel ("%")
+                          .withStringFromValueFunction ([] (float v, int)
+                          {
+                              return v >= 99.9f ? juce::String ("Full") : juce::String (juce::roundToInt (v)) + "%";
+                          }));
+        add.addFloat (roomLowCut, "Room Low Cut", logRange (20.0f, 1000.0f), room.lowCutHz, hzAttributes());
+        add.addFloat (roomHighCut, "Room High Cut", logRange (1000.0f, 20000.0f), room.highCutHz, hzAttributes());
+        add.addFloat (roomWidth, "Room Width", { 0.0f, 100.0f, 0.1f }, room.width * 100.0f, percentAttributes());
+        layout.add (std::move (group));
+    }
+
+    {
+        const ReverbSettings plate;
+        auto group = std::make_unique<Group> ("reverb", "Plate", " | ");
+        const GroupAdder add { *group };
+        add.addReturn ("Plate", reverbReturn, reverbMute, reverbOutput, reverbPan, reverbMix);
+        add.addFloat (reverbSize, "Plate Size", { 0.0f, 100.0f, 0.1f }, plate.size * 100.0f, percentAttributes());
+        add.addFloat (reverbDecay, "Plate Decay", logRange (0.2f, 8.0f), plate.decaySeconds, unitAttributes ("s", 2));
+        add.addFloat (reverbPreDelay, "Plate Pre-Delay", { 0.0f, 200.0f, 0.1f }, plate.preDelayMs, unitAttributes ("ms", 0));
+        add.addFloat (reverbDamping, "Plate Damping", logRange (1000.0f, 20000.0f), plate.dampingHz, hzAttributes());
+        add.addFloat (reverbLowCut, "Plate Low Cut", logRange (20.0f, 1000.0f), plate.lowCutHz, hzAttributes());
+        add.addFloat (reverbWidth, "Plate Width", { 0.0f, 100.0f, 0.1f }, plate.width * 100.0f, percentAttributes());
+        layout.add (std::move (group));
+    }
+
+    {
+        const DelayParams d;
+        auto group = std::make_unique<Group> ("delay", "Delay", " | ");
+        const GroupAdder add { *group };
+        add.addReturn ("Delay", delayReturn, delayMute, delayOutput, delayPan, delayMix);
+
+        juce::StringArray notes;
+
+        for (const auto& n : delaynotes::all)
+            notes.add (n.name);
+
+        add.addBool (delaySync, "Delay Sync", d.sync);
+        add.addChoice (delayNote, "Delay Note", notes, d.note);
+        add.addFloat (delayTime, "Delay Time", logRange (10.0f, 2000.0f), d.freeTimeMs, unitAttributes ("ms", 1));
+        add.addFloat (delayFeedback, "Delay Feedback", { 0.0f, 95.0f, 0.1f }, d.delay.feedback * 100.0f, percentAttributes());
+        add.addFloat (delayLowCut, "Delay Low Cut", logRange (20.0f, 2000.0f), d.delay.lowCutHz, hzAttributes());
+        add.addFloat (delayHighCut, "Delay High Cut", logRange (1000.0f, 20000.0f), d.delay.highCutHz, hzAttributes());
+        add.addBool (delayPingPong, "Delay Ping-Pong", d.delay.pingPong);
+        layout.add (std::move (group));
+    }
+
+    // The master chain: EQ, glue, crush, tape, transient shaper, limiter. Every stage starts off.
+    {
+        const MasterSettings m;
+        auto group = std::make_unique<Group> ("master_chain", "Master", " | ");
+        const GroupAdder add { *group };
+        add.addBool (fxBypass, "FX Bypass", false);
+
+        const SlotAdder channel { *group, names, ChannelId::master(), "Master" };
+        addEqParameters (channel, m.eq);
+        addCompressorParameters ({ *group, names, ChannelId::master(), "Master Glue" }, m.glue);
+
+        add.addBool (crushOn, "Master Crush On", m.crush.enabled);
+        add.addFloat (crushDrive, "Master Crush Drive", { 0.0f, 36.0f, 0.1f }, m.crush.driveDb, signedDbAttributes());
+        add.addFloat (crushBlend, "Master Crush Blend", { 0.0f, 100.0f, 0.1f }, m.crush.blend * 100.0f, percentAttributes());
+        add.addFloat (crushAttack, "Master Crush Attack", logRange (0.1f, 100.0f), m.crush.attackMs, unitAttributes ("ms", 1));
+        add.addFloat (crushRelease, "Master Crush Release", logRange (10.0f, 1000.0f), m.crush.releaseMs, unitAttributes ("ms", 0));
+
+        add.addBool (tapeOn, "Master Tape On", m.tape.enabled);
+        add.addFloat (tapeDrive, "Master Tape Drive", { 0.0f, 24.0f, 0.1f }, m.tape.driveDb, signedDbAttributes());
+        add.addFloat (tapeTone, "Master Tape Tone", { -100.0f, 100.0f, 0.1f }, m.tape.tone * 100.0f, bipolarPercentAttributes());
+        add.addFloat (tapeOutput, "Master Tape Output", { -12.0f, 12.0f, 0.1f }, m.tape.outputDb, signedDbAttributes());
+
+        addTransientParameters (channel, m.transient);
+
+        add.addBool (limitOn, "Master Limiter On", m.limiter.enabled);
+        add.addFloat (limitCeiling, "Master Limiter Ceiling", { -12.0f, 0.0f, 0.1f }, m.limiter.ceilingDb, signedDbAttributes());
+        add.addFloat (limitRelease, "Master Limiter Release", logRange (5.0f, 1000.0f), m.limiter.releaseMs, unitAttributes ("ms", 0));
+        // Switching lookahead changes the latency, which hosts can't follow mid-playback.
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { limitLookahead, 1 }, "Master Limiter Lookahead",
+                                                                     m.limiter.lookahead,
+                                                                     juce::AudioParameterBoolAttributes().withAutomatable (false)));
         layout.add (std::move (group));
     }
 
@@ -489,11 +640,17 @@ Snapshot::ChannelRefs Snapshot::findChannel (juce::AudioProcessorValueTreeState&
 {
     auto get = [&] (std::string_view name) { return find (state, c.param (name)); };
 
-    return { get (output), get (reverbSend),
+    return { get (output), get (reverbSend), get (roomSend), get (delaySend), get (sendPre),
              get (eqOn), get (eqHighPass), get (eqLowFreq), get (eqLowGain), get (eqMid1Freq), get (eqMid1Gain), get (eqMid1Q),
              get (eqMid2Freq), get (eqMid2Gain), get (eqMid2Q), get (eqHighFreq), get (eqHighGain),
              get (compOn), get (compThreshold), get (compRatio), get (compAttack), get (compRelease), get (compMakeup), get (compMix),
              get (satOn), get (satDrive), get (satMix), get (transientOn), get (transientAttack), get (transientSustain) };
+}
+
+Snapshot::ReturnRefs Snapshot::findReturn (juce::AudioProcessorValueTreeState& state, const char* levelId, const char* muteId,
+                                           const char* outputId, const char* panId, const char* mixId)
+{
+    return { find (state, levelId), find (state, muteId), find (state, outputId), find (state, panId), find (state, mixId) };
 }
 
 Snapshot::Snapshot (juce::AudioProcessorValueTreeState& state)
@@ -535,9 +692,25 @@ Snapshot::Snapshot (juce::AudioProcessorValueTreeState& state)
         r.channel = findChannel (state, { false, i });
     }
 
-    reverb = { find (state, reverbReturn), find (state, reverbMute), find (state, reverbOutput), find (state, reverbSize),
-               find (state, reverbDecay), find (state, reverbPreDelay), find (state, reverbDamping), find (state, reverbLowCut),
-               find (state, reverbWidth) };
+    reverb = { findReturn (state, reverbReturn, reverbMute, reverbOutput, reverbPan, reverbMix),
+               find (state, reverbSize), find (state, reverbDecay), find (state, reverbPreDelay), find (state, reverbDamping),
+               find (state, reverbLowCut), find (state, reverbWidth) };
+    room = { findReturn (state, roomReturn, roomMute, roomOutput, roomPan, roomMix),
+             find (state, roomPreDelay), find (state, roomLowCut), find (state, roomHighCut), find (state, roomWidth) };
+    delay = { findReturn (state, delayReturn, delayMute, delayOutput, delayPan, delayMix),
+              find (state, delaySync), find (state, delayNote), find (state, delayTime), find (state, delayFeedback),
+              find (state, delayLowCut), find (state, delayHighCut), find (state, delayPingPong) };
+
+    const auto m = ChannelId::master();
+    auto get = [&] (std::string_view name) { return find (state, m.param (name)); };
+    masterChain = { find (state, fxBypass),
+                    get (eqOn), get (eqHighPass), get (eqLowFreq), get (eqLowGain), get (eqMid1Freq), get (eqMid1Gain), get (eqMid1Q),
+                    get (eqMid2Freq), get (eqMid2Gain), get (eqMid2Q), get (eqHighFreq), get (eqHighGain),
+                    get (compOn), get (compThreshold), get (compRatio), get (compAttack), get (compRelease), get (compMakeup), get (compMix),
+                    get (transientOn), get (transientAttack), get (transientSustain),
+                    find (state, crushOn), find (state, crushDrive), find (state, crushBlend), find (state, crushAttack), find (state, crushRelease),
+                    find (state, tapeOn), find (state, tapeDrive), find (state, tapeTone), find (state, tapeOutput),
+                    find (state, limitOn), find (state, limitCeiling), find (state, limitRelease), find (state, limitLookahead) };
     master = find (state, masterVolume);
     crossfade = find (state, velocityCrossfade);
 }
@@ -554,6 +727,9 @@ void Snapshot::readChannel (const ChannelRefs& r, ChannelParams& c) noexcept
 {
     c.output = juce::jlimit (0, numAuxOuts, juce::roundToInt (load (r.output)));
     c.reverbSend = dbToGain (load (r.reverbSend));
+    c.roomSend = dbToGain (load (r.roomSend));
+    c.delaySend = dbToGain (load (r.delaySend));
+    c.sendsPreFader = loadBool (r.sendPre);
 
     auto& eq = c.chain.eq;
     eq.enabled = loadBool (r.eqOn);
@@ -587,6 +763,15 @@ void Snapshot::readChannel (const ChannelRefs& r, ChannelParams& c) noexcept
     transient.enabled = loadBool (r.transientOn);
     transient.attack = load (r.transientAttack) / 100.0f;
     transient.sustain = load (r.transientSustain) / 100.0f;
+}
+
+void Snapshot::readReturn (const ReturnRefs& r, ReturnParams& out) noexcept
+{
+    out.returnGain = dbToGain (load (r.returnLevel));
+    out.mute = loadBool (r.mute);
+    out.output = juce::jlimit (0, numAuxOuts, juce::roundToInt (load (r.output)));
+    out.pan = load (r.pan) / 100.0f;
+    out.mix = load (r.mix) / 100.0f;
 }
 
 void Snapshot::read (EngineParams& out) const noexcept
@@ -629,9 +814,7 @@ void Snapshot::read (EngineParams& out) const noexcept
     }
 
     auto& rv = out.reverb;
-    rv.returnGain = dbToGain (load (reverb.returnLevel));
-    rv.mute = loadBool (reverb.mute);
-    rv.output = juce::jlimit (0, numAuxOuts, juce::roundToInt (load (reverb.output)));
+    readReturn (reverb.bus, rv);
     rv.room.size = load (reverb.size) / 100.0f;
     rv.room.decaySeconds = load (reverb.decay);
     rv.room.preDelayMs = load (reverb.preDelay);
@@ -639,8 +822,62 @@ void Snapshot::read (EngineParams& out) const noexcept
     rv.room.lowCutHz = load (reverb.lowCut);
     rv.room.width = load (reverb.width) / 100.0f;
 
+    auto& rm = out.room;
+    readReturn (room.bus, rm);
+    rm.room.preDelayMs = load (room.preDelay);
+    rm.room.lowCutHz = load (room.lowCut);
+    rm.room.highCutHz = load (room.highCut);
+    rm.room.width = load (room.width) / 100.0f;
+
+    auto& d = out.delay;
+    readReturn (delay.bus, d);
+    d.sync = loadBool (delay.sync);
+    d.note = juce::roundToInt (load (delay.note));
+    d.freeTimeMs = load (delay.time);
+    d.delay.feedback = load (delay.feedback) / 100.0f;
+    d.delay.lowCutHz = load (delay.lowCut);
+    d.delay.highCutHz = load (delay.highCut);
+    d.delay.pingPong = loadBool (delay.pingPong);
+
+    const auto& mc = masterChain;
+    auto& m = out.master;
+    out.fxBypass = loadBool (mc.bypass);
+
+    auto& eq = m.eq;
+    eq.enabled = loadBool (mc.eqOn);
+    eq.hpfHz = load (mc.hpf);
+    eq.lowHz = load (mc.lowFreq);
+    eq.lowDb = load (mc.lowGain);
+    eq.mid1Hz = load (mc.mid1Freq);
+    eq.mid1Db = load (mc.mid1Gain);
+    eq.mid1Q = load (mc.mid1Q);
+    eq.mid2Hz = load (mc.mid2Freq);
+    eq.mid2Db = load (mc.mid2Gain);
+    eq.mid2Q = load (mc.mid2Q);
+    eq.highHz = load (mc.highFreq);
+    eq.highDb = load (mc.highGain);
+
+    auto& glue = m.glue;
+    glue.enabled = loadBool (mc.compOn);
+    glue.thresholdDb = load (mc.threshold);
+    glue.ratio = load (mc.ratio);
+    glue.attackMs = load (mc.attack);
+    glue.releaseMs = load (mc.release);
+    glue.makeupDb = load (mc.makeup);
+    glue.mix = load (mc.mix) / 100.0f;
+
+    m.crush = { loadBool (mc.crushOn), load (mc.crushDrive), load (mc.crushBlend) / 100.0f, load (mc.crushAttack), load (mc.crushRelease) };
+    m.tape = { loadBool (mc.tapeOn), load (mc.tapeDrive), load (mc.tapeTone) / 100.0f, load (mc.tapeOutput) };
+    m.transient = { loadBool (mc.transientOn), load (mc.transientAttack) / 100.0f, load (mc.transientSustain) / 100.0f };
+    m.limiter = { loadBool (mc.limitOn), load (mc.limitCeiling), load (mc.limitRelease), loadBool (mc.limitLookahead) };
+
     out.masterGain = dbToGain (load (master));
     out.velocityCrossfade = loadBool (crossfade);
+}
+
+bool Snapshot::readLookahead() const noexcept
+{
+    return loadBool (masterChain.limitLookahead);
 }
 
 std::array<bool, maxMics> Snapshot::readMicMutes() const noexcept

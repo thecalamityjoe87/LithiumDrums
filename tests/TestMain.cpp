@@ -3,8 +3,8 @@
 //   LithiumDrumsTests                 run all tests
 //   LithiumDrumsTests --only <words>  run the tests whose name contains them, e.g. --only Groove
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
-//                                     [--mixer-channel piece:<n> | mic:<n> | reverb]
-//                                     [--swap <piece or slot-id>=<kit id>/<piece id>,...]
+//                                     [--mixer-channel piece:<n> | mic:<n> | fx:<module>]   (module: 0 Room .. 8 Limiter)
+//                                     [--swap <piece or slot-id>=<kit id>/<piece id>,...] [--midi-activity]
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
 //   LithiumDrumsTests --sfz-dump <file.sfz> [n]
 //                                     parse an SFZ instrument and print its first n regions (default 5),
@@ -29,6 +29,9 @@
 //                                     --cold first drops the cache file from the OS page cache (Linux),
 //                                     --map plays it through another MIDI map (roland-vdrums, alesis, ...),
 //                                     and then sweeps the hi-hat pedal and snare position
+//   LithiumDrumsTests --fx-cost
+//                                     time the mixer with each FX return and master chain stage on by itself, and
+//                                     with everything on, as a share of real time (48 kHz, 256-sample blocks)
 //   LithiumDrumsTests --idle-check [seconds] [--replay <aseqdump log>] [--kit <folder>]
 //                                     restore the standalone app's saved state (with its editor open; needs a
 //                                     display), play four kicks (or replay MIDI captured with
@@ -106,10 +109,11 @@ class SnapshotWriter final : private juce::Timer
 {
 public:
     SnapshotWriter (juce::File f, float s, juce::String select, const juce::File& kit, juce::String click, const juce::String& mixerChannel,
-                    const juce::String& swaps)
-        : file (std::move (f)), scale (s), selectId (std::move (select)), clickName (std::move (click))
+                    const juce::String& swaps, bool midi)
+        : file (std::move (f)), scale (s), selectId (std::move (select)), clickName (std::move (click)), midiActivity (midi)
     {
-        processor.reverbSelected = mixerChannel.isEmpty() ? false : mixerChannel == "reverb";
+        if (mixerChannel.startsWith ("fx:"))
+            processor.selectedFxModule = mixerChannel.fromFirstOccurrenceOf (":", false, false).getIntValue();
 
         if (mixerChannel.startsWith ("piece:") || mixerChannel.startsWith ("mic:"))
             processor.selectedMixerChannel = { mixerChannel.startsWith ("piece:"), mixerChannel.fromFirstOccurrenceOf (":", false, false).getIntValue() };
@@ -139,6 +143,18 @@ private:
                 for (size_t i = 0; i < info->pieces.size(); ++i)
                     if (info->pieces[i].id == selectId)
                         processor.getSelection().select ((int) i);
+
+            // A half-open hi-hat pedal and a note, as an e-kit would send them
+            // (for the Kit page's hi-hat indicator).
+            if (midiActivity)
+            {
+                processor.prepareToPlay (48000.0, 512);
+                juce::AudioBuffer<float> buffer (2, 512);
+                juce::MidiBuffer midi;
+                midi.addEvent (juce::MidiMessage::controllerEvent (10, 4, 70), 0);
+                midi.addEvent (juce::MidiMessage::noteOn (10, 42, (juce::uint8) 90), 1);
+                processor.processBlock (buffer, midi);
+            }
 
             editor.reset (processor.createEditor());
             editor->setSize (juce::roundToInt (1280 * scale), juce::roundToInt (800 * scale));
@@ -189,6 +205,7 @@ private:
     juce::File file;
     float scale;
     juce::String selectId, clickName;
+    bool midiActivity = false;
     int ticks = 0, readyTick = 0;
 };
 
@@ -520,6 +537,33 @@ static int midiAudit (const juce::StringArray& args)
             return info.pieces[(size_t) p].name + " " + info.pieces[(size_t) p].articulations[(size_t) local].name;
         };
 
+        // What an e-kit gets from this kit: the hats' openness steps and the
+        // hits the pedal can play itself, and how position is followed.
+        {
+            juce::StringArray ekit;
+
+            for (size_t p = 0; p < kit->pieces.size(); ++p)
+            {
+                const auto& pd = kit->pieces[p];
+                const auto& pi = info.pieces[p];
+
+                if (pd.role == PieceRole::hihat)
+                    ekit.add (pi.name + ": " + juce::String (pd.hatLadders[0].numSteps) + " openness steps, "
+                              + (pd.pedalArticulation >= 0 ? "pedal chick" : "no pedal chick") + ", "
+                              + (pd.splashArticulation >= 0 ? "foot splash" : "no foot splash"));
+
+                if (positionSourceFor (pd.role).has_value())
+                {
+                    if (pd.positionLadder.numSteps > 1)
+                        ekit.add (pi.name + ": " + juce::String (pd.positionLadder.numSteps) + " recorded positions");
+                    else if (pd.role == PieceRole::ride)
+                        ekit.add (pi.name + (pd.edgeArticulation >= 0 ? ": bow blends to edge" : ": bow tone emulated"));
+                }
+            }
+
+            std::cout << "  e-kit: " << (ekit.isEmpty() ? juce::String ("positions emulated") : ekit.joinIntoString ("; ")) << std::endl;
+        }
+
         for (const auto& map : maps)
         {
             const auto table = resolveMidiMap (map, info);
@@ -635,7 +679,7 @@ static int writeSnapshot (const juce::StringArray& args)
 
     const auto mixerChannel = args.contains ("--mixer-channel") ? args[args.indexOf ("--mixer-channel") + 1] : juce::String();
     const auto swaps = args.contains ("--swap") ? args[args.indexOf ("--swap") + 1] : juce::String();
-    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel, swaps);
+    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel, swaps, args.contains ("--midi-activity"));
     juce::MessageManager::getInstance()->runDispatchLoop();
     return writer.result;
 }
@@ -1056,6 +1100,118 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
     return dropouts == 0 ? 0 : 1;
 }
 
+/** --fx-cost: what each effect costs, measured on the test kit's mixer with
+    noise running through the first drum's channel and sends. */
+static int fxCost()
+{
+    using namespace lithium;
+    constexpr double rate = 48000.0;
+    constexpr int blockSize = 256;
+    constexpr double seconds = 20.0;
+
+    KitInfo info;
+    juce::String error;
+    auto kit = KitLoader::loadKit (juce::File (LITHIUM_TEST_KIT_DIR), MidiMap::kitDefault(), info, error);
+
+    if (kit == nullptr)
+    {
+        std::cerr << error << std::endl;
+        return 1;
+    }
+
+    Mixer mixer;
+    mixer.prepare (rate, blockSize);
+    IrLoader loader (mixer.getRoomReverb());
+    const auto hall = 3;   // the longest built-in IR
+    loader.request ({ hall, {}, 1.0f });
+
+    while (loader.getStatus().loading || loader.getStatus().serial == 0)
+        std::this_thread::sleep_for (std::chrono::milliseconds (10));
+
+    std::cout << "Room IR: " << loader.getStatus().name << ", " << juce::String (loader.getStatus().seconds, 2) << " s" << std::endl;
+
+    struct Config
+    {
+        const char* name;
+        std::function<void (EngineParams&)> set;
+    };
+
+    auto sendAll = [] (EngineParams& p, float room, float plate, float delay)
+    {
+        p.pieces[0].channel.roomSend = room;
+        p.pieces[0].channel.reverbSend = plate;
+        p.pieces[0].channel.delaySend = delay;
+    };
+
+    const std::vector<Config> configs {
+        { "nothing (the drum channel alone)", [] (EngineParams&) {} },
+        { "Room (convolution)", [&] (EngineParams& p) { sendAll (p, 0.5f, 0.0f, 0.0f); } },
+        { "Plate (FDN)", [&] (EngineParams& p) { sendAll (p, 0.0f, 0.5f, 0.0f); } },
+        { "Delay", [&] (EngineParams& p) { sendAll (p, 0.0f, 0.0f, 0.5f); p.delay.delay.feedback = 0.6f; } },
+        { "EQ", [] (EngineParams& p) { p.master.eq.enabled = true; p.master.eq.lowDb = 3.0f; p.master.eq.mid1Db = -2.0f; p.master.eq.highDb = 2.0f; } },
+        { "Glue", [] (EngineParams& p) { p.master.glue.enabled = true; } },
+        { "Crush", [] (EngineParams& p) { p.master.crush.enabled = true; } },
+        { "Tape (4x oversampled)", [] (EngineParams& p) { p.master.tape.enabled = true; } },
+        { "Transient", [] (EngineParams& p) { p.master.transient.enabled = true; p.master.transient.attack = 0.4f; } },
+        { "Limiter", [] (EngineParams& p) { p.master.limiter.enabled = true; } },
+        { "Limiter with lookahead", [] (EngineParams& p) { p.master.limiter.enabled = true; p.master.limiter.lookahead = true; } },
+        { "everything", [&] (EngineParams& p)
+          {
+              sendAll (p, 0.5f, 0.5f, 0.5f);
+              p.delay.delay.feedback = 0.6f;
+              auto& m = p.master;
+              m.eq.enabled = m.glue.enabled = m.crush.enabled = m.tape.enabled = m.transient.enabled = m.limiter.enabled = true;
+              m.limiter.lookahead = true;
+          } },
+    };
+
+    juce::Random random (5);
+    juce::AudioBuffer<float> out (2, blockSize);
+    const juce::ScopedNoDenormals noDenormals;
+    double baseline = 0.0;
+
+    for (const auto& config : configs)
+    {
+        EngineParams params;
+        params.resetForKit (*kit);
+        config.set (params);
+        mixer.prepare (rate, blockSize);   // a fresh start for each (the IR stays loaded)
+
+        const auto blocks = (int) (seconds * rate / blockSize);
+        double elapsed = 0.0;
+
+        for (int b = 0; b < blocks; ++b)
+        {
+            mixer.clearBuses (blockSize);
+
+            // Noise in bursts, like hits, so the effects never go idle.
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                auto* x = mixer.getPieceBus().getWritePointer (ch);
+
+                for (int i = 0; i < blockSize; ++i)
+                    x[i] = (b % 20 < 3) ? (random.nextFloat() - 0.5f) * 0.5f : 0.0f;
+            }
+
+            out.clear();
+            const auto t0 = std::chrono::steady_clock::now();
+            mixer.process (*kit, blockSize, params, { out.getWritePointer (0), out.getWritePointer (1) }, {});
+            elapsed += std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+        }
+
+        const auto percent = 100.0 * elapsed / seconds;
+
+        if (baseline <= 0.0)
+            baseline = percent;
+
+        std::cout << "  " << juce::String (config.name).paddedRight (' ', 34) << juce::String (percent, 2) << "% of a core"
+                  << (baseline > 0.0 && &config != &configs.front() ? " (+" + juce::String (percent - baseline, 2) + "%)" : juce::String())
+                  << std::endl;
+    }
+
+    return 0;
+}
+
 static int measureKit (const juce::File& folder, const juce::StringArray& args)
 {
     using namespace lithium;
@@ -1239,7 +1395,7 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
         for (const auto v : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
         {
             // CC4 runs from open (0) to closed (127); positions from centre to edge.
-            engine.controlChange (*kit, controller, juce::roundToInt ((openness ? 1.0f - v : v) * 127.0f));
+            engine.controlChange (*kit, 10, controller, juce::roundToInt ((openness ? 1.0f - v : v) * 127.0f), params);
             engine.noteOn (*kit, note, 100, params);
             const auto voices = engine.getNumActiveVoices();
             const auto hit = LastHit::unpack (feedback.lastHit[piece].load());
@@ -1373,6 +1529,9 @@ int main (int argc, char* argv[])
 
     if (args.contains ("--groove-audit"))
         return grooveAudit();
+
+    if (args.contains ("--fx-cost"))
+        return fxCost();
 
     if (args.contains ("--swap-audit"))
         return swapAudit();

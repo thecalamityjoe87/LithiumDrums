@@ -64,6 +64,7 @@ struct ArticulationManifest
     std::optional<float> openness;         // hi-hats: 0 = closed .. 1 = fully open
     std::optional<HatStroke> stroke;       // hi-hats: "tip" (bow) or "shank" (edge)
     std::optional<float> position;         // strike position: 0 = centre (or near the bell) .. 1 = edge
+    std::optional<std::pair<float, float>> positionRange;   // the positions it plays alone, low to high
 };
 
 /** A piece taken from another kit (see PieceSwap.h): where it came from,

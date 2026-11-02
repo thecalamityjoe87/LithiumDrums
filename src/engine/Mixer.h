@@ -3,7 +3,10 @@
 #include "EngineParams.h"
 #include "Voice.h"
 #include "dsp/ChannelChain.h"
-#include "dsp/RoomReverb.h"
+#include "dsp/ConvolutionReverb.h"
+#include "dsp/FdnReverb.h"
+#include "dsp/MasterChain.h"
+#include "dsp/TempoDelay.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -25,8 +28,11 @@ struct MixerFeedback
     std::array<std::atomic<float>, maxPieces> pieceReductionDb {};  // compressor, positive dB
     std::array<std::atomic<float>, maxMics> micPeak {};
     std::array<std::atomic<float>, maxMics> micReductionDb {};
-    std::atomic<float> reverbPeak { 0.0f };
-    std::array<std::atomic<float>, 2> masterPeak {};
+    std::array<std::atomic<float>, 3> returnPeak {};                // Room, Plate, Delay (params::FxReturn order), for the Mixer page
+    std::array<std::atomic<float>, 3> fxReturnPeak {};              // the same, for the FX page (each page takes its own)
+    std::array<std::atomic<float>, 2> chainInPeak {}, chainOutPeak {};   // the master chain's input and output
+    std::atomic<float> glueReductionDb { 0.0f }, crushReductionDb { 0.0f }, limiterReductionDb { 0.0f };
+    std::array<std::atomic<float>, 2> masterPeak {};                // the main out
 
     static void raise (std::atomic<float>& a, float value) noexcept
     {
@@ -37,16 +43,18 @@ struct MixerFeedback
     static float take (std::atomic<float>& a) noexcept   { return a.exchange (0.0f, std::memory_order_relaxed); }
 };
 
-/** The mixer: a channel per drum, a channel per overhead and room mic, a
-    reverb bus and the master.
+/** The mixer: a channel per drum, a channel per overhead and room mic, three
+    FX returns, and the master bus with its chain.
 
     The voices render each hit's close mics into its drum's stereo channel
     (getPieceBus(), channels 2p and 2p + 1) and its overhead and room mics
     into those mics' channels (getMicBus()). Every channel then runs the same
     chain (EQ, transient shaper, compressor, saturation), its fader and pan,
-    and goes to the main mix (through the master fader) or one of the aux
-    outs, with a post-fader send to the shared reverb, whose return can go
-    to the main mix or an aux out as well.
+    and goes to the master bus (through the master fader) or straight to one
+    of the aux outs. Each channel also sends to the three returns (Room,
+    Plate and Delay), before or after its fader; each return's output goes
+    to the master bus or an aux out too. The master bus then runs the master
+    chain (EQ, glue, crush, tape, transient shaper, limiter) into the main out.
 
     process() runs on the audio thread and never allocates; the channels'
     processing works in place on the buses. */
@@ -79,28 +87,68 @@ public:
     void process (const Kit&, int numSamples, const EngineParams&, std::array<float*, 2> mainOut,
                   const AuxOutputs& auxOuts) noexcept;
 
+    /** The Room return, for IrLoader to load IRs into. */
+    ConvolutionReverb& getRoomReverb() noexcept           { return room; }
+
+    /** The latency the mixer adds: the limiter's lookahead, when it's on. */
+    int getLatencySamples (bool lookahead) const noexcept { return chain.getLatencySamples (lookahead); }
+
 private:
+    static constexpr int numReturns = 3;
+
     struct Strip
     {
         ChannelChain chain;
-        juce::SmoothedValue<float> gainLeft, gainRight, send;
+        juce::SmoothedValue<float> gainLeft, gainRight;
+        std::array<juce::SmoothedValue<float>, numReturns> sends;
+    };
+
+    struct Return
+    {
+        juce::SmoothedValue<float> gainLeft, gainRight, mix;
+        bool resting = true;   // silent and settled: its effect isn't running
     };
 
     /** Runs one channel: its chain, fader and pan (as left and right gains),
-        then into its output and the reverb send. Returns its peak level. */
+        then into its output and the three sends. Returns its peak level. */
     float processChannel (Strip&, std::array<float*, 2> in, int numChannels, int numSamples, const ChannelParams&,
-                          float gainLeft, float gainRight, float sendGain, std::array<float*, 2> mainOut,
+                          float gainLeft, float gainRight, const std::array<float, numReturns>& sendGains,
                           const AuxOutputs&) noexcept;
 
-    std::array<float*, 2> route (int output, std::array<float*, 2> mainOut, const AuxOutputs&) const noexcept;
+    /** Runs one return: its effect on its send bus, then its mix, fader and
+        pan into its output. Returns its peak level. */
+    float processReturn (int index, const ReturnParams&, bool bypassed, int numSamples, const AuxOutputs&) noexcept;
+
+    /** Where a channel or return goes: the master bus, or an aux out. */
+    std::array<float*, 2> route (int output, const AuxOutputs&) noexcept;
+
+    /** With the limiter's lookahead on, the main out is late by its latency;
+        the aux outs are delayed to match, so they stay in time with it once
+        the host compensates. */
+    void delayAuxOuts (const AuxOutputs&, int numSamples, bool lookahead) noexcept;
 
     MixerFeedback* meters;
     std::array<Strip, maxPieces> pieceStrips;
     std::array<Strip, maxMics> micStrips;
-    juce::SmoothedValue<float> masterGain, returnGain;
-    juce::AudioBuffer<float> micBus, pieceBus, reverbSend, reverbReturn;
-    std::array<float*, 2> send {};
-    RoomReverb reverb;
+    std::array<Return, numReturns> returns;
+    juce::SmoothedValue<float> masterGain;
+    juce::AudioBuffer<float> micBus, pieceBus, masterBus, wet;
+    std::array<juce::AudioBuffer<float>, numReturns> sendBuses;
+    std::array<std::array<float*, 2>, numReturns> send {};
+    std::array<float*, 2> master {};
+    double sampleRate = 44100.0;
+
+    std::array<std::array<std::vector<float>, 2>, numAuxOuts> auxDelay;
+    int auxDelayPosition = 0;
+    bool auxDelaying = false;
+
+    ConvolutionReverb room;
+    FdnReverb plate;
+    TempoDelay delay;
+    MasterChain chain;
+
+    // The settings of the effects for this block, kept here so processReturn() can reach them.
+    const EngineParams* current = nullptr;
 };
 
 } // namespace lithium

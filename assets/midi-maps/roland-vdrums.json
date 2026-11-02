@@ -3,13 +3,14 @@
   "version": 1,
   "id": "roland-vdrums",
   "name": "Roland V-Drums",
-  "description": "The factory note map of Roland V-Drums modules (TD-17, TD-27, TD-50 and others). Hi-hat hits follow the pedal (CC4); snare, tom and ride hits follow positional sensing.",
+  "description": "The factory note map of Roland V-Drums modules (TD-17, TD-27, TD-50 and others). Hi-hat hits follow the pedal (CC4); snare, hi-hat, ride and tom hits follow positional sensing.",
   "controllers": {
     "hihatPedal": 4,
     "pedalInverted": false,
     "snarePosition": 16,
     "ridePosition": 17,
-    "tomPosition": 18
+    "tomPosition": 18,
+    "hihatPosition": 19
   },
   "notes": [
     {"note": 22, "role": "hihat", "articulation": "closed_edge", "follow": "pedal"},

@@ -6,6 +6,7 @@
 #include "SelectionModel.h"
 #include "engine/DrumEngine.h"
 #include "engine/GroovePlayer.h"
+#include "engine/IrLoader.h"
 #include "engine/KitHandoff.h"
 #include "engine/KitLoader.h"
 #include "engine/MidiMapping.h"
@@ -77,10 +78,10 @@ public:
     MixerFeedback& getMixerFeedback() noexcept                       { return mixerFeedback; }
 
     /** The mixer channel shown in the Mixer page's inspector (a drum's, or an
-        overhead or room mic's), or the reverb. Kept here so they survive
-        closing the editor. Message thread. */
+        overhead or room mic's), and the FX page's selected module. Kept here
+        so they survive closing the editor. Message thread. */
     params::ChannelId selectedMixerChannel { true, 0 };
-    bool reverbSelected = false;
+    int selectedFxModule = 3;   // fxpresets::Module: the EQ
 
     /** Whether the Kit tab shows the piece slots rather than the stage. Message thread. */
     bool kitSlotsView = false;
@@ -197,6 +198,33 @@ public:
 
     static constexpr int auditionVelocity = 90;
 
+    /** The MIDI monitor: every MIDI message the engine got, and what it did.
+        One consumer (the MIDI panel), on the message thread. */
+    bool popMonitorEvent (MidiMonitorEvent& e) noexcept              { return engine.popMonitorEvent (e); }
+
+    //==============================================================================
+    // The FX page (message thread).
+
+    /** The host's tempo, as of the last audio block (120 if it has none). Any thread. */
+    double getHostBpm() const noexcept                               { return hostBpm.load (std::memory_order_relaxed); }
+
+    /** The Room reverb's IR loader: what's loaded, for the UI. */
+    const IrLoader& getIrLoader() const noexcept                     { return irLoader; }
+
+    /** Plays a WAV, FLAC or AIFF file of the user's own in the Room reverb.
+        The file's path is kept in the parameters' state, so presets and
+        projects keep it. */
+    void setRoomIrFile (const juce::File&);
+    juce::File getRoomIrFile() const;
+
+    /** A/B comparison of the whole FX page: two sets of FX settings, one of
+        them live. Switching keeps the one left and brings the other back. */
+    int getFxSlot() const noexcept                                   { return fxSlot; }
+    void selectFxSlot (int slot);
+
+    /** Copies the live settings into the other slot. */
+    void copyFxSlot();
+
     //==============================================================================
     // The groove preview (message thread). The Grooves page picks a clip;
     // the processor resolves it against the current kit, and again whenever
@@ -254,6 +282,10 @@ private:
     void sendNoteTable();
     void applyNoteTables() noexcept;
     void sendGroovePattern (bool restart);
+    void updateRoomIr();
+    void updateLatency();
+    juce::ValueTree captureFx() const;
+    void applyFx (const juce::ValueTree&);
 
     struct AuditionRequest
     {
@@ -304,6 +336,9 @@ private:
     MixerFeedback mixerFeedback;
     DrumEngine engine { feedback };
     Mixer mixer { &mixerFeedback };
+    IrLoader irLoader { mixer.getRoomReverb() };   // after the mixer, whose reverb it loads into
+    std::int64_t engineClock = 0;                   // samples rendered, for the engine's timing of the pedal
+    std::atomic<double> hostBpm { 120.0 };
     bool kitSwapPending = false;
     juce::AudioProcessLoadMeasurer loadMeasurer;
 
@@ -377,6 +412,10 @@ private:
     int grooveClipId = -1;
     std::unique_ptr<GroovePattern> unsentGroovePattern;   // the queue was full; the timer tries again
     juce::ValueTree grooveState { "grooves" };            // under stateMutex
+
+    // FX A/B (message thread): the slot not live holds its settings.
+    std::array<juce::ValueTree, 2> fxSlots;
+    int fxSlot = 0;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (LithiumDrumsProcessor)   // for callbacks that may outlive it
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LithiumDrumsProcessor)

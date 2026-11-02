@@ -13,7 +13,35 @@ namespace
         { Follow::position, "position" },
     }};
 
-    constexpr std::array<const char*, numPositionSources> positionKeys { "snarePosition", "ridePosition", "tomPosition" };
+    constexpr std::array<const char*, numPositionSources> positionKeys { "snarePosition", "ridePosition", "tomPosition", "hihatPosition" };
+    constexpr std::array<const char*, numPositionSources> padKeys { "snare", "ride", "toms", "hihat" };
+    constexpr std::array<const char*, 3> chickKeys { "off", "auto", "always" };
+
+    /** A MIDI channel: 1-16, or 0 for any. */
+    juce::Result parseChannel (const juce::var& object, const char* key, int& value)
+    {
+        const auto v = object[key];
+
+        if (v.isVoid())
+            return juce::Result::ok();
+
+        value = (int) v;
+        return juce::isPositiveAndNotGreaterThan (value, 16)
+                 ? juce::Result::ok()
+                 : juce::Result::fail ("\"" + juce::String (key) + "\" must be a MIDI channel (1-16), or 0 for any");
+    }
+
+    /** A calibration range: two controller values, low then high. */
+    void parseRange (const juce::var& object, int& low, int& high)
+    {
+        low = juce::jlimit (0, 126, (int) object.getProperty ("min", low));
+        high = juce::jlimit (low + 1, 127, (int) object.getProperty ("max", high));
+    }
+
+    float parseUnit (const juce::var& object, const char* key, float value, float low = 0.0f)
+    {
+        return juce::jlimit (low, 1.0f, (float) (double) object.getProperty (key, value));
+    }
 
     /** A controller number from the "controllers" object: 0-127, or -1 (off). */
     juce::Result parseController (const juce::var& controllers, const char* key, int& value)
@@ -57,11 +85,54 @@ juce::Result MidiMap::parse (const juce::String& json, MidiMap& result)
         for (auto [key, value] : { std::pair { "hihatPedal", &result.controllers.hihatPedal },
                                    std::pair { positionKeys[0], &result.controllers.position[0] },
                                    std::pair { positionKeys[1], &result.controllers.position[1] },
-                                   std::pair { positionKeys[2], &result.controllers.position[2] } })
+                                   std::pair { positionKeys[2], &result.controllers.position[2] },
+                                   std::pair { positionKeys[3], &result.controllers.position[3] } })
             if (auto r = parseController (c, key, *value); r.failed())
                 return r;
 
-        result.controllers.pedalInverted = (bool) c.getProperty ("pedalInverted", false);
+        auto& cs = result.controllers;
+        cs.pedalInverted = (bool) c.getProperty ("pedalInverted", false);
+
+        if (auto r = parseChannel (c, "hihatChannel", cs.hihatChannel); r.failed())
+            return r;
+
+        parseRange (c.getProperty ("pedalRange", {}), cs.pedalMin, cs.pedalMax);
+        cs.pedalCurve = parseUnit (c, "pedalCurve", cs.pedalCurve, -1.0f);
+        cs.chickSensitivity = parseUnit (c, "chickSensitivity", cs.chickSensitivity);
+        cs.footSplash = (bool) c.getProperty ("footSplash", cs.footSplash);
+
+        if (const auto mode = c["chickFromPedal"].toString(); mode.isNotEmpty())
+            for (size_t i = 0; i < chickKeys.size(); ++i)
+                if (mode == chickKeys[i])
+                    cs.chickFromPedal = (ChickMode) i;
+
+        // Thresholds must rise, each within 0..1.
+        if (const auto* t = c["hatThresholds"].getArray(); t != nullptr && t->size() == ControllerSettings::numThresholds)
+        {
+            auto previous = 0.0f;
+
+            for (size_t i = 0; i < cs.hatThresholds.size(); ++i)
+                previous = cs.hatThresholds[i] = juce::jlimit (previous, 1.0f, (float) (double) (*t)[(int) i]);
+        }
+
+        if (const auto& pads = c["pads"]; pads.isObject())
+        {
+            for (size_t i = 0; i < padKeys.size(); ++i)
+            {
+                const auto& pad = pads[padKeys[i]];
+
+                if (! pad.isObject())
+                    continue;
+
+                if (auto r = parseChannel (pad, "channel", cs.positionChannel[i]); r.failed())
+                    return r;
+
+                cs.positionEnabled[i] = (bool) pad.getProperty ("enabled", true);
+                parseRange (pad, cs.positionMin[i], cs.positionMax[i]);
+                cs.positionCurve[i] = parseUnit (pad, "curve", 0.0f, -1.0f);
+                cs.positionEmulation[i] = parseUnit (pad, "emulation", cs.positionEmulation[i]);
+            }
+        }
     }
 
     const auto* notes = root["notes"].getArray();
@@ -121,12 +192,45 @@ juce::String MidiMap::toJson() const
     if (useKitMap)
         root->setProperty ("useKitMap", true);
 
+    const auto& cs = controllers;
     auto* c = new juce::DynamicObject();
-    c->setProperty ("hihatPedal", controllers.hihatPedal);
-    c->setProperty ("pedalInverted", controllers.pedalInverted);
+    c->setProperty ("hihatPedal", cs.hihatPedal);
+    c->setProperty ("hihatChannel", cs.hihatChannel);
+    c->setProperty ("pedalInverted", cs.pedalInverted);
+
+    auto* range = new juce::DynamicObject();
+    range->setProperty ("min", cs.pedalMin);
+    range->setProperty ("max", cs.pedalMax);
+    c->setProperty ("pedalRange", juce::var (range));
+    c->setProperty ("pedalCurve", cs.pedalCurve);
+
+    juce::Array<juce::var> thresholds;
+
+    for (const auto t : cs.hatThresholds)
+        thresholds.add (t);
+
+    c->setProperty ("hatThresholds", thresholds);
+    c->setProperty ("chickFromPedal", chickKeys[(size_t) cs.chickFromPedal]);
+    c->setProperty ("chickSensitivity", cs.chickSensitivity);
+    c->setProperty ("footSplash", cs.footSplash);
+
+    auto* pads = new juce::DynamicObject();
 
     for (size_t i = 0; i < positionKeys.size(); ++i)
-        c->setProperty (positionKeys[i], controllers.position[i]);
+    {
+        c->setProperty (positionKeys[i], cs.position[i]);
+
+        auto* pad = new juce::DynamicObject();
+        pad->setProperty ("channel", cs.positionChannel[i]);
+        pad->setProperty ("enabled", cs.positionEnabled[i]);
+        pad->setProperty ("min", cs.positionMin[i]);
+        pad->setProperty ("max", cs.positionMax[i]);
+        pad->setProperty ("curve", cs.positionCurve[i]);
+        pad->setProperty ("emulation", cs.positionEmulation[i]);
+        pads->setProperty (padKeys[i], juce::var (pad));
+    }
+
+    c->setProperty ("pads", juce::var (pads));
 
     root->setProperty ("controllers", juce::var (c));
 
@@ -216,7 +320,14 @@ MidiMap MidiMap::alesis()
 
 std::vector<MidiMap> MidiMap::factoryMaps()
 {
-    return { lithiumStandard(), kitDefault(), generalMidi(), rolandVDrums(), alesis() };
+    // The other e-kit makers' factory maps, from their own documentation
+    // (named in each map's description).
+    return { lithiumStandard(), kitDefault(), generalMidi(), rolandVDrums(), alesis(),
+             builtIn (LithiumAssets::drumitfive_json, LithiumAssets::drumitfive_jsonSize),
+             builtIn (LithiumAssets::efnote_json, LithiumAssets::efnote_jsonSize),
+             builtIn (LithiumAssets::lemont950_json, LithiumAssets::lemont950_jsonSize),
+             builtIn (LithiumAssets::milleniummps1000_json, LithiumAssets::milleniummps1000_jsonSize),
+             builtIn (LithiumAssets::yamahadtx402_json, LithiumAssets::yamahadtx402_jsonSize) };
 }
 
 MidiMap MidiMap::factoryMap (const juce::String& id)

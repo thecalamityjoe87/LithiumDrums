@@ -10,6 +10,122 @@ namespace lithium
     model it plays (click to swap it), its volume, mute, solo and play, and
     a way to the Edit tab. With no kit, it says why and what to do. The
     controls are re-attached to whichever piece is selected. */
+/** Beside the hi-hat on the stage: how open the e-kit's pedal has the
+    hats, and lights that flash as notes and pedal messages come in, for
+    setting up an e-kit. KitPage shows it once MIDI has arrived. */
+class KitPage::HihatIndicator final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
+{
+public:
+    static constexpr int width = 112, height = 66;
+
+    explicit HihatIndicator (LithiumDrumsProcessor& p) : processor (p)
+    {
+        setTooltip ("The hi-hat pedal: how open it has the hats now, and MIDI activity. Set the pedal up under MIDI > E-Drums.");
+        startTimerHz (30);
+    }
+
+    /** Called (once) when the first note or pedal message arrives. */
+    std::function<void()> onFirstActivity;
+
+    bool hasSeenActivity() const noexcept    { return seenNote != 0 || seenPedal != 0; }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+        const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (colours::panel.withAlpha (0.88f));
+        g.fillRoundedRectangle (bounds, cornerRadius);
+        g.setColour (colours::border);
+        g.drawRoundedRectangle (bounds, cornerRadius, 1.0f);
+
+        auto area = getLocalBounds().reduced (space::sm, space::xs + 2);
+        auto top = area.removeFromTop (14);
+        g.setColour (colours::textMuted);
+        drawTrackedText (g, "HI-HAT", label (type::caption), 0.12f, top.toFloat(), juce::Justification::centredLeft);
+        g.setColour (openness >= 0.0f ? colours::text : colours::textMuted);
+        g.setFont (mono (type::caption));
+        g.drawText (openness < 0.0f   ? juce::String ("-")
+                    : openness < 0.05f ? juce::String ("closed")
+                                       : juce::String (juce::roundToInt (openness * 100.0f)) + "% open",
+                    top, juce::Justification::centredRight, false);
+
+        // Openness, closed at the left.
+        area.removeFromTop (space::xs);
+        const auto bar = area.removeFromTop (6).toFloat();
+        g.setColour (colours::background);
+        g.fillRoundedRectangle (bar, 3.0f);
+
+        if (openness >= 0.0f)
+        {
+            g.setColour (colours::groupHats);
+            g.fillRoundedRectangle (bar.withWidth (std::max (6.0f, bar.getWidth() * openness)), 3.0f);
+        }
+
+        // The activity lights.
+        area.removeFromTop (space::sm);
+        const auto now = juce::Time::getMillisecondCounterHiRes();
+
+        auto light = [&] (juce::Rectangle<int> cell, const juce::String& text, bool lit)
+        {
+            g.setColour (lit ? colours::accent : colours::border);
+            g.fillEllipse (cell.removeFromLeft (8).toFloat().withSizeKeepingCentre (6.0f, 6.0f));
+            cell.removeFromLeft (space::xs);
+            g.setColour (lit ? colours::text : colours::textMuted);
+            drawTrackedText (g, text, label (type::caption), 0.08f, cell.toFloat(), juce::Justification::centredLeft);
+        };
+
+        light (area.removeFromLeft (area.getWidth() / 2), "NOTE", now < noteUntil);
+        light (area, "PEDAL", now < pedalUntil);
+    }
+
+private:
+    void timerCallback() override
+    {
+        const auto& fb = processor.getFeedback();
+        const auto now = juce::Time::getMillisecondCounterHiRes();
+        const auto wasActive = hasSeenActivity();
+        auto changed = false;
+
+        if (const auto n = fb.lastNote.load (std::memory_order_relaxed); n != seenNote)
+        {
+            seenNote = n;
+            noteUntil = now + theme::motion::hitFlashMs;
+            changed = true;
+        }
+
+        if (const auto p = fb.pedalMessages.load (std::memory_order_relaxed); p != seenPedal)
+        {
+            seenPedal = p;
+            pedalUntil = now + theme::motion::hitFlashMs;
+            changed = true;
+        }
+
+        if (const auto o = fb.hihatOpenness.load (std::memory_order_relaxed); std::abs (o - openness) > 0.002f)
+        {
+            openness = o;
+            changed = true;
+        }
+
+        if (! wasActive && hasSeenActivity() && onFirstActivity)
+            onFirstActivity();
+
+        // Repaint while a light is on, and once more as it goes out.
+        const auto lit = now < std::max (noteUntil, pedalUntil);
+
+        if (changed || lit != wasLit)
+        {
+            wasLit = lit;
+            repaint();
+        }
+    }
+
+    LithiumDrumsProcessor& processor;
+    std::uint32_t seenNote = 0, seenPedal = 0;
+    double noteUntil = 0.0, pedalUntil = 0.0;
+    float openness = -1.0f;
+    bool wasLit = false;
+};
+
 class KitPage::PieceCard final : public juce::Component, private SelectionModel::Listener
 {
 public:
@@ -211,6 +327,10 @@ KitPage::KitPage (LithiumDrumsProcessor& p)
     card->onEdit = [this] { if (onEditPiece) onEditPiece(); };
     addAndMakeVisible (*card);
 
+    hihat = std::make_unique<HihatIndicator> (p);
+    hihat->onFirstActivity = [this] { resized(); };
+    addChildComponent (*hihat);
+
     slotView.setViewedComponent (&slots, false);   // not owned: a member
     slotView.setScrollBarsShown (true, false);
     slotView.setScrollBarThickness (8);
@@ -249,6 +369,7 @@ void KitPage::showSlots (bool s)
     (s ? slotsButton : stageButton).setToggleState (true, juce::dontSendNotification);
     stage.setVisible (! s);
     card->setVisible (! s);
+    hihat->setVisible (false);   // resized() shows it where it belongs
     slotView.setVisible (s);
     resized();
     repaint();
@@ -272,6 +393,7 @@ void KitPage::updateKitInfo()
     stage.setKitInfo (info);
     card->setKit (info);
     slots.setKit (info, slotView.getLocalBounds().withWidth (slotView.getMaximumVisibleWidth()));
+    resized();   // the hi-hat indicator follows the kit's hi-hat
     repaint();
 }
 
@@ -308,6 +430,21 @@ void KitPage::resized()
     stage.setBounds (getLocalBounds());
     // Bottom left: only floor and stand feet there, which can't be clicked anyway.
     card->setBounds (space::page, getHeight() - space::page - PieceCard::height, PieceCard::width, PieceCard::height);
+
+    // The hi-hat indicator, just right of the hats' rod (the middle of the
+    // hi-hat layer, which is the cymbals and the top of the rod), a little
+    // above the cymbals. Only on the stage, with a hi-hat, once some MIDI has come in.
+    const auto hatBounds = stage.getSlotBounds (StageSlot::hihat);
+    const auto hasHat = shownKit != nullptr && shownKit->slotPiece[(size_t) index (StageSlot::hihat)] >= 0;
+    hihat->setVisible (! processor.kitSlotsView && hasHat && hatBounds.has_value() && hihat->hasSeenActivity());
+
+    if (hatBounds.has_value())
+    {
+        const auto x = juce::jlimit (space::page, getWidth() - HihatIndicator::width - space::page,
+                                     juce::roundToInt (hatBounds->getCentreX()) + space::md);
+        const auto y = std::max (space::md + size::button + space::md, juce::roundToInt (hatBounds->getY()) - HihatIndicator::height / 2 + space::xs);
+        hihat->setBounds (x, y, HihatIndicator::width, HihatIndicator::height);
+    }
 
     // The view switch, top right.
     auto switchArea = juce::Rectangle<int> (getWidth() - space::page - 2 * 76, space::md, 2 * 76, size::button);

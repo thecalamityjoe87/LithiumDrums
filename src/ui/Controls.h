@@ -71,10 +71,20 @@ public:
     /** Replaces the tooltip (by default the parameter's name). Call after attach(). */
     void setTooltip (const juce::String& t)  { slider.setTooltip (t); }
 
+    /** Makes the name a link (the sends' names open their effect on the FX page). */
+    std::function<void()> onNameClick;
+
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override       { updateNameHover(); }
+    void mouseExit (const juce::MouseEvent&) override       { updateNameHover(); }
 
 private:
+    juce::Rectangle<float> getNameArea() const;
+    void updateNameHover();
+
+    bool nameHovered = false;
     const juce::String name;
     const Style style;
     const Size dialSize;

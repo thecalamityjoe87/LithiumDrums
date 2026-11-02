@@ -68,14 +68,22 @@ struct Articulation
 
 /** The steps a continuous controller moves between: a hi-hat's openness
     levels, or a drum's strike positions. Sorted by value, at most one
-    articulation per value. */
+    articulation per value.
+
+    Each step plays alone from low to high; between one step's high and the
+    next one's low, the two crossfade. */
 struct Ladder
 {
     static constexpr int maxSteps = 8;
 
+    // Between two steps given as points, the middle of the gap (this
+    // fraction of it) crossfades from one to the other.
+    static constexpr float crossfadeWidth = 0.3f;
+
     int numSteps = 0;
     std::array<int, maxSteps> articulation {};   // index into Kit::articulations
     std::array<float, maxSteps> value {};        // 0..1
+    std::array<float, maxSteps> low {}, high {};
 };
 
 struct PieceData
@@ -107,6 +115,11 @@ struct PieceData
     // What the hi-hat pedal and the position controllers move between.
     std::array<Ladder, 2> hatLadders {};   // [0] tip (bow) hits, [1] shank (edge) hits
     Ladder positionLadder {};
+
+    // Hits the pedal plays by itself (a chick, a foot splash), and the
+    // ride's edge, which its bow blends towards on positional pads. Indices
+    // into Kit::articulations, -1 if the piece has none.
+    int pedalArticulation = -1, splashArticulation = -1, edgeArticulation = -1;
 
     const Ladder& hatLadder (HatStroke s) const noexcept   { return hatLadders[s == HatStroke::shank ? 1 : 0]; }
 };
@@ -269,7 +282,10 @@ struct KitPieceInfo
         switch (f)
         {
             case Follow::pedal:    return t.openness >= 0.0f && hatSteps[t.stroke == HatStroke::shank ? 1 : 0] > 1;
-            case Follow::position: return t.position >= 0.0f && positionSteps > 1 && positionSourceFor (role).has_value();
+            // Positional recordings to move between; or, without them, a hit
+            // whose sound the engine changes with the position itself.
+            case Follow::position: return positionSourceFor (role).has_value()
+                                          && ((t.position >= 0.0f && positionSteps > 1) || t.emulatesPosition);
             case Follow::none:     break;
         }
 

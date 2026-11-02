@@ -255,7 +255,7 @@ void AboutPanel::refresh()
 
             g.setColour (colours::text);
             g.setFont (body (14.0f));
-            g.drawFittedText ("Lithium Drums " LITHIUM_VERSION_STRING ". The kits and grooves below are recordings released under "
+            g.drawFittedText ("Lithium Drums " LITHIUM_VERSION_STRING ". The kits, grooves and room reverb IRs below are recordings released under "
                               "open licences by their authors. Credit them as shown when you publish music made with them.",
                               area.removeFromTop (40), juce::Justification::topLeft, 2, 1.0f);
 
@@ -268,6 +268,34 @@ void AboutPanel::refresh()
     };
 
     cards.push_back (std::make_unique<Intro>());
+
+    // The Room reverb's impulse responses: the measured ones each with
+    // their attribution and what was changed (as CC BY asks), the
+    // synthesized ones (ours, CC0) together.
+    {
+        juce::StringArray synthesized;
+        const IrInfo* cc0 = nullptr;
+
+        for (const auto& ir : irs::builtIn())
+        {
+            if (ir.sourceUrl.isEmpty())
+            {
+                synthesized.add (ir.name);
+                cc0 = &ir;
+                continue;
+            }
+
+            cards.push_back (std::make_unique<KitCard> (KitCard::Content {
+                "Room reverb IR: " + ir.name, ir.source, ir.author, ir.description + " Changes: " + ir.changes,
+                ir.licenseName, ir.licenseUrl, ir.sourceUrl, {}, false }));
+        }
+
+        if (cc0 != nullptr)
+            cards.push_back (std::make_unique<KitCard> (KitCard::Content {
+                "Room reverb IRs: " + synthesized.joinIntoString (", "), "Synthesized for Lithium Drums", cc0->author,
+                "Made by tools/irgen from image-source early reflections and a band-split noise tail. Free to use for anything.",
+                cc0->licenseName, cc0->licenseUrl, {}, {}, false }));
+    }
 
     const auto library = kitlibrary::scan (processor.getKitsFolder());
     const auto& kits = library.kits;

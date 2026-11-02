@@ -324,13 +324,19 @@ void TwoKnobModule::resized()
 
 //==============================================================================
 RoutingModule::RoutingModule (juce::AudioProcessorValueTreeState& s, bool withFaderAndPan)
-    : Module (withFaderAndPan ? "Channel" : "Send & output"), state (s), withFader (withFaderAndPan)
+    : Module (withFaderAndPan ? "Channel" : "Sends & output"), state (s), withFader (withFaderAndPan)
 {
     pan.setBipolar (true);
-    send.setArcColour (theme::colours::groupToms);
     output.setTooltip ("The main mix, or an aux out for mixing in the host");
 
-    for (auto* c : std::initializer_list<juce::Component*> { &send, &output })
+    for (size_t i = 0; i < sends.size(); ++i)
+    {
+        sends[i].setArcColour (theme::fxColour ((int) i));
+        sends[i].onNameClick = [this, i] { if (onOpenReturn) onOpenReturn ((params::FxReturn) i); };
+        addAndMakeVisible (sends[i]);
+    }
+
+    for (auto* c : std::initializer_list<juce::Component*> { &pre, &output })
         addAndMakeVisible (c);
 
     if (withFader)
@@ -342,7 +348,15 @@ RoutingModule::RoutingModule (juce::AudioProcessorValueTreeState& s, bool withFa
 
 void RoutingModule::attach (params::ChannelId c)
 {
-    send.attach (state, c.param (params::reverbSend));
+    const std::array<std::string_view, params::numFxReturns> ids { params::roomSend, params::reverbSend, params::delaySend };
+
+    for (size_t i = 0; i < sends.size(); ++i)
+    {
+        sends[i].attach (state, c.param (ids[i]));
+        sends[i].setTooltip (theme::fxName ((int) i) + " send. Click its name to open the " + theme::fxName ((int) i) + " on the FX page.");
+    }
+
+    pre.attach (state, c.param (params::sendPre));
     output.attach (state, c.param (params::output));
 
     if (withFader)
@@ -354,8 +368,10 @@ void RoutingModule::attach (params::ChannelId c)
 
 void RoutingModule::resized()
 {
+    using namespace theme;
+
     auto area = getContentArea();
-    output.setBounds (area.removeFromBottom (26));
+    output.setBounds (area.removeFromBottom (size::button - 2));
     area.removeFromBottom (20);   // the "OUTPUT" label
 
     if (withFader)
@@ -363,11 +379,31 @@ void RoutingModule::resized()
         auto top = area.removeFromTop (area.getHeight() / 2);
         fader.setBounds (top.removeFromLeft (top.getWidth() / 2));
         pan.setBounds (top);
-        send.setBounds (area.withSizeKeepingCentre (std::min (area.getWidth(), 90), area.getHeight()));
+    }
+
+    // The sends side by side when there's room, else one above the other;
+    // the Pre switch under them.
+    auto preRow = area.removeFromBottom (size::buttonCompact + 2);
+    area.removeFromBottom (space::xs);
+    pre.setBounds (preRow.withSizeKeepingCentre (std::min (preRow.getWidth(), 64), preRow.getHeight()));
+
+    constexpr int knobWidth = 46, knobHeight = 66;
+
+    if (area.getWidth() >= 3 * knobWidth)
+    {
+        auto row = area.withSizeKeepingCentre (area.getWidth(), std::min (area.getHeight(), knobHeight));
+        const auto w = row.getWidth() / 3;
+
+        for (auto& k : sends)
+            k.setBounds (row.removeFromLeft (w));
     }
     else
     {
-        send.setBounds (area.withSizeKeepingCentre (std::min (area.getWidth(), 96), std::min (area.getHeight(), 110)));
+        const auto h = std::min (knobHeight, area.getHeight() / 3);
+        auto column = area.withSizeKeepingCentre (area.getWidth(), 3 * h);
+
+        for (auto& k : sends)
+            k.setBounds (column.removeFromTop (h));
     }
 }
 

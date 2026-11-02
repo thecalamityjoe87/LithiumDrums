@@ -46,6 +46,7 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
     fraction = 0;
     pitchOffset = trigger.pitchEnvSemitones;
     pitchDecay = trigger.pitchEnvDecay;
+    positionTone = trigger.positionTone;
 
     gain = trigger.gain;
     decayEnvelope = 1.0f;
@@ -76,6 +77,7 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
         s.sourceGain = kit.pieces[(size_t) p].micGain[(size_t) m];
         s.numFrames = kit.samples->getNumFrames (id);
         s.tone = {};
+        s.position = {};
         longestStream = std::max (longestStream, s.numFrames);
 
         kit.samples->open (id, s.cursor);
@@ -145,6 +147,7 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
     const auto& highPass = ctx.toneHighPass[p];
     const auto& lowPass = ctx.toneLowPass[p];
     const auto highPassOn = ! highPass.isIdentity(), lowPassOn = ! lowPass.isIdentity();
+    const auto positionOn = ! positionTone[0].isIdentity() || ! positionTone[1].isIdentity();
 
     // 2. Resample every stream, in chunks. All streams share one position,
     //    so each consumes exactly the same number of source frames. While the
@@ -223,6 +226,18 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
                         out[i] = state.process (*c, out[i]);
 
                     s.tone[(size_t) which][(size_t) ch] = state;
+                }
+
+                // The emulated strike position, on this hit alone.
+                if (positionOn)
+                {
+                    auto low = s.position[0][(size_t) ch], high = s.position[1][(size_t) ch];
+
+                    for (int i = 0; i < n; ++i)
+                        out[i] = high.process (positionTone[1], low.process (positionTone[0], out[i]));
+
+                    s.position[0][(size_t) ch] = low;
+                    s.position[1][(size_t) ch] = high;
                 }
             }
 

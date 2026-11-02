@@ -30,6 +30,23 @@ namespace colours
     inline const juce::Colour groupHats    { 0xff8bd17c };
     inline const juce::Colour groupToms    { 0xffb39dff };
     inline const juce::Colour groupCymbals { 0xffe7d27c };
+
+    // The FX returns: Room, Plate, Delay (see fxColour()).
+    inline const juce::Colour fxRoom       { 0xff7fa8e0 };
+    inline const juce::Colour fxPlate      { 0xffb39dff };
+    inline const juce::Colour fxDelay      { 0xff6fd3b0 };
+}
+
+/** The colour of an FX return, by params::FxReturn index (Room, Plate, Delay). */
+inline juce::Colour fxColour (int returnIndex)
+{
+    return returnIndex == 0 ? colours::fxRoom : returnIndex == 1 ? colours::fxPlate : colours::fxDelay;
+}
+
+/** An FX return's short name, as the sends and strips label it. */
+inline juce::String fxName (int returnIndex)
+{
+    return returnIndex == 0 ? "Room" : returnIndex == 1 ? "Plate" : "Delay";
 }
 
 inline juce::Colour groupColour (PieceGroup g)

@@ -256,6 +256,15 @@ void KitStage::paint (juce::Graphics& g)
     g.setOpacity (1.0f);
 }
 
+std::optional<juce::Rectangle<float>> KitStage::getSlotBounds (StageSlot slot) const
+{
+    for (const auto& l : layers)
+        if (l.slot == slot)
+            return l.bounds;
+
+    return std::nullopt;
+}
+
 std::optional<StageSlot> KitStage::getSlotAt (juce::Point<float> position) const
 {
     const auto toRender = renderScale / stageScale;

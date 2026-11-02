@@ -2,7 +2,10 @@
 
 #include "Kit.h"
 #include "dsp/ChannelChain.h"
-#include "dsp/RoomReverb.h"
+#include "dsp/ConvolutionReverb.h"
+#include "dsp/FdnReverb.h"
+#include "dsp/MasterChain.h"
+#include "dsp/TempoDelay.h"
 
 #include <array>
 
@@ -21,11 +24,14 @@ namespace lithium
 inline constexpr int numAuxOuts = 16;
 inline constexpr int mainOutput = 0;
 
-/** A mixer channel: its processing, and where it goes after its fader. */
+/** A mixer channel: its processing, its sends and where it goes after its fader. */
 struct ChannelParams
 {
     ChannelSettings chain;
-    float reverbSend = 0.0f;                   // linear, post-fader
+    float reverbSend = 0.0f;                   // linear: to the Plate return
+    float roomSend = 0.0f;                     // to the Room return
+    float delaySend = 0.0f;                    // to the Delay return
+    bool sendsPreFader = false;                // the three sends are taken before the fader (and pan) rather than after
     int output = mainOutput;
 };
 
@@ -71,12 +77,35 @@ struct MicParams
     ChannelParams channel;                     // overhead and room mics only
 };
 
-struct ReverbParams
+/** An FX return's channel: its fader, mute, pan, output and wet/dry mix. */
+struct ReturnParams
 {
-    ReverbSettings room;
     float returnGain = 1.0f;                   // linear
     bool mute = false;
     int output = mainOutput;
+    float pan = 0.0f;                          // -1..1, a balance
+    float mix = 1.0f;                          // 0..1: 1 = only the effect, below that some of the send comes through dry
+};
+
+/** The Plate return (the algorithmic reverb). */
+struct ReverbParams : ReturnParams
+{
+    ReverbSettings room;
+};
+
+/** The Room return (convolution). */
+struct RoomParams : ReturnParams
+{
+    ConvolutionSettings room;
+};
+
+/** The Delay return. delay.timeMs is worked out each block, from the tempo when synced. */
+struct DelayParams : ReturnParams
+{
+    DelaySettings delay;
+    bool sync = true;
+    int note = delaynotes::defaultNote;
+    float freeTimeMs = 375.0f;
 };
 
 struct EngineParams
@@ -84,6 +113,11 @@ struct EngineParams
     std::array<PieceParams, maxPieces> pieces;
     std::array<MicParams, maxMics> mics;
     ReverbParams reverb;
+    RoomParams room;
+    DelayParams delay;
+    MasterSettings master;
+    bool fxBypass = false;                     // the returns silent and the master chain bypassed
+    double hostBpm = 120.0;                    // for the synced delay; 120 when the host has no tempo
     float masterGain = 1.0f;
     bool velocityCrossfade = true;
 
@@ -106,8 +140,8 @@ struct EngineParams
     }
 
     /** Neutral settings for a kit: what its pieces and mics play like before
-        anyone touches a control. The reverb bus isn't part of the kit, so it
-        keeps its settings. */
+        anyone touches a control. The returns and the master chain aren't
+        part of the kit, so they keep their settings. */
     void resetForKit (const Kit& kit) noexcept
     {
         for (size_t i = 0; i < pieces.size(); ++i)

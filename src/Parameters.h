@@ -29,16 +29,66 @@ juce::String micParamId (int slot, std::string_view name);     // e.g. "mic5_pan
 inline constexpr auto masterVolume = "master_volume";
 inline constexpr auto velocityCrossfade = "velocity_crossfade";
 
-// The reverb bus.
+// The FX returns. Every mixer channel has a send to each; a channel's
+// sends are post-fader unless its "send_pre" is on.
+//
+//  - Room: convolution with a measured (or synthesized) space ("room_*").
+//  - Plate: the algorithmic reverb. It was the mixer's only reverb before
+//    the FX page, so it keeps that reverb's IDs ("reverb_*", and each
+//    channel's "reverb_send"): projects and presets from then load with
+//    their sends and settings as they were, with no migration.
+//  - Delay ("delay_*").
 inline constexpr auto reverbReturn = "reverb_return";
 inline constexpr auto reverbMute = "reverb_mute";
 inline constexpr auto reverbOutput = "reverb_output";
+inline constexpr auto reverbPan = "reverb_pan";
+inline constexpr auto reverbMix = "reverb_mix";
 inline constexpr auto reverbSize = "reverb_size";
 inline constexpr auto reverbDecay = "reverb_decay";
 inline constexpr auto reverbPreDelay = "reverb_predelay";
 inline constexpr auto reverbDamping = "reverb_damping";
 inline constexpr auto reverbLowCut = "reverb_lowcut";
 inline constexpr auto reverbWidth = "reverb_width";
+
+inline constexpr auto roomReturn = "room_return";
+inline constexpr auto roomMute = "room_mute";
+inline constexpr auto roomOutput = "room_output";
+inline constexpr auto roomPan = "room_pan";
+inline constexpr auto roomMix = "room_mix";
+inline constexpr auto roomIr = "room_ir";
+inline constexpr auto roomPreDelay = "room_predelay";
+inline constexpr auto roomDecay = "room_decay";
+inline constexpr auto roomLowCut = "room_lowcut";
+inline constexpr auto roomHighCut = "room_highcut";
+inline constexpr auto roomWidth = "room_width";
+
+inline constexpr auto delayReturn = "delay_return";
+inline constexpr auto delayMute = "delay_mute";
+inline constexpr auto delayOutput = "delay_output";
+inline constexpr auto delayPan = "delay_pan";
+inline constexpr auto delayMix = "delay_mix";
+inline constexpr auto delaySync = "delay_sync";
+inline constexpr auto delayNote = "delay_note";
+inline constexpr auto delayTime = "delay_time";
+inline constexpr auto delayFeedback = "delay_feedback";
+inline constexpr auto delayLowCut = "delay_lowcut";
+inline constexpr auto delayHighCut = "delay_highcut";
+inline constexpr auto delayPingPong = "delay_pingpong";
+
+/** The three returns, in the order the UI shows them. */
+enum class FxReturn { room, plate, delay };
+inline constexpr int numFxReturns = 3;
+
+/** The master chain. Its EQ, glue compressor and transient shaper use the
+    channel parameter names on ChannelId::master() ("master_eq_on",
+    "master_comp_ratio", "master_trans_attack"); the rest are here. */
+inline constexpr auto fxBypass = "fx_bypass";
+inline constexpr auto crushOn = "master_crush_on", crushDrive = "master_crush_drive", crushBlend = "master_crush_blend";
+inline constexpr auto crushAttack = "master_crush_attack", crushRelease = "master_crush_release";
+inline constexpr auto tapeOn = "master_tape_on", tapeDrive = "master_tape_drive", tapeTone = "master_tape_tone";
+inline constexpr auto tapeOutput = "master_tape_output";
+inline constexpr auto limitOn = "master_limit_on", limitCeiling = "master_limit_ceiling", limitRelease = "master_limit_release";
+inline constexpr auto limitLookahead = "master_limit_lookahead";
 
 // Shaping a piece's hits: append to pieceParamId().
 inline constexpr std::string_view dynamics = "dynamics", pitchEnv = "pitch_env", pitchEnvTime = "pitch_env_time";
@@ -48,7 +98,8 @@ inline constexpr std::string_view attack = "attack", hold = "hold";
 // A mixer channel (a piece's, or an overhead or room mic's): append to
 // ChannelId::param(). A piece's channel fader is "fader" (its "volume" is the
 // whole drum); a mic's is its "volume".
-inline constexpr std::string_view output = "output", reverbSend = "reverb_send";
+inline constexpr std::string_view output = "output", reverbSend = "reverb_send", roomSend = "room_send", delaySend = "delay_send";
+inline constexpr std::string_view sendPre = "send_pre";
 inline constexpr std::string_view eqOn = "eq_on", eqHighPass = "eq_hpf";
 inline constexpr std::string_view eqLowFreq = "eq_low_freq", eqLowGain = "eq_low_gain";
 inline constexpr std::string_view eqMid1Freq = "eq_mid1_freq", eqMid1Gain = "eq_mid1_gain", eqMid1Q = "eq_mid1_q";
@@ -60,14 +111,28 @@ inline constexpr std::string_view compMakeup = "comp_makeup", compMix = "comp_mi
 inline constexpr std::string_view satOn = "sat_on", satDrive = "sat_drive", satMix = "sat_mix";
 inline constexpr std::string_view transientOn = "trans_on", transientAttack = "trans_attack", transientSustain = "trans_sustain";
 
-/** Which mixer channel a set of channel parameters belongs to. */
+/** Which mixer channel a set of channel parameters belongs to: a drum's, an
+    overhead or room mic's, or the master bus (whose EQ, compressor and
+    transient shaper have the same parameters as a channel's, so the same
+    UI modules edit them). */
 struct ChannelId
 {
     bool isPiece = false;
     int slot = -1;
+    bool isMaster = false;
+
+    static ChannelId master() noexcept                  { return { false, 0, true }; }
 
     bool isValid() const noexcept                       { return slot >= 0; }
-    juce::String param (std::string_view name) const    { return isPiece ? pieceParamId (slot, name) : micParamId (slot, name); }
+
+    juce::String param (std::string_view name) const
+    {
+        if (isMaster)
+            return "master_" + juce::String (name.data(), name.size());
+
+        return isPiece ? pieceParamId (slot, name) : micParamId (slot, name);
+    }
+
     juce::String fader() const                          { return param (isPiece ? "fader" : "volume"); }
 
     bool operator== (const ChannelId&) const = default;
@@ -113,6 +178,13 @@ void movePieces (juce::AudioProcessorValueTreeState&, const KitInfo&, const std:
 void resetEq (juce::AudioProcessorValueTreeState&, ChannelId);
 void resetCompressor (juce::AudioProcessorValueTreeState&, ChannelId);
 
+/** Whether a parameter belongs to the FX page (the returns and the master
+    chain), for its A/B comparison and presets. */
+bool isFxParameter (const juce::String& id);
+
+/** The names of the Room reverb's IR choices: the built-in IRs, then "Custom file". */
+juce::StringArray roomIrNames();
+
 /** Reads every parameter the audio thread needs into an EngineParams.
 
     The constructor looks parameters up by ID once (string lookups allocate),
@@ -128,12 +200,15 @@ public:
     /** Whether each mic slot is muted right now. */
     std::array<bool, maxMics> readMicMutes() const noexcept;
 
+    /** Whether the limiter's lookahead is on (which sets the latency). */
+    bool readLookahead() const noexcept;
+
 private:
     using Ref = std::atomic<float>*;
 
     struct ChannelRefs
     {
-        Ref output, reverbSend;
+        Ref output, reverbSend, roomSend, delaySend, sendPre;
         Ref eqOn, hpf, lowFreq, lowGain, mid1Freq, mid1Gain, mid1Q, mid2Freq, mid2Gain, mid2Q, highFreq, highGain;
         Ref compOn, threshold, ratio, attack, release, makeup, mix;
         Ref satOn, satDrive, satMix, transientOn, transientAttack, transientSustain;
@@ -154,17 +229,52 @@ private:
         ChannelRefs channel;
     };
 
+    struct ReturnRefs
+    {
+        Ref returnLevel, mute, output, pan, mix;
+    };
+
     struct ReverbRefs
     {
-        Ref returnLevel, mute, output, size, decay, preDelay, damping, lowCut, width;
+        ReturnRefs bus;
+        Ref size, decay, preDelay, damping, lowCut, width;
+    };
+
+    struct RoomRefs
+    {
+        ReturnRefs bus;
+        Ref preDelay, lowCut, highCut, width;
+    };
+
+    struct DelayRefs
+    {
+        ReturnRefs bus;
+        Ref sync, note, time, feedback, lowCut, highCut, pingPong;
+    };
+
+    struct MasterRefs
+    {
+        Ref bypass;
+        Ref eqOn, hpf, lowFreq, lowGain, mid1Freq, mid1Gain, mid1Q, mid2Freq, mid2Gain, mid2Q, highFreq, highGain;
+        Ref compOn, threshold, ratio, attack, release, makeup, mix;
+        Ref transientOn, transientAttack, transientSustain;
+        Ref crushOn, crushDrive, crushBlend, crushAttack, crushRelease;
+        Ref tapeOn, tapeDrive, tapeTone, tapeOutput;
+        Ref limitOn, limitCeiling, limitRelease, limitLookahead;
     };
 
     static ChannelRefs findChannel (juce::AudioProcessorValueTreeState&, ChannelId);
+    static ReturnRefs findReturn (juce::AudioProcessorValueTreeState&, const char* levelId, const char* muteId,
+                                  const char* outputId, const char* panId, const char* mixId);
     static void readChannel (const ChannelRefs&, ChannelParams&) noexcept;
+    static void readReturn (const ReturnRefs&, ReturnParams&) noexcept;
 
     std::array<PieceRefs, maxPieces> pieces {};
     std::array<MicRefs, maxMics> mics {};
     ReverbRefs reverb {};
+    RoomRefs room {};
+    DelayRefs delay {};
+    MasterRefs masterChain {};
     Ref master = nullptr;
     Ref crossfade = nullptr;
 };

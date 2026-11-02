@@ -271,7 +271,7 @@ public:
         {
             for (const auto decay : { 0.8f, 2.5f })
             {
-                RoomReverb reverb;
+                FdnReverb reverb;
                 reverb.prepare (rate);
                 ReverbSettings s;
                 s.decaySeconds = decay;
@@ -313,7 +313,7 @@ public:
         {
             auto onsetMs = [] (float preDelayMs)
             {
-                RoomReverb reverb;
+                FdnReverb reverb;
                 reverb.prepare (rate);
                 ReverbSettings s;
                 s.preDelayMs = preDelayMs;

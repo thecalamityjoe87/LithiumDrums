@@ -144,9 +144,17 @@ void Knob::paint (juce::Graphics& g)
     // three read as one control however tall the knob's box is.
     const auto dial = slider.getBounds().toFloat();
     const auto width = (float) getWidth();
-    g.setColour (isEnabled() ? colours::textMuted : colours::textMuted.withMultipliedAlpha (0.6f));
-    drawTrackedText (g, name.toUpperCase(), label (type::caption), 0.08f, { 0.0f, dial.getY() - 15.0f, width, 14.0f },
-                     juce::Justification::centred);
+    g.setColour (! isEnabled() ? colours::textMuted.withMultipliedAlpha (0.6f)
+                 : nameHovered ? colours::accent
+                               : colours::textMuted);
+    drawTrackedText (g, name.toUpperCase(), label (type::caption), 0.08f, getNameArea(), juce::Justification::centred);
+
+    if (nameHovered)
+    {
+        // Underlined, like a link.
+        const auto textWidth = getTrackedTextWidth (name.toUpperCase(), label (type::caption), 0.08f);
+        g.fillRect (juce::Rectangle<float> ((width - textWidth) * 0.5f, getNameArea().getBottom() - 1.0f, textWidth, 1.0f));
+    }
 
     // The attachment formats the value the way the parameter does.
     // Narrow knobs (a row of EQ bands) get a smaller value font, so "2.50 kHz" fits.
@@ -154,6 +162,30 @@ void Knob::paint (juce::Graphics& g)
     g.setFont (mono (getWidth() < 56 ? 10.0f : type::caption));
     g.drawText (slider.getTextFromValue (slider.getValue()), juce::Rectangle<float> (0.0f, dial.getBottom() + 1.0f, width, 14.0f),
                 juce::Justification::centred, false);
+}
+
+juce::Rectangle<float> Knob::getNameArea() const
+{
+    return { 0.0f, (float) slider.getY() - 15.0f, (float) getWidth(), 14.0f };
+}
+
+void Knob::updateNameHover()
+{
+    const auto hover = onNameClick != nullptr && style == Style::labelled && isMouseOver()
+                       && getNameArea().contains (getMouseXYRelative().toFloat());
+
+    if (hover != nameHovered)
+    {
+        nameHovered = hover;
+        setMouseCursor (hover ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+}
+
+void Knob::mouseDown (const juce::MouseEvent& e)
+{
+    if (onNameClick != nullptr && getNameArea().contains (e.position))
+        onNameClick();
 }
 
 void Knob::resized()
