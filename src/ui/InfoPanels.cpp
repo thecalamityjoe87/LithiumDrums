@@ -215,19 +215,45 @@ public:
         g.setColour (colours::text.withAlpha (0.85f));
         g.setFont (body (13.0f));
         g.drawFittedText (content.credits, area.removeFromTop (54), juce::Justification::topLeft, 3, 1.0f);
+
+        if (! separatorArea.isEmpty())
+        {
+            g.setColour (colours::textMuted);
+            g.drawText ("|", separatorArea, juce::Justification::centred, false);
+        }
     }
 
     void resized() override
     {
         auto row = getLocalBounds().reduced (16, 12).removeFromBottom (24);
-        licenseLink.setBounds (row.removeFromLeft (120));
-        row.removeFromLeft (8);
-        sourceLink.setBounds (row.removeFromLeft (80));
         licenseFileButton.setBounds (row.removeFromRight (110));
+
+        // LICENSE | SOURCE, each as wide as its text.
+        const auto font = theme::body (13.0f);
+        const auto width = [&] (const juce::HyperlinkButton& l) { return (int) std::ceil (theme::getTrackedTextWidth (l.getButtonText(), font, 0.0f)) + 2; };
+        auto x = row.getX();
+        separatorArea = {};
+
+        if (licenseLink.isVisible())
+        {
+            licenseLink.setBounds (x, row.getY(), width (licenseLink), row.getHeight());
+            x = licenseLink.getRight();
+        }
+
+        if (licenseLink.isVisible() && sourceLink.isVisible())
+        {
+            separatorArea = { x, row.getY(), separatorWidth, row.getHeight() };
+            x = separatorArea.getRight();
+        }
+
+        sourceLink.setBounds (x, row.getY(), width (sourceLink), row.getHeight());
     }
 
 private:
+    static constexpr int separatorWidth = 14;
+
     const Content content;
+    juce::Rectangle<int> separatorArea;
     juce::HyperlinkButton sourceLink, licenseLink;
     juce::TextButton licenseFileButton;
 };

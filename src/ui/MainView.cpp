@@ -31,6 +31,7 @@ MainView::MainView (LithiumDrumsProcessor& p)
     aboutPanel.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onClose = [this] { showPanel (nullptr); };
     browser.onClose = [this] { showPanel (nullptr); };
+    browser.onPrompt = [this] (PromptPanel::Request r) { showPrompt (std::move (r)); };
     midiPanel.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onKitsFolderChanged = [this] { header.refreshKitBox(); };
 

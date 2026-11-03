@@ -420,9 +420,14 @@ public:
         loadButton.setColour (juce::TextButton::textColourOffId, theme::colours::background);
         loadButton.onClick = [this] { if (onLoad) onLoad(); };
         addChildComponent (loadButton);
+
+        removeButton.setColour (juce::TextButton::buttonColourId, theme::colours::raisedHigh);
+        removeButton.setColour (juce::TextButton::textColourOffId, theme::colours::warning);
+        removeButton.onClick = [this] { if (onRemove) onRemove(); };
+        addChildComponent (removeButton);
     }
 
-    std::function<void()> onLoad;
+    std::function<void()> onLoad, onRemove;
 
     void show (const kitlibrary::Entry* e, const kitlibrary::Pack* p, bool isLoaded,
                const packs::CatalogPack* missingPack = nullptr, std::optional<Installer::Status> installStatus = {})
@@ -437,6 +442,8 @@ public:
         loadButton.setVisible (has);
         loadButton.setEnabled (has && ! loaded);
         loadButton.setButtonText (loaded ? "Loaded" : "Load kit");
+        removeButton.setVisible (has && missing == nullptr);
+        removeButton.setButtonText (pack != nullptr ? "Remove pack" : "Remove kit");
 
         // A pack that isn't installed: Download, or Cancel while it installs.
         if (missing != nullptr)
@@ -487,7 +494,12 @@ public:
 
         g.setColour (colours::text);
         g.setFont (body (20.0f, Weight::semibold));
-        g.drawFittedText (c.name, area.removeFromTop (28), juce::Justification::centredLeft, 1, 0.8f);
+        auto nameRow = area.removeFromTop (28);
+
+        if (removeButton.isVisible())
+            nameRow.removeFromRight (removeButtonWidth + 8);
+
+        g.drawFittedText (c.name, nameRow, juce::Justification::centredLeft, 1, 0.8f);
 
         g.setColour (colours::textMuted);
         g.setFont (body (13.0f));
@@ -569,6 +581,13 @@ public:
                               area.removeFromTop (44), juce::Justification::topLeft, 3, 1.0f);
         }
 
+        if (! separatorArea.isEmpty())
+        {
+            g.setColour (colours::textMuted);
+            g.setFont (body (13.0f));
+            g.drawText ("|", separatorArea, juce::Justification::centred, false);
+        }
+
         // Above the button: what the download is doing, or what went wrong.
         if (missing != nullptr)
         {
@@ -597,25 +616,45 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (18, 16);
+        removeButton.setBounds (area.getRight() - removeButtonWidth, area.getY() + 2, removeButtonWidth, 24);
         loadButton.setBounds (area.removeFromBottom (36));
         area.removeFromBottom (10);
         statusArea = area.removeFromBottom (missing != nullptr ? 46 : 0);
         area.removeFromBottom (missing != nullptr ? 8 : 0);
         auto links = area.removeFromBottom (22);
-        licenseLink.setBounds (links.removeFromLeft (130));
-        links.removeFromLeft (10);
-        sourceLink.setBounds (links.removeFromLeft (80));
+
+        // LICENSE | SOURCE, each as wide as its text.
+        const auto font = theme::body (13.0f);
+        const auto width = [&] (const juce::HyperlinkButton& l) { return (int) std::ceil (theme::getTrackedTextWidth (l.getButtonText(), font, 0.0f)) + 2; };
+        auto x = links.getX();
+        separatorArea = {};
+
+        if (licenseLink.isVisible())
+        {
+            licenseLink.setBounds (x, links.getY(), width (licenseLink), links.getHeight());
+            x = licenseLink.getRight();
+        }
+
+        if (licenseLink.isVisible() && sourceLink.isVisible())
+        {
+            separatorArea = { x, links.getY(), separatorWidth, links.getHeight() };
+            x = separatorArea.getRight();
+        }
+
+        sourceLink.setBounds (x, links.getY(), width (sourceLink), links.getHeight());
     }
 
 private:
+    static constexpr int removeButtonWidth = 104, separatorWidth = 14;
+
     const kitlibrary::Entry* entry = nullptr;
     const kitlibrary::Pack* pack = nullptr;
     bool loaded = false;
     const packs::CatalogPack* missing = nullptr;
     std::optional<Installer::Status> status;
-    juce::Rectangle<int> statusArea;
+    juce::Rectangle<int> statusArea, separatorArea;
     juce::HyperlinkButton sourceLink, licenseLink;
-    juce::TextButton loadButton { "Load kit" };
+    juce::TextButton loadButton { "Load kit" }, removeButton { "Remove" };
 };
 
 //==============================================================================
@@ -667,6 +706,7 @@ KitBrowser::KitBrowser (LithiumDrumsProcessor& p)
     addAndMakeVisible (gridView);
 
     details->onLoad = [this] { load (selected); };
+    details->onRemove = [this] { removeSelected(); };
     addAndMakeVisible (*details);
 
     processor.addChangeListener (this);
@@ -751,9 +791,10 @@ void KitBrowser::updateInstallStatus()
 void KitBrowser::timerCallback()
 {
     // Progress is polled while something installs; phases arrive as change messages.
-    updateInstallStatus();
+    if (isVisible())
+        updateInstallStatus();
 
-    if (! installer->isBusy())
+    if (! isVisible() || ! installer->isBusy())
         stopTimer();
 }
 
@@ -833,11 +874,11 @@ void KitBrowser::applyFilter()
         selected = first != cards.end() ? (int) (first - cards.begin()) : -1;
     }
 
-    select (selected);
+    select (selected, true);
     layoutGrid();
 }
 
-void KitBrowser::select (int entry)
+void KitBrowser::select (int entry, bool scrollIntoView)
 {
     selected = entry;
     const auto loadedFolder = processor.getKitFolder();
@@ -850,7 +891,8 @@ void KitBrowser::select (int entry)
     details->show (e, e != nullptr ? library.packOf (*e) : nullptr, e != nullptr && missing == nullptr && e->folder == loadedFolder,
                    missing, missing != nullptr ? installer->getStatus (missing->id) : std::nullopt);
 
-    if (e != nullptr && cards[(size_t) selected]->isVisible())
+    // Only when the selection moves: install progress re-selects every tick, and must not fight the user's scrolling.
+    if (scrollIntoView && e != nullptr && cards[(size_t) selected]->isVisible())
     {
         // Keep the selected card in view (arrow keys can move off screen).
         const auto r = cards[(size_t) selected]->getBounds();
@@ -876,7 +918,7 @@ void KitBrowser::moveSelection (int delta)
 
     const auto at = std::find (visible.begin(), visible.end(), selected);
     const auto position = at == visible.end() ? 0 : (int) (at - visible.begin());
-    select (visible[(size_t) juce::jlimit (0, (int) visible.size() - 1, position + delta)]);
+    select (visible[(size_t) juce::jlimit (0, (int) visible.size() - 1, position + delta)], true);
 }
 
 void KitBrowser::load (int entry)
@@ -902,6 +944,75 @@ void KitBrowser::load (int entry)
 
     if (onClose)
         onClose();
+}
+
+void KitBrowser::removeSelected()
+{
+    if (! onPrompt || ! juce::isPositiveAndBelow (selected, (int) library.kits.size()))
+        return;
+
+    const auto& e = library.kits[(size_t) selected];
+
+    if (missingPackOf (e) != nullptr)
+        return;
+
+    // A kit in a pack goes with its whole pack (they share one licence and one download).
+    const auto* pack = library.packOf (e);
+    const auto folder = pack != nullptr ? pack->folder : e.folder;
+    const auto name = pack != nullptr ? pack->name : e.credits().name;
+    const auto kitsFolder = processor.getKitsFolder();
+
+    if (folder == juce::File() || ! folder.isAChildOf (kitsFolder))
+        return;
+
+    const auto loadedFolder = processor.getKitFolder();
+
+    PromptPanel::Request request;
+
+    if (loadedFolder == folder || loadedFolder.isAChildOf (folder))
+    {
+        request.title = "Can't remove " + name;
+        request.message = "The loaded kit is part of " + name + ". Load another kit first, then remove it.";
+        request.cancellable = false;
+        onPrompt (request);
+        return;
+    }
+
+    int count = 1;
+
+    if (pack != nullptr)
+        count = (int) std::count_if (library.kits.begin(), library.kits.end(), [&] (const auto& k) { return k.pack == e.pack; });
+
+    request.title = pack != nullptr ? "Remove pack" : "Remove kit";
+    request.message = "Remove \"" + name + "\""
+                      + (pack != nullptr ? " (" + juce::String (count) + (count == 1 ? " kit)" : " kits)") : juce::String())
+                      + " from your kits folder? This deletes its files and can't be undone.";
+    request.okText = "Remove";
+    request.destructive = true;
+    request.onOk = [safe = juce::Component::SafePointer (this), folder, isPack = pack != nullptr] (const juce::String&)
+    {
+        if (safe == nullptr)
+            return;
+
+        const auto deleted = folder.deleteRecursively();
+
+        // Pack indices change when a pack goes, so a pack filter can't be kept.
+        if (isPack)
+            safe->packFilter = allPacks;
+
+        safe->refresh();
+
+        if (! deleted && safe->onPrompt)
+        {
+            PromptPanel::Request failed;
+            failed.title = "Couldn't remove it";
+            failed.message = "Some files couldn't be deleted: " + folder.getFullPathName();
+            failed.cancellable = false;
+            safe->onPrompt (failed);
+        }
+    };
+
+    onPrompt (request);
 }
 
 void KitBrowser::changeListenerCallback (juce::ChangeBroadcaster* source)

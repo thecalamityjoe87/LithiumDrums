@@ -24,6 +24,9 @@ public:
     explicit KitBrowser (LithiumDrumsProcessor&);
     ~KitBrowser() override;
 
+    /** Asks something over the whole UI (see PromptPanel); set by MainView. */
+    std::function<void (PromptPanel::Request)> onPrompt;
+
     /** Re-reads the kits folder and selects the loaded kit. */
     void refresh();
 
@@ -42,9 +45,10 @@ private:
     void layoutGrid();
     void applyFilter();
     bool passesFilter (const kitlibrary::Entry&) const;
-    void select (int entry);
+    void select (int entry, bool scrollIntoView = false);
     void moveSelection (int delta);
     void load (int entry);
+    void removeSelected();
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
     void addMissingPacks();
