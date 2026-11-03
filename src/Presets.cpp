@@ -7,15 +7,29 @@ namespace
 {
     const juce::Identifier rootType { "LithiumPreset" };
     const juce::Identifier versionId { "formatVersion" }, kitIdId { "kitId" }, kitPathId { "kitPath" }, kitNameId { "kitName" };
+    const juce::Identifier descriptionId { "description" };
 
     std::vector<Entry> scanFolder (const juce::File& folder, bool factory)
     {
         std::vector<Entry> result;
 
         for (const auto& f : folder.findChildFiles (juce::File::findFiles, false, juce::String ("*") + fileExtension))
-            result.push_back ({ nameOf (f), f, factory });
+            result.push_back ({ nameOf (f), f, factory, {} });
 
-        std::sort (result.begin(), result.end(), [] (const Entry& a, const Entry& b) { return a.name.compareNatural (b.name) < 0; });
+        // Factory presets come grouped by style, a subfolder each.
+        if (factory)
+            for (const auto& sub : folder.findChildFiles (juce::File::findDirectories, false))
+                for (const auto& f : sub.findChildFiles (juce::File::findFiles, false, juce::String ("*") + fileExtension))
+                    result.push_back ({ nameOf (f), f, factory, sub.getFileName() });
+
+        std::sort (result.begin(), result.end(), [] (const Entry& a, const Entry& b)
+        {
+            if (const auto byGroup = a.group.compareNatural (b.group); byGroup != 0)
+                return byGroup < 0;
+
+            return a.name.compareNatural (b.name) < 0;
+        });
+
         return result;
     }
 }
@@ -65,6 +79,7 @@ juce::Result read (const juce::File& file, Contents& result)
     result.kitId = tree[kitIdId].toString();
     result.kitPath = tree[kitPathId].toString();
     result.kitName = tree[kitNameId].toString();
+    result.description = tree[descriptionId].toString();
     result.swaps = swaps::fromValueTree (tree.getChildWithName (swaps::treeType));
 
     for (const auto& child : tree)
@@ -81,6 +96,10 @@ juce::Result write (const juce::File& file, const Contents& contents)
 {
     juce::ValueTree tree (rootType, { { versionId, formatVersion }, { kitIdId, contents.kitId },
                                       { kitPathId, contents.kitPath }, { kitNameId, contents.kitName } });
+
+    if (contents.description.isNotEmpty())
+        tree.setProperty (descriptionId, contents.description, nullptr);
+
     tree.appendChild (swaps::toValueTree (contents.swaps), nullptr);
     tree.appendChild (contents.parameters.createCopy(), nullptr);
 

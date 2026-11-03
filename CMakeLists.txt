@@ -326,6 +326,23 @@ target_link_libraries(LithiumIrGen PRIVATE
     juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------
+# Factory presets
+
+# The presets are built from assets/presets/recipes.json by LithiumPresetGen,
+# which plays each one through the real plugin (so it links the shared code,
+# like the tests) and needs the kits installed. Its output is committed, so a
+# normal build only compiles it.
+add_executable(LithiumPresetGen tools/presetgen/PresetGen.cpp)
+target_include_directories(LithiumPresetGen PRIVATE src)
+target_link_libraries(LithiumPresetGen PRIVATE LithiumDrums)
+
+# Where Settings::getFactoryPresetsFolder() looks on Linux.
+if(UNIX AND NOT APPLE)
+    install(DIRECTORY assets/presets/ DESTINATION share/lithium-drums/presets
+            FILES_MATCHING PATTERN "*.lithiumpreset")
+endif()
+
+# ---------------------------------------------------------------------------
 # Tests
 
 if(LITHIUM_BUILD_TESTS)

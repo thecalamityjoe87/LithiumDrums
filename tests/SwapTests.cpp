@@ -618,6 +618,43 @@ public:
             }
         }
 
+        {
+            beginTest ("Factory presets are grouped by their subfolder");
+            const auto oldFactory = juce::SystemStats::getEnvironmentVariable ("LITHIUM_FACTORY_PRESETS_FOLDER", {});
+            const auto factoryRoot = root.getChildFile ("Factory");
+            test::setEnvironment ("LITHIUM_FACTORY_PRESETS_FOLDER", factoryRoot.getFullPathName());
+
+            const auto touch = [] (const juce::File& f) { f.getParentDirectory().createDirectory(); f.replaceWithText ("x"); };
+            touch (factoryRoot.getChildFile ("Rock").getChildFile ("Beta.lithiumpreset"));
+            touch (factoryRoot.getChildFile ("Rock").getChildFile ("Alpha.lithiumpreset"));
+            touch (factoryRoot.getChildFile ("Jazz").getChildFile ("Gamma.lithiumpreset"));
+            touch (factoryRoot.getChildFile ("Loose.lithiumpreset"));
+
+            std::vector<presets::Entry> factory;
+
+            for (const auto& e : presets::scan())
+                if (e.factory)
+                    factory.push_back (e);
+
+            expectEquals ((int) factory.size(), 4);
+
+            if (factory.size() == 4)
+            {
+                // Ungrouped first, then each group by name, presets by name within it.
+                expectEquals (factory[0].name, juce::String ("Loose"));
+                expectEquals (factory[0].group, juce::String());
+                expectEquals (factory[1].name, juce::String ("Gamma"));
+                expectEquals (factory[1].group, juce::String ("Jazz"));
+                expectEquals (factory[2].name, juce::String ("Alpha"));
+                expectEquals (factory[2].group, juce::String ("Rock"));
+                expectEquals (factory[3].name, juce::String ("Beta"));
+                expectEquals (factory[3].group, juce::String ("Rock"));
+                expect (presets::isFactory (factory[2].file), "a preset in a group folder is still a factory one");
+            }
+
+            test::setEnvironment ("LITHIUM_FACTORY_PRESETS_FOLDER", oldFactory);
+        }
+
         test::setEnvironment ("LITHIUM_KITS_FOLDER", oldKits);
         test::setEnvironment ("LITHIUM_PRESETS_FOLDER", oldPresets);
         root.deleteRecursively();

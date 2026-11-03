@@ -143,7 +143,12 @@ juce::File Settings::getFactoryPresetsFolder()
     return juce::File::getSpecialLocation (juce::File::commonApplicationDataDirectory)
                .getChildFile ("Lithium Drums").getChildFile ("Presets");
    #else
-    return juce::File ("/usr/share/lithium-drums/presets");
+    // A system-wide install puts them in /usr/share; a per-user one (the
+    // plugin in ~/.vst3, no root) next to the user's kits.
+    if (const juce::File system ("/usr/share/lithium-drums/presets"); system.isDirectory())
+        return system;
+
+    return getDefaultKitsFolder().getSiblingFile ("Factory Presets");
    #endif
 }
 

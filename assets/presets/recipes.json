@@ -1,0 +1,416 @@
+{
+  "format": "lithium-factory-presets",
+  "version": 1,
+  "comment": "The factory presets, built by tools/presetgen (see the comment at its top). Settings are in each parameter's own units. Selectors: pieces by 'all', 'toms', 'cymbals', a role ('kick', 'snare', 'hihat', 'tom', 'floor_tom', 'crash', 'ride', 'china', 'other') or 'piece:<id>'; mics by 'all', a role ('close', 'overheads', 'room') or 'mic:<id>'. The more specific selector wins. 'makeup' names the control that sets the final loudness.",
+  "kitLufs": -22,
+  "chainInputLufs": -20,
+  "outputLufs": -18,
+  "presets": [
+    {
+      "name": "Arena Thunder",
+      "group": "Rock",
+      "kit": "crocellkit-full",
+      "description": "Stadium rock: a punchy kick, a fat snare in a plate, long low toms and crushed room mics, glued and taped.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "volume": 1, "tune": -0.5, "eq_hpf": 30, "eq_low_freq": 60, "eq_low_gain": 3, "eq_mid1_freq": 350, "eq_mid1_gain": -4, "eq_mid1_q": 1.2, "eq_mid2_freq": 3500, "eq_mid2_gain": 3,
+                  "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 15, "comp_release": 90, "comp_makeup": 2 },
+        "snare": { "volume": 1, "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 2, "eq_mid1_freq": 900, "eq_mid1_gain": -2, "eq_mid2_freq": 5000, "eq_mid2_gain": 2.5, "eq_high_freq": 10000, "eq_high_gain": 2,
+                   "comp_on": true, "comp_threshold": -20, "comp_ratio": 3, "comp_attack": 10, "comp_release": 120, "comp_makeup": 2, "reverb_send": -14, "room_send": -16 },
+        "toms": { "tune": -1, "eq_hpf": 50, "eq_mid1_freq": 400, "eq_mid1_gain": -4, "eq_mid2_freq": 3000, "eq_mid2_gain": 2, "room_send": -14, "reverb_send": -20 },
+        "hihat": { "volume": -2, "eq_hpf": 250, "eq_high_gain": 1 },
+        "cymbals": { "volume": -1, "eq_hpf": 200 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 150, "eq_high_gain": 1.5 },
+        "room": { "volume": 4, "eq_hpf": 60, "comp_on": true, "comp_threshold": -24, "comp_ratio": 6, "comp_attack": 20, "comp_release": 150, "comp_makeup": 4 }
+      },
+      "fx": {
+        "room_ir": "Hall", "room_return": -4, "room_predelay": 15, "room_lowcut": 150,
+        "reverb_return": -3, "reverb_size": 70, "reverb_decay": 1.8, "reverb_predelay": 20, "reverb_damping": 6500,
+        "master_comp_on": true, "master_comp_threshold": -14, "master_comp_ratio": 2, "master_comp_attack": 30, "master_comp_release": 200,
+        "master_tape_on": true, "master_tape_drive": 4, "master_tape_tone": 10,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Garage Riot",
+      "group": "Rock",
+      "kit": "big-rusty",
+      "description": "Raw and trashy: everything a little driven, loud overheads, a snare that cracks, a concrete garage around it and a smashed bus underneath.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "sat_on": true, "sat_drive": 6, "sat_mix": 60 },
+        "kick": { "eq_low_freq": 80, "eq_low_gain": 2, "eq_mid1_freq": 400, "eq_mid1_gain": -3, "eq_mid2_freq": 2500, "eq_mid2_gain": 3,
+                  "comp_on": true, "comp_threshold": -17, "comp_ratio": 4, "comp_attack": 10, "comp_release": 100 },
+        "snare": { "eq_hpf": 100, "eq_mid1_freq": 800, "eq_mid1_gain": -2, "eq_mid2_freq": 3000, "eq_mid2_gain": 2,
+                   "comp_on": true, "comp_threshold": -20, "comp_ratio": 5, "comp_attack": 5, "comp_release": 80, "comp_makeup": 3, "room_send": -10 },
+        "toms": { "room_send": -12 }
+      },
+      "mics": {
+        "overheads": { "volume": 2, "comp_on": true, "comp_threshold": -26, "comp_ratio": 4, "comp_attack": 30, "comp_release": 120, "comp_makeup": 3 }
+      },
+      "fx": {
+        "room_ir": "Tiled Room", "room_return": -2, "room_lowcut": 200, "room_highcut": 9000,
+        "master_crush_on": true, "master_crush_drive": 14, "master_crush_blend": 35,
+        "master_tape_on": true, "master_tape_drive": 8,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Forge Hammer",
+      "group": "Metal",
+      "kit": "naked-drums",
+      "description": "Modern metal: a clicky, short kick that cuts through guitars, a tight cracking snare, gated toms and the far rooms pulled out.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "volume": 2, "decay": 60, "hold": 40, "eq_hpf": 30, "eq_low_freq": 60, "eq_low_gain": 4, "eq_mid1_freq": 250, "eq_mid1_gain": -6, "eq_mid1_q": 1.5,
+                  "eq_mid2_freq": 4500, "eq_mid2_gain": 6, "eq_mid2_q": 1.2, "eq_high_freq": 9000, "eq_high_gain": 2,
+                  "trans_on": true, "trans_attack": 20, "comp_on": true, "comp_threshold": -12, "comp_ratio": 6, "comp_attack": 2, "comp_release": 60, "comp_makeup": 3 },
+        "snare": { "eq_hpf": 90, "eq_low_freq": 220, "eq_low_gain": 2, "eq_mid1_freq": 700, "eq_mid1_gain": -3, "eq_mid2_freq": 5000, "eq_mid2_gain": 3,
+                   "trans_on": true, "trans_attack": 10, "comp_on": true, "comp_threshold": -14, "comp_ratio": 4, "comp_attack": 3, "comp_release": 80, "comp_makeup": 3, "reverb_send": -16 },
+        "toms": { "decay": 70, "eq_hpf": 60, "eq_mid1_freq": 500, "eq_mid1_gain": -5, "eq_mid2_freq": 4000, "eq_mid2_gain": 3,
+                  "trans_on": true, "trans_attack": 15, "trans_sustain": -20 },
+        "hihat": { "volume": -3, "eq_hpf": 300 },
+        "cymbals": { "volume": -2, "eq_hpf": 300 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 250 },
+        "mic:far_rooms": { "mute": true },
+        "mic:mid_side": { "volume": -6 },
+        "mic:close_room": { "volume": -3 }
+      },
+      "fx": {
+        "reverb_size": 40, "reverb_decay": 1.0, "reverb_predelay": 10,
+        "master_comp_on": true, "master_comp_threshold": -14, "master_comp_ratio": 3, "master_comp_attack": 5, "master_comp_release": 120,
+        "master_tape_on": true, "master_tape_drive": 2, "master_tape_tone": 10,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Black Anvil",
+      "group": "Metal",
+      "kit": "muldjordkit",
+      "description": "Tight double-kick metal: short kicks with all attack and no boom, a bright snare, cymbals kept out of the way.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "decay": 50, "hold": 30, "eq_hpf": 35, "eq_low_freq": 70, "eq_low_gain": 3, "eq_mid1_freq": 300, "eq_mid1_gain": -6, "eq_mid2_freq": 5000, "eq_mid2_gain": 7, "eq_mid2_q": 1.5,
+                  "trans_on": true, "trans_attack": 25, "trans_sustain": -30, "comp_on": true, "comp_threshold": -13, "comp_ratio": 6, "comp_attack": 3, "comp_release": 50, "comp_makeup": 2 },
+        "snare": { "tune": 0.5, "eq_mid2_freq": 4500, "eq_mid2_gain": 3, "trans_on": true, "trans_attack": 20,
+                   "comp_on": true, "comp_threshold": -15, "comp_ratio": 4, "comp_attack": 5, "comp_release": 80, "reverb_send": -18 },
+        "toms": { "decay": 65, "tune": -1, "eq_mid1_freq": 450, "eq_mid1_gain": -4, "eq_mid2_freq": 3500, "eq_mid2_gain": 3 },
+        "hihat": { "eq_hpf": 250 },
+        "cymbals": { "volume": -2, "eq_hpf": 250 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 200 },
+        "room": { "volume": -6 }
+      },
+      "fx": {
+        "reverb_size": 50, "reverb_decay": 1.2, "reverb_predelay": 15,
+        "master_comp_on": true, "master_comp_threshold": -12, "master_comp_ratio": 2, "master_comp_attack": 10, "master_comp_release": 150,
+        "master_tape_on": true, "master_tape_drive": 2,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Glass Booth",
+      "group": "Studio",
+      "kit": "muldjordkit",
+      "description": "Clean modern studio: every drum clear and even, a small treated room, a touch of plate on the snare.",
+      "makeup": "master_comp_makeup",
+      "outputLufs": -19,
+      "pieces": {
+        "kick": { "eq_low_freq": 60, "eq_low_gain": 2, "eq_mid1_freq": 350, "eq_mid1_gain": -3, "eq_mid2_freq": 3000, "eq_mid2_gain": 2,
+                  "comp_on": true, "comp_threshold": -16, "comp_ratio": 3, "comp_attack": 20, "comp_release": 100 },
+        "snare": { "eq_hpf": 70, "eq_mid2_freq": 4000, "eq_mid2_gain": 1.5, "eq_high_freq": 10000, "eq_high_gain": 1.5,
+                   "comp_on": true, "comp_threshold": -18, "comp_ratio": 3, "comp_attack": 15, "comp_release": 120, "reverb_send": -18, "room_send": -18 },
+        "toms": { "eq_mid1_freq": 400, "eq_mid1_gain": -3, "room_send": -20 },
+        "hihat": { "eq_hpf": 200 },
+        "cymbals": { "eq_hpf": 150 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 120, "eq_high_gain": 1 },
+        "room": { "volume": -4 }
+      },
+      "fx": {
+        "room_ir": "Studio", "room_return": -6,
+        "reverb_size": 45, "reverb_decay": 1.3, "reverb_damping": 8000,
+        "master_comp_on": true, "master_comp_threshold": -16, "master_comp_ratio": 2, "master_comp_attack": 30, "master_comp_release": 200,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Session Gold",
+      "group": "Studio",
+      "kit": "drskit-full",
+      "description": "A polished, record-ready kit: a round kick, a snare with snap and body in a plate, controlled rooms and a gentle glue.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "eq_low_freq": 70, "eq_low_gain": 2.5, "eq_mid1_freq": 380, "eq_mid1_gain": -4, "eq_mid1_q": 1.2, "eq_mid2_freq": 3200, "eq_mid2_gain": 2,
+                  "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 20, "comp_release": 100, "comp_makeup": 2 },
+        "snare": { "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 1.5, "eq_mid1_freq": 1000, "eq_mid1_gain": -1.5, "eq_mid2_freq": 5000, "eq_mid2_gain": 2, "eq_high_freq": 12000, "eq_high_gain": 2,
+                   "comp_on": true, "comp_threshold": -20, "comp_ratio": 3, "comp_attack": 10, "comp_release": 120, "comp_makeup": 2, "reverb_send": -16 },
+        "toms": { "eq_hpf": 50, "eq_mid1_freq": 450, "eq_mid1_gain": -3, "eq_mid2_freq": 4000, "eq_mid2_gain": 2, "reverb_send": -22 },
+        "hihat": { "eq_hpf": 250, "eq_high_freq": 10000, "eq_high_gain": 1 },
+        "cymbals": { "eq_hpf": 150 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 120, "eq_high_freq": 12000, "eq_high_gain": 1.5 },
+        "room": { "volume": -2, "comp_on": true, "comp_threshold": -24, "comp_ratio": 4, "comp_attack": 20, "comp_release": 200, "comp_makeup": 3 }
+      },
+      "fx": {
+        "reverb_size": 55, "reverb_decay": 1.6, "reverb_predelay": 25, "reverb_damping": 7000, "reverb_lowcut": 200,
+        "master_comp_on": true, "master_comp_threshold": -12, "master_comp_ratio": 2, "master_comp_attack": 30, "master_comp_release": 150,
+        "master_tape_on": true, "master_tape_drive": 3,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Smoke & Brushes",
+      "group": "Jazz",
+      "kit": "drskit-brushes",
+      "description": "Brushes in a small club: a high, open kick, wide dynamics, a warm room and nothing squashed.",
+      "chainInputLufs": -20,
+      "outputLufs": -20,
+      "pieces": {
+        "all": { "dynamics": 20, "room_send": -18 },
+        "kick": { "volume": -2, "tune": 1.5, "decay": 75, "eq_low_freq": 80, "eq_low_gain": 1, "eq_mid1_freq": 300, "eq_mid1_gain": -2 },
+        "snare": { "eq_hpf": 60, "eq_high_freq": 9000, "eq_high_gain": 1.5 },
+        "toms": { "tune": 1 },
+        "cymbals": { "volume": 1 }
+      },
+      "mics": {
+        "overheads": { "volume": 1 },
+        "room": { "volume": 2 }
+      },
+      "fx": {
+        "room_ir": "Seminar Room", "room_return": -4, "room_lowcut": 150,
+        "master_tape_on": true, "master_tape_drive": 3, "master_tape_tone": -20,
+        "master_limit_on": true, "master_limit_ceiling": -1
+      }
+    },
+    {
+      "name": "Late Set",
+      "group": "Jazz",
+      "kit": "virtuosity",
+      "description": "Sticks on a bop kit at the end of the night: small tuned-up drums, the ride up front and the vintage room mic warming it all.",
+      "chainInputLufs": -20,
+      "outputLufs": -20,
+      "pieces": {
+        "all": { "dynamics": 15, "reverb_send": -28 },
+        "kick": { "volume": -2, "tune": 2.5, "decay": 80 },
+        "snare": { "tune": 0.5 },
+        "toms": { "tune": 1.5 },
+        "cymbals": { "volume": 1 }
+      },
+      "mics": {
+        "overheads": { "eq_high_freq": 10000, "eq_high_gain": 1 },
+        "mic:vintage": { "volume": 3 },
+        "mic:room": { "volume": -2 }
+      },
+      "fx": {
+        "reverb_size": 40, "reverb_decay": 1.2, "reverb_damping": 5000,
+        "master_tape_on": true, "master_tape_drive": 4, "master_tape_tone": -25,
+        "master_limit_on": true, "master_limit_ceiling": -1
+      }
+    },
+    {
+      "name": "Sugar Rush",
+      "group": "Pop",
+      "kit": "basalt-garnet",
+      "description": "Bright, tight pop: a deep kick with a click, a tuned-up snare in a big plate with a dotted-eighth echo, sparkly hats.",
+      "makeup": "master_comp_makeup",
+      "pieces": {
+        "all": { "room_send": -16 },
+        "kick": { "decay": 70, "eq_hpf": 30, "eq_low_freq": 55, "eq_low_gain": 4, "eq_mid1_freq": 300, "eq_mid1_gain": -5, "eq_mid2_freq": 3500, "eq_mid2_gain": 4,
+                  "trans_on": true, "trans_attack": 30, "comp_on": true, "comp_threshold": -15, "comp_ratio": 4, "comp_attack": 10, "comp_release": 80, "comp_makeup": 2, "room_send": -60 },
+        "snare": { "tune": 1, "eq_hpf": 120, "eq_low_freq": 200, "eq_low_gain": 2, "eq_mid1_freq": 800, "eq_mid1_gain": -2, "eq_mid2_freq": 5000, "eq_mid2_gain": 3, "eq_high_freq": 11000, "eq_high_gain": 3,
+                   "comp_on": true, "comp_threshold": -22, "comp_ratio": 4, "comp_attack": 5, "comp_release": 100, "comp_makeup": 3, "reverb_send": -6, "delay_send": -20 },
+        "hihat": { "volume": -2, "eq_hpf": 300, "eq_high_freq": 10000, "eq_high_gain": 2 },
+        "toms": { "room_send": -12, "reverb_send": -16 },
+        "cymbals": { "eq_hpf": 200, "eq_high_gain": 2 }
+      },
+      "fx": {
+        "room_ir": "Studio", "room_return": -4,
+        "reverb_size": 65, "reverb_decay": 1.6, "reverb_predelay": 30, "reverb_damping": 9000, "reverb_lowcut": 250,
+        "delay_return": -6, "delay_sync": true, "delay_note": "1/8 dotted", "delay_feedback": 25, "delay_lowcut": 300, "delay_highcut": 5000,
+        "master_eq_on": true, "master_eq_low_freq": 70, "master_eq_low_gain": 1.5, "master_eq_high_freq": 10000, "master_eq_high_gain": 2,
+        "master_comp_on": true, "master_comp_threshold": -12, "master_comp_ratio": 3, "master_comp_attack": 10, "master_comp_release": 100,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Radio Shine",
+      "group": "Pop",
+      "kit": "sm-drums",
+      "description": "Pop-rock ready for the radio: a scooped, punchy kick, a bright snare in a short plate and a polished, glued bus.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "eq_hpf": 30 },
+        "kick": { "eq_low_freq": 60, "eq_low_gain": 3, "eq_mid1_freq": 300, "eq_mid1_gain": -3, "eq_mid2_freq": 4000, "eq_mid2_gain": 2 },
+        "snare": { "eq_mid2_freq": 5000, "eq_mid2_gain": 2.5, "eq_high_freq": 12000, "eq_high_gain": 2, "reverb_send": -12,
+                   "comp_on": true, "comp_threshold": -18, "comp_ratio": 3, "comp_attack": 10, "comp_release": 100 },
+        "hihat": { "eq_high_freq": 12000, "eq_high_gain": 1 },
+        "cymbals": { "eq_high_freq": 12000, "eq_high_gain": 1 }
+      },
+      "fx": {
+        "reverb_size": 50, "reverb_decay": 1.4, "reverb_predelay": 20,
+        "master_eq_on": true, "master_eq_mid1_freq": 400, "master_eq_mid1_gain": -1.5, "master_eq_high_freq": 12000, "master_eq_high_gain": 2.5,
+        "master_comp_on": true, "master_comp_threshold": -12, "master_comp_ratio": 2.5, "master_comp_attack": 20, "master_comp_release": 150,
+        "master_tape_on": true, "master_tape_drive": 3, "master_tape_tone": 20,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Velvet Pocket",
+      "group": "Funk",
+      "kit": "basalt-amber",
+      "description": "Dry and in the pocket: a short, dead kick, a cracking tuned-up snare, crisp hats and a small room, on tape.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "room_send": -20 },
+        "kick": { "decay": 50, "tune": 0.5, "eq_low_freq": 80, "eq_low_gain": 2, "eq_mid1_freq": 350, "eq_mid1_gain": -3, "eq_mid2_freq": 2500, "eq_mid2_gain": 2,
+                  "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 15, "comp_release": 80, "room_send": -60 },
+        "snare": { "tune": 2, "decay": 60, "eq_hpf": 120, "eq_mid2_freq": 3500, "eq_mid2_gain": 2.5, "eq_high_freq": 9000, "eq_high_gain": 1,
+                   "trans_on": true, "trans_attack": 25, "comp_on": true, "comp_threshold": -20, "comp_ratio": 4, "comp_attack": 8, "comp_release": 90, "comp_makeup": 2, "reverb_send": -20 },
+        "hihat": { "volume": 1, "dynamics": 20, "eq_hpf": 250, "eq_mid2_freq": 6000, "eq_mid2_gain": 1.5 },
+        "toms": { "decay": 60, "tune": 1 }
+      },
+      "fx": {
+        "room_ir": "Studio", "room_return": -4,
+        "reverb_size": 35, "reverb_decay": 0.9,
+        "master_comp_on": true, "master_comp_threshold": -12, "master_comp_ratio": 2, "master_comp_attack": 20, "master_comp_release": 120,
+        "master_tape_on": true, "master_tape_drive": 6,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Shag Carpet",
+      "group": "Vintage",
+      "kit": "drskit-full",
+      "description": "The seventies, towels on every drum: dead, thuddy toms tuned low, a fat dark snare, no room at all, through a warm tape machine.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "tone_lp": 9000 },
+        "kick": { "decay": 40, "tune": -1, "eq_low_freq": 80, "eq_low_gain": 2, "eq_mid1_freq": 400, "eq_mid1_gain": -2, "eq_mid2_freq": 2500, "eq_mid2_gain": -2,
+                  "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 20, "comp_release": 150 },
+        "snare": { "decay": 50, "tune": -1.5, "eq_mid1_freq": 250, "eq_mid1_gain": 2, "eq_high_freq": 8000, "eq_high_gain": -2,
+                   "comp_on": true, "comp_threshold": -20, "comp_ratio": 3, "comp_attack": 20, "comp_release": 150 },
+        "toms": { "decay": 45, "tune": -2.5, "eq_low_freq": 120, "eq_low_gain": 2, "eq_mid2_freq": 3000, "eq_mid2_gain": -2 },
+        "hihat": { "volume": -2 },
+        "cymbals": { "volume": -3 }
+      },
+      "mics": {
+        "overheads": { "volume": -3, "eq_high_freq": 8000, "eq_high_gain": -2 },
+        "room": { "mute": true }
+      },
+      "fx": {
+        "master_comp_on": true, "master_comp_threshold": -14, "master_comp_ratio": 3, "master_comp_attack": 30, "master_comp_release": 250,
+        "master_tape_on": true, "master_tape_drive": 9, "master_tape_tone": -30,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Dusty Crates",
+      "group": "Lo-Fi",
+      "kit": "salamander",
+      "description": "A beat sampled off an old record: dull, short and a little detuned, saturated tape and a crushed bus.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "tune": -1, "decay": 65, "tone_hp": 60, "tone_lp": 5500 },
+        "kick": { "decay": 55, "eq_low_freq": 70, "eq_low_gain": 4, "eq_mid1_freq": 300, "eq_mid1_gain": -2,
+                  "comp_on": true, "comp_threshold": -20, "comp_ratio": 4, "comp_attack": 20, "comp_release": 120, "comp_makeup": 2 },
+        "snare": { "decay": 55, "eq_mid1_freq": 1200, "eq_mid1_gain": 2,
+                   "comp_on": true, "comp_threshold": -22, "comp_ratio": 4, "comp_attack": 10, "comp_release": 100, "comp_makeup": 2 },
+        "hihat": { "volume": -1 },
+        "cymbals": { "volume": -4 }
+      },
+      "fx": {
+        "master_eq_on": true, "master_eq_low_freq": 80, "master_eq_low_gain": 2,
+        "master_crush_on": true, "master_crush_drive": 18, "master_crush_blend": 40,
+        "master_tape_on": true, "master_tape_drive": 12, "master_tape_tone": -50,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Neon Gate",
+      "group": "80s",
+      "kit": "crocellkit-full",
+      "description": "The eighties power ballad: a huge, short hall on the snare and toms, toms that drop in pitch, tight dry cymbals.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "decay": 55, "eq_low_freq": 60, "eq_low_gain": 3, "eq_mid1_freq": 300, "eq_mid1_gain": -4 },
+        "snare": { "volume": 1, "tune": -0.5, "eq_mid2_freq": 4000, "eq_mid2_gain": 3, "trans_on": true, "trans_attack": 30, "trans_sustain": -30, "room_send": -4 },
+        "toms": { "tune": -2, "decay": 70, "pitch_env": 1.5, "pitch_env_time": 150, "room_send": -6 },
+        "hihat": { "volume": -3 },
+        "cymbals": { "volume": -2 }
+      },
+      "mics": {
+        "overheads": { "volume": -2, "eq_hpf": 300 },
+        "room": { "mute": true }
+      },
+      "fx": {
+        "room_ir": "Hall", "room_decay": 22, "room_return": 0, "room_lowcut": 200,
+        "master_comp_on": true, "master_comp_threshold": -12, "master_comp_ratio": 3, "master_comp_attack": 3, "master_comp_release": 100,
+        "master_tape_on": true, "master_tape_drive": 3,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Porch Light",
+      "group": "Acoustic",
+      "kit": "basalt-amber-rods",
+      "description": "Rods for a quiet song: soft and warm, in a natural room, with the dynamics left alone.",
+      "chainInputLufs": -20,
+      "outputLufs": -20,
+      "pieces": {
+        "all": { "dynamics": 10, "room_send": -14 },
+        "kick": { "volume": -2, "tune": 1, "eq_low_freq": 80, "eq_low_gain": 1 },
+        "snare": { "eq_high_freq": 9000, "eq_high_gain": 1 }
+      },
+      "fx": {
+        "room_ir": "Seminar Room", "room_return": -2, "room_lowcut": 150,
+        "master_tape_on": true, "master_tape_drive": 3, "master_tape_tone": -15,
+        "master_limit_on": true, "master_limit_ceiling": -1
+      }
+    },
+    {
+      "name": "Campfire Circle",
+      "group": "Acoustic",
+      "kit": "basalt-cobblestone",
+      "description": "Unplugged percussion: a cajon with a round low end, congas and shakers in a small warm room.",
+      "chainInputLufs": -20,
+      "outputLufs": -20,
+      "pieces": {
+        "all": { "room_send": -12 },
+        "kick": { "eq_low_freq": 90, "eq_low_gain": 3, "eq_mid1_freq": 400, "eq_mid1_gain": -3,
+                  "comp_on": true, "comp_threshold": -18, "comp_ratio": 3, "comp_attack": 20, "comp_release": 120 },
+        "snare": { "eq_mid2_freq": 3000, "eq_mid2_gain": 2 }
+      },
+      "fx": {
+        "room_ir": "Studio", "room_return": -2,
+        "master_tape_on": true, "master_tape_drive": 2, "master_tape_tone": -10,
+        "master_limit_on": true, "master_limit_ceiling": -1
+      }
+    },
+    {
+      "name": "Thrift Store",
+      "group": "Indie",
+      "kit": "open-source-drumkit",
+      "description": "A bedroom-indie kit off a four-track: slightly dull and driven, in a small reflective room.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "tone_lp": 11000, "sat_on": true, "sat_drive": 6, "sat_mix": 50, "room_send": -14 },
+        "kick": { "eq_low_freq": 70, "eq_low_gain": 2, "eq_mid1_freq": 350, "eq_mid1_gain": -3, "room_send": -24 },
+        "snare": { "tune": -0.5 }
+      },
+      "fx": {
+        "room_ir": "Tiled Room", "room_return": -6, "room_lowcut": 200, "room_highcut": 8000,
+        "master_crush_on": true, "master_crush_drive": 10, "master_crush_blend": 25,
+        "master_tape_on": true, "master_tape_drive": 7, "master_tape_tone": -20,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    }
+  ]
+}

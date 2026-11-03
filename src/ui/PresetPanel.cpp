@@ -60,6 +60,12 @@ private:
                                  juce::Justification::centredLeft);
                 return;
 
+            case Row::Kind::subheading:
+                g.setColour (colours::text);
+                drawTrackedText (g, r.text.toUpperCase(), label (type::caption), 0.1f,
+                                 area.reduced (14.0f, 0.0f).withTrimmedTop (4.0f), juce::Justification::centredLeft);
+                return;
+
             case Row::Kind::note:
                 g.setColour (colours::textMuted);
                 g.setFont (body (type::small));
@@ -142,7 +148,7 @@ PresetPanel::PresetPanel (LithiumDrumsProcessor& p, const kitlibrary::Library& l
         if (kit.pack != lastPack)
         {
             const auto* pack = library.packOf (kit);
-            kitRows.push_back (Row::heading (pack != nullptr ? pack->name : juce::String ("Other kits")));
+            kitRows.push_back (Row::subheading (pack != nullptr ? pack->name : juce::String ("Other kits")));
             lastPack = kit.pack;
         }
 
@@ -159,7 +165,7 @@ PresetPanel::PresetPanel (LithiumDrumsProcessor& p, const kitlibrary::Library& l
             continue;
 
         if (! headed)
-            kitRows.push_back (Row::heading ("Not installed: download in Browse"));
+            kitRows.push_back (Row::subheading ("Not installed: download in Browse"));
 
         headed = true;
         kitRows.push_back (Row::item (pack.name, {}, false, packs::formatSize (pack.downloadSize()), false));
@@ -223,6 +229,7 @@ void PresetPanel::rebuildPresets()
     {
         presetRows.push_back (Row::heading (factory ? "Factory" : "Yours"));
         auto any = false, matched = false;
+        juce::String group;
 
         for (const auto& e : all)
         {
@@ -231,8 +238,17 @@ void PresetPanel::rebuildPresets()
 
             any = true;
 
-            if (! std::all_of (words.begin(), words.end(), [&] (const auto& w) { return e.name.containsIgnoreCase (w); }))
+            // A word can match the preset's style too ("jazz").
+            if (! std::all_of (words.begin(), words.end(), [&] (const auto& w)
+                               { return e.name.containsIgnoreCase (w) || e.group.containsIgnoreCase (w); }))
                 continue;
+
+            // Factory presets are grouped by style, a sub-heading each under "Factory".
+            if (e.group.isNotEmpty() && e.group != group)
+            {
+                group = e.group;
+                presetRows.push_back (Row::subheading (group));
+            }
 
             matched = true;
             const auto isCurrent = e.file == current;

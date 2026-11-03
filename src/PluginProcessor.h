@@ -108,6 +108,10 @@ public:
         gets to it. For the tests, which don't run a message loop. */
     void applyPendingKitLoad()                                       { handleUpdateNowIfNeeded(); }
 
+    /** Asks for the Room IR the parameters choose now, rather than on the
+        next timer tick. For tools that don't run a message loop. */
+    void requestRoomIr()                                             { updateRoomIr(); }
+
     /** Bytes of sample data in RAM right now (muted mics are unloaded). */
     std::size_t getSampleMemoryUsage() const noexcept                { return loader.getMemoryUsage(); }
 

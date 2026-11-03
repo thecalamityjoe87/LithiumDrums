@@ -61,7 +61,8 @@ public:
     static juce::File getPresetsFolder();
 
     /** Where factory presets are installed, read-only: the system-wide data
-        folder (/usr/share/lithium-drums/presets on Linux,
+        folder (/usr/share/lithium-drums/presets on Linux, or for a per-user
+        install without it, "Factory Presets" beside the default kits folder;
         /Library/Application Support/Lithium Drums/Presets on macOS,
         %PROGRAMDATA%\Lithium Drums\Presets on Windows).
         LITHIUM_FACTORY_PRESETS_FOLDER overrides it. */

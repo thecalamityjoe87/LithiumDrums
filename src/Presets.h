@@ -16,9 +16,11 @@
 // Presets are files, one per preset, named after the preset:
 //
 //   <user presets folder>/Rock Room.lithiumpreset
-//   <factory presets folder>/Studio Kit.lithiumpreset   (read-only, shipped later)
+//   <factory presets folder>/Rock/Arena Thunder.lithiumpreset   (read-only)
 //
-// The file is XML, so it can be read and diffed by hand.
+// Factory presets are grouped by style in subfolders; the folder's name is
+// the group. They're built from recipes by tools/presetgen. The file is XML,
+// so it can be read and diffed by hand.
 
 namespace lithium::presets
 {
@@ -31,15 +33,18 @@ struct Entry
     juce::String name;
     juce::File file;
     bool factory = false;
+    juce::String group;                    // a factory preset's style ("Rock"), from its subfolder
 };
 
-/** Every preset: the user's, then the factory ones, each sorted by name. */
+/** Every preset: the user's sorted by name, then the factory ones sorted by
+    group and then name. */
 std::vector<Entry> scan();
 
 /** What a preset file holds. */
 struct Contents
 {
     juce::String kitId, kitPath, kitName;
+    juce::String description;              // optional: what the preset is for
     PieceSwaps swaps;
     juce::ValueTree parameters;            // the parameters' state, as the APVTS keeps it
 };

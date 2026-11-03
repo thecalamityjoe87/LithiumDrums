@@ -34,7 +34,7 @@ public:
 private:
     struct Row
     {
-        enum class Kind { heading, item, note };
+        enum class Kind { heading, subheading, item, note };
 
         Kind kind = Kind::item;
         juce::String text, detail;      // detail: shown muted on the right (a pack's size)
@@ -43,6 +43,7 @@ private:
         bool available = true;          // a kit that isn't installed yet is listed, greyed
 
         static Row heading (const juce::String& t)    { Row r; r.kind = Kind::heading; r.text = t; return r; }
+        static Row subheading (const juce::String& t) { Row r; r.kind = Kind::subheading; r.text = t; return r; }
         static Row note (const juce::String& t)       { Row r; r.kind = Kind::note; r.text = t; return r; }
 
         static Row item (const juce::String& t, const juce::File& f, bool isCurrent, const juce::String& d = {}, bool isAvailable = true)
