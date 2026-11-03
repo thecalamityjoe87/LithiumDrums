@@ -1,5 +1,6 @@
 #include "EditPage.h"
 
+#include "SlotGrid.h"
 #include "Theme.h"
 
 namespace lithium
@@ -8,7 +9,7 @@ namespace lithium
 namespace
 {
     constexpr int margin = 16, gap = 12;
-    constexpr int barHeight = 40, rowOneHeight = 236, rowTwoHeight = 300;
+    constexpr int cardHeight = 152, cardPadding = 10, cardControlsWidth = 300, topHeight = cardHeight + 18, rowOneHeight = 236, rowTwoHeight = 300;
 
     juce::Rectangle<int> contentOf (const juce::Component& module)
     {
@@ -341,6 +342,7 @@ void EditPage::showPiece (int p)
     }
 
     pieceBox.setSelectedId (p + 1, juce::dontSendNotification);
+    pieceImage = SlotGrid::pictureFor (*shownKit, p);
     model.setPiece (shownKit, p);
 
     auto& state = processor.getParameters();
@@ -475,11 +477,30 @@ void EditPage::paint (juce::Graphics& g)
 
     g.fillAll (colours::background);
     g.setColour (colours::panel);
-    g.fillRect (getLocalBounds().removeFromTop (barHeight + 18));
+    g.fillRect (getLocalBounds().removeFromTop (topHeight));
     g.setColour (colours::border);
-    g.fillRect (0, barHeight + 18, getWidth(), 1);
+    g.fillRect (0, topHeight, getWidth(), 1);
 
-    if (currentPiece() == nullptr)
+    if (const auto* info = currentPiece())
+    {
+        // The piece card: the drum's picture in a well, the group's colour along its edge.
+        g.setColour (colours::raised);
+        g.fillRoundedRectangle (pieceCardArea.toFloat(), 8.0f);
+        g.setColour (colours::border);
+        g.drawRoundedRectangle (pieceCardArea.toFloat().reduced (0.5f), 8.0f, 1.0f);
+
+        g.setColour (colours::background);
+        g.fillRoundedRectangle (pieceImageArea.toFloat(), 6.0f);
+        g.setColour (groupColour (lithium::info (info->role).group).withAlpha (0.55f));
+        g.drawRoundedRectangle (pieceImageArea.toFloat().reduced (0.5f), 6.0f, 1.0f);
+
+        // drawImage is modulated by the current colour's alpha, so go back to opaque.
+        g.setColour (juce::Colours::black);
+
+        if (pieceImage.isValid())
+            g.drawImage (pieceImage, pieceImageArea.reduced (8).toFloat(), juce::RectanglePlacement::centred);
+    }
+    else
     {
         g.setColour (colours::textMuted);
         g.setFont (body (15.0f));
@@ -529,56 +550,65 @@ void EditPage::paintOverChildren (juce::Graphics& g)
 
 void EditPage::resized()
 {
-    // Piece bar: < > [piece] [articulations...]            [Crossfade] [Play] [M] [S]
-    auto bar = juce::Rectangle<int> (margin, 9, getWidth() - 2 * margin, barHeight);
-    previous.setBounds (bar.removeFromLeft (30).reduced (0, 5));
-    bar.removeFromLeft (4);
-    next.setBounds (bar.removeFromLeft (30).reduced (0, 5));
-    bar.removeFromLeft (8);
-    pieceBox.setBounds (bar.removeFromLeft (190).reduced (0, 5));
-    bar.removeFromLeft (8);
-    model.setBounds (bar.removeFromLeft (220).reduced (0, 5));
+    // Piece card: [picture]  < [piece] >
+    //                        [model]
+    //                        [articulations...]
+    //                        [Play] [M] [S]
+    pieceCardArea = juce::Rectangle<int> (margin, 9, cardPadding * 2 + (cardHeight - 2 * cardPadding) + 12 + cardControlsWidth, cardHeight);
+    auto card = pieceCardArea.reduced (cardPadding);
+    pieceImageArea = card.removeFromLeft (card.getHeight());
+    card.removeFromLeft (12);
+
+    constexpr int controlHeight = 28, controlGap = 6;
+    auto nextRow = [&]
+    {
+        auto r = card.removeFromTop (controlHeight);
+        card.removeFromTop (controlGap);
+        return r;
+    };
+
+    auto selector = nextRow();
+    previous.setBounds (selector.removeFromLeft (30));
+    next.setBounds (selector.removeFromRight (30));
+    pieceBox.setBounds (selector.reduced (4, 0));
 
     // The menu's text starts after the group dot drawn over it.
     if (auto* text = dynamic_cast<juce::Label*> (pieceBox.getChildren().getFirst()))
         text->setBorderSize ({ 1, 24, 1, 5 });
 
-    bar.removeFromLeft (20);
-
-    auto right = bar.removeFromRight (310);
-    solo.setBounds (right.removeFromRight (34).reduced (0, 6));
-    right.removeFromRight (4);
-    mute.setBounds (right.removeFromRight (34).reduced (0, 6));
-    right.removeFromRight (12);
-    play.setBounds (right.removeFromRight (80).reduced (0, 6));
-    right.removeFromRight (8);
-    crossfade.setBounds (right.removeFromRight (106).reduced (0, 6));
+    model.setBounds (nextRow());
 
     // One tab per articulation, or a menu if there are too many to fit.
+    auto articulations = nextRow();
     std::vector<int> widths;
-    int total = 0;
+    int total = -6;
 
     for (auto& tab : tabs)
     {
-        widths.push_back ((int) theme::getTrackedTextWidth (tab->getButtonText().toUpperCase(), theme::label (14.0f), 0.06f) + 26);
+        widths.push_back ((int) theme::getTrackedTextWidth (tab->getButtonText().toUpperCase(), theme::label (14.0f), 0.06f) + 20);
         total += widths.back() + 6;
     }
 
-    const auto useMenu = total > bar.getWidth();
+    const auto useMenu = total > articulations.getWidth();
     articulationBox.setVisible (useMenu && currentPiece() != nullptr);
-
-    if (useMenu)
-        articulationBox.setBounds (bar.removeFromLeft (220).reduced (0, 5));
+    articulationBox.setBounds (articulations);
 
     for (size_t i = 0; i < tabs.size(); ++i)
     {
         tabs[i]->setVisible (! useMenu);
-        tabs[i]->setBounds (bar.removeFromLeft (widths[i]).reduced (0, 6));
-        bar.removeFromLeft (6);
+        tabs[i]->setBounds (articulations.removeFromLeft (widths[i]));
+        articulations.removeFromLeft (6);
     }
 
+    auto actions = card.removeFromTop (controlHeight);
+    solo.setBounds (actions.removeFromRight (40));
+    actions.removeFromRight (4);
+    mute.setBounds (actions.removeFromRight (40));
+    actions.removeFromRight (8);
+    play.setBounds (actions);
+
     // Row one: shaping each hit.
-    auto row = juce::Rectangle<int> (margin, barHeight + 18 + gap, getWidth() - 2 * margin, rowOneHeight);
+    auto row = juce::Rectangle<int> (margin, topHeight + gap, getWidth() - 2 * margin, rowOneHeight);
 
     for (auto [module, width] : { std::pair { &velocityModule, 150 }, { &pitchModule, 222 }, { &toneModule, 150 },
                                   { &envelopeModule, 420 }, { &micsModule, 0 } })
@@ -635,7 +665,7 @@ void EditPage::resized()
     }
 
     // Row two: the drum's channel.
-    row = juce::Rectangle<int> (margin, barHeight + 18 + gap + rowOneHeight + gap, getWidth() - 2 * margin, rowTwoHeight);
+    row = juce::Rectangle<int> (margin, topHeight + gap + rowOneHeight + gap, getWidth() - 2 * margin, rowTwoHeight);
     eq.setBounds (row.removeFromLeft (470));
     row.removeFromLeft (gap);
     comp.setBounds (row.removeFromLeft (300));
@@ -647,10 +677,12 @@ void EditPage::resized()
     row.removeFromLeft (gap);
     routing.setBounds (row);
 
-    // The zone strip fills the rest.
-    const auto zonesTop = row.getBottom() + gap;
-    zonesModule.setBounds (margin, zonesTop, getWidth() - 2 * margin, getHeight() - zonesTop - 12);
+    // The zones sit beside the piece card.
+    zonesModule.setBounds (pieceCardArea.getRight() + gap, pieceCardArea.getY(), getWidth() - pieceCardArea.getRight() - gap - margin, cardHeight);
     zoneMap.setBounds (zonesModule.getLocalBounds().reduced (8, 0).withTrimmedTop (30).withTrimmedBottom (6));
+
+    // The crossfade switch in the zones header, left of the last hit.
+    crossfade.setBounds (zonesModule.getBounds().getRight() - 12 - 280 - 106, zonesModule.getY() + 4, 106, 24);
 }
 
 } // namespace lithium

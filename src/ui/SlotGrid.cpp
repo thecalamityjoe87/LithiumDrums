@@ -56,6 +56,18 @@ namespace
 }
 
 //==============================================================================
+juce::Image SlotGrid::pictureFor (const KitInfo& info, int pieceIndex)
+{
+    const auto& piece = info.pieces[(size_t) pieceIndex];
+    int nth = 0;
+
+    for (const auto& other : info.pieces)
+        nth += other.role == piece.role && other.slot < piece.slot ? 1 : 0;
+
+    return lithium::pictureFor (piece, nth);
+}
+
+//==============================================================================
 class SlotGrid::Card final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -84,12 +96,7 @@ public:
 
         // The nth of its kind on the page, so neighbouring toms and crashes
         // show different renders.
-        int nth = 0;
-
-        for (const auto& other : info->pieces)
-            nth += other.role == role && other.slot < slot ? 1 : 0;
-
-        picture = pictureFor (pieceInfo, nth);
+        picture = SlotGrid::pictureFor (*info, piece);
         colour = groupColour (lithium::info (role).group);
         model.setPiece (info, piece);
         addAndMakeVisible (model);

@@ -21,6 +21,10 @@ public:
     /** Builds the cards for a kit, laid out to fill this area. */
     void setKit (std::shared_ptr<const KitInfo>, juce::Rectangle<int> area);
 
+    /** The picture of a piece in the finish of the kit its recordings come
+        from; null if there's no render of it. */
+    static juce::Image pictureFor (const KitInfo&, int pieceIndex);
+
     static constexpr int columns = 6, rows = 4;   // kitslots::numSlots of them
 
 private:

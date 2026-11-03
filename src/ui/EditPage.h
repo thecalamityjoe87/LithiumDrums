@@ -10,12 +10,15 @@ namespace lithium
 
 /** The Edit tab: everything about one drum, as a rack of modules.
 
-    A piece bar on top picks the drum and its articulation. The first row
-    shapes each hit: velocity, pitch, tone, the volume envelope and how much
-    of the drum each kind of mic hears. The second row is the drum's own
-    mixer channel: EQ, transient shaper, compressor, saturation, and its
-    fader, pan, reverb send and output. A thin strip at the bottom shows the
-    articulation's velocity zones and lights up the round-robin that just played.
+    On top, a piece card holds a big picture of the drum (in the finish of the
+    kit it was recorded in) with the controls that pick it: the drum, its
+    model, its articulation, and Play, mute and solo. Beside it, the Zones
+    module shows the articulation's velocity zones, lights up the round-robin
+    that just played, and has the crossfade switch. The first row below shapes
+    each hit: velocity, pitch, tone, the volume envelope and how much of the
+    drum each kind of mic hears. The second row is the drum's own mixer
+    channel: EQ, transient shaper, compressor, saturation, and its fader, pan,
+    reverb send and output.
 
     It shares the selected piece with the Kit tab, and the channel controls
     are the same parameters as the drum's strip in the Mixer. */
@@ -54,10 +57,12 @@ private:
     std::uint32_t seenHits = 0;
     juce::String lastHitText;
 
-    // Piece bar
+    // Piece card
     ChevronButton previous { "Previous drum", ChevronButton::Direction::left };
     ChevronButton next { "Next drum", ChevronButton::Direction::right };
     juce::ComboBox pieceBox, articulationBox;
+    juce::Image pieceImage;
+    juce::Rectangle<int> pieceCardArea, pieceImageArea;
     ModelButton model;
     std::vector<std::unique_ptr<juce::TextButton>> tabs;
     juce::TextButton play { "Play" };

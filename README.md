@@ -24,6 +24,15 @@ scripts/build.sh release      # or: debug
 
 The script just runs `cmake --preset <name>` and `cmake --build --preset <name>`. Output lands in `build/<preset>/`. The build runs one compile per 2.5 GB of RAM, since JUCE's sources take a lot of memory to compile and a compile per core can run a machine out of it. On Windows, run the same presets from a Visual Studio developer prompt. On macOS, install Ninja with Homebrew.
 
+To create a distributable archive, run `scripts/package.sh release` on Linux or
+macOS. It creates a platform-specific archive in `dist/` containing the VST3
+and CLAP plugins, the standalone app, the importer utility, factory presets,
+and this README. macOS packages also contain the AU component. On Windows,
+run `powershell -ExecutionPolicy Bypass -File scripts/package.ps1`; use
+`scripts/build.ps1` for a direct Windows build. The scripts accept `debug` or
+`release` as the first argument (or `-Preset` in PowerShell) and an optional
+output directory.
+
 ## Getting the kits
 
 The kits and grooves aren't in this repository; they're free libraries by other people, and Lithium Drums downloads them for you. Open the kit browser (Browse, in the header): every library that isn't installed yet is there, greyed out, with a Download button. It fetches the library from its authors' site, converts it and deletes the download again, so there's nothing to unzip or keep around. The Grooves tab does the same for the grooves. From a terminal, `LithiumImport --list-packs` lists them and `LithiumImport --install <id>` (or `all`) installs one. How it works is in [docs/packs.md](docs/packs.md).
