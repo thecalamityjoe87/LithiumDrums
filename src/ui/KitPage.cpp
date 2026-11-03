@@ -441,7 +441,7 @@ void KitPage::resized()
     if (hatBounds.has_value())
     {
         const auto x = juce::jlimit (space::page, getWidth() - HihatIndicator::width - space::page,
-                                     juce::roundToInt (hatBounds->getCentreX()) + space::md);
+                                     juce::roundToInt (hatBounds->getCentreX()) + space::md + space::sm);
         const auto y = std::max (space::md + size::button + space::md, juce::roundToInt (hatBounds->getY()) - HihatIndicator::height / 2 + space::xs);
         hihat->setBounds (x, y, HihatIndicator::width, HihatIndicator::height);
     }

@@ -2,6 +2,7 @@
 
 #include "MidiMapLibrary.h"
 #include "PluginEditor.h"
+#include "StandaloneAudioFix.h"
 #include "engine/StreamCache.h"
 #include "grooves/GrooveMidi.h"
 
@@ -49,6 +50,8 @@ LithiumDrumsProcessor::LithiumDrumsProcessor()
       midiMap (midimaps::loadDefault (*settings))
 {
     slotNames.set (nullptr);
+
+    installStandaloneAudioFix();
 
     // Runs on the loader thread; AsyncUpdater hops over to the message thread.
     loader.onLoadFinished = [this] { triggerAsyncUpdate(); };

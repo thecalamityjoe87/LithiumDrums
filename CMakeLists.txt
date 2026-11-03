@@ -68,6 +68,7 @@ clap_juce_extensions_plugin(TARGET LithiumDrums
 
 target_sources(LithiumDrums PRIVATE
     src/PluginProcessor.cpp
+    src/StandaloneAudioFix.cpp
     src/PluginEditor.cpp
     src/Parameters.cpp
     src/Settings.cpp
