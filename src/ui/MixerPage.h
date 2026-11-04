@@ -67,10 +67,11 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> faderAttachment;   // after the fader it uses
 };
 
-/** The top of the Mixer page: everything about the selected channel (its
-    EQ, transient shaper, compressor, saturation, sends and output). The
-    same modules are re-attached to whichever channel is selected. The FX
-    returns' own effects are on the FX page. */
+/** The top of the Mixer page: the kit's master EQ, which stays put, and
+    everything else about the selected channel (its transient shaper,
+    compressor, saturation, sends and output). Those modules are re-attached
+    to whichever channel is selected. A channel's own EQ is on the Edit page
+    and the FX returns' own effects are on the FX page. */
 class MixerInspector final : public juce::Component
 {
 public:
@@ -79,7 +80,7 @@ public:
 
     std::function<void (params::FxReturn)> onOpenReturn;
 
-    void showChannel (params::ChannelId, juce::String name, juce::String description);
+    void showChannel (params::ChannelId);
     void showNothing();
 
     void pushReduction (float db)            { comp.pushReduction (db); }
@@ -93,7 +94,6 @@ private:
 
     LithiumDrumsProcessor& processor;
     Mode mode = Mode::none;
-    juce::String title, subtitle;
 
     EqModule eq;
     CompModule comp;
@@ -137,6 +137,7 @@ private:
     std::vector<int> dividers;   // x positions in the row, between groups of strips
     std::array<std::unique_ptr<MixerStrip>, params::numFxReturns> returnStrips;
     MixerStrip masterStrip;
+    juce::Rectangle<int> bankCard, bankHeader;   // the card holding the view switch and the whole bank; its title row
 };
 
 } // namespace lithium

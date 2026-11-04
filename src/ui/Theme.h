@@ -90,7 +90,7 @@ namespace size
     inline constexpr int knob = 36;          // a labelled knob's dial
     inline constexpr int knobLarge = 56;     // the main level knobs (a drum's volume, a channel's fader)
     inline constexpr int knobCompact = 22;   // unlabelled knobs on mixer strips
-    inline constexpr int faderTravel = 120;  // mixer faders: the cap's full movement, never stretched (a short bank, like AD2's)
+    inline constexpr int faderTravel = 100;  // mixer faders: the cap's full movement, never stretched (a short bank, like AD2's)
     inline constexpr int faderCap = 16;      // the cap's height (JUCE keeps half of it free at each end)
     inline constexpr int meterWidth = 6;     // a mono channel meter; stereo is two of these
     inline constexpr int mixerStrip = 80;    // every mixer strip, so the bank reads as one row

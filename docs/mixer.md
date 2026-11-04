@@ -33,6 +33,8 @@ These work inside the voice, on every mic of the hit, so they change the drum ev
 
 ## The channel chain (Edit page, second row, and the Mixer's inspector)
 
+The Edit page edits all four of a channel's effects. The Mixer's inspector shows the selected channel's compressor, transient shaper and saturation, but its EQ is always the master EQ (the one on the FX page), whichever strip is selected. A channel's own EQ is edited on the Edit page; its strip's EQ button still switches it on and off.
+
 Each channel runs the same four effects, in this order. Each one costs nothing while it's off, and switching any of them fades over 20 ms rather than cutting.
 
 **EQ:** a 24 dB/octave high-pass, a low shelf, two bells and a high shelf. The filters are state-variable filters in Andrew Simper's trapezoidal form (`src/engine/dsp/Svf.h`). Their coefficients can change while audio runs through them without clicks, so knobs can be swept and automated. The curve on screen is computed from the filters' exact frequency response by the same `designEq()` the audio uses; a test checks it against sine waves run through the EQ (within 0.15 dB). A flat or switched-off EQ is bit-transparent.

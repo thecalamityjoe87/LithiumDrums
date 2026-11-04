@@ -271,7 +271,7 @@ void MixerStrip::paint (juce::Graphics& g)
     using namespace theme;
 
     const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (selected ? colours::raisedHigh : (kind == Kind::trim ? colours::panel : colours::raised));
+    g.setColour (selected ? colours::raisedHigh : (kind == Kind::trim ? colours::background : colours::panel));
     g.fillRoundedRectangle (bounds, cornerRadius);
     g.setColour (selected ? colours::accent : colours::border);
     g.drawRoundedRectangle (bounds, cornerRadius, selected ? 1.5f : 1.0f);
@@ -421,30 +421,29 @@ MixerInspector::MixerInspector (LithiumDrumsProcessor& p)
 {
     routing.onOpenReturn = [this] (params::FxReturn r) { if (onOpenReturn) onOpenReturn (r); };
 
+    // The EQ here is the whole kit's, whichever channel is selected.
+    eq.setSampleRate (processor.getSampleRate());
+    eq.attach (params::ChannelId::master());
+    eq.setTitle ("Master EQ");
+
     for (auto* c : std::initializer_list<juce::Component*> { &eq, &comp, &transient, &saturation, &routing })
         addChildComponent (c);
 }
 
 MixerInspector::~MixerInspector() = default;
 
-void MixerInspector::showChannel (params::ChannelId channel, juce::String name, juce::String description)
+void MixerInspector::showChannel (params::ChannelId channel)
 {
     eq.setSampleRate (processor.getSampleRate());
-    eq.attach (channel);
     comp.attach (channel);
     transient.attach (channel);
     saturation.attach (channel);
     routing.attach (channel);
-    title = std::move (name);
-    subtitle = std::move (description);
     setMode (Mode::channel);
 }
 
 void MixerInspector::showNothing()
 {
-    title = {};
-    subtitle = {};
-    eq.attach ({});
     setMode (Mode::none);
 }
 
@@ -473,22 +472,12 @@ void MixerInspector::paint (juce::Graphics& g)
         g.drawText ("Load a kit to mix it.", getLocalBounds(), juce::Justification::centred, false);
         return;
     }
-
-    auto header = juce::Rectangle<float> (24.0f, 10.0f, (float) getWidth() - 48.0f - 230.0f, 34.0f);
-    g.setColour (colours::text);
-    const auto titleFont = label (24.0f, Weight::bold);
-    drawTrackedText (g, title.toUpperCase(), titleFont, 0.08f, header, juce::Justification::centredLeft);
-    header.removeFromLeft (getTrackedTextWidth (title.toUpperCase(), titleFont, 0.08f) + 14.0f);
-    g.setColour (colours::textMuted);
-    g.setFont (body (14.0f));
-    g.drawText (subtitle, header.translated (0.0f, 2.0f), juce::Justification::centredLeft, true);
-
 }
 
 void MixerInspector::resized()
 {
-    // EQ | compressor | transient over saturation | send and output
-    auto row = getLocalBounds().withTrimmedTop (52).withTrimmedBottom (12).reduced (16, 0);
+    // Master EQ | compressor | transient over saturation | send and output
+    auto row = getLocalBounds().withTrimmedTop (12).withTrimmedBottom (12).reduced (16, 0);
     eq.setBounds (row.removeFromLeft (595));
     row.removeFromLeft (12);
     comp.setBounds (row.removeFromLeft (290));
@@ -635,26 +624,10 @@ void MixerPage::updateSelection()
     for (auto& s : strips)
         s->setSelected (s->kind != MixerStrip::Kind::trim && s->slot == channel.slot && (s->kind == MixerStrip::Kind::piece) == channel.isPiece);
 
-    if (channel.isPiece && ! shownKit->pieces.empty())
-    {
-        const auto& piece = shownKit->pieces[(size_t) channel.slot];
-        const auto allDirect = std::all_of (shownKit->mics.begin(), shownKit->mics.end(), [] (const auto& m) { return m.direct; });
-        inspector.showChannel (channel, piece.name,
-                               ! piece.hasDirectSignal ? "This kit has no close mic on this drum, so its channel is silent."
-                               : allDirect             ? "Everything the kit recorded of this drum."
-                                                       : "The drum's close mics. Its overheads and room are on their own channels.");
-    }
-    else if (! channel.isPiece)
-    {
-        const auto& mic = shownKit->mics[(size_t) channel.slot];
-        inspector.showChannel (channel, mic.name, juce::String (mic.numChannels > 1 ? "Stereo " : "Mono ")
-                                                      + (mic.role == MicRole::room ? "room mic" : "overhead mic")
-                                                      + ", shared by every drum");
-    }
-    else
-    {
+    if (channel.isPiece && shownKit->pieces.empty())
         inspector.showNothing();
-    }
+    else
+        inspector.showChannel (channel);
 }
 
 void MixerPage::timerCallback()
@@ -696,8 +669,17 @@ void MixerPage::paint (juce::Graphics& g)
     using namespace theme;
 
     g.fillAll (colours::background);
+    // The bank's card: the view switch and every strip sit in it, like the
+    // inspector's modules on their panel.
+    g.setColour (colours::panel);
+    g.fillRect (0, inspector.getBottom(), getWidth(), getHeight() - inspector.getBottom());
+    g.setColour (colours::raised);
+    g.fillRoundedRectangle (bankCard.toFloat(), 8.0f);
     g.setColour (colours::border);
-    g.fillRect (0, inspector.getBottom(), getWidth(), 1);
+    g.drawRoundedRectangle (bankCard.toFloat().reduced (0.5f), 8.0f, 1.0f);
+
+    g.setColour (colours::textMuted);
+    drawTrackedText (g, showingTrims ? "CLOSE MIC TRIMS" : "CHANNEL STRIPS", label (12.0f), 0.12f, bankHeader.toFloat().translated (0.0f, 1.0f), juce::Justification::centredLeft);
 
     // A divider before the returns and master.
     const auto& first = *returnStrips.front();
@@ -720,16 +702,20 @@ void MixerPage::resized()
     // The bank is as tall as a strip's stack (plus room for its scroll bar,
     // kept whether or not it scrolls, so nothing moves); the inspector takes
     // what's above it.
-    constexpr int scrollBarSpace = 10, gap = 6, groupGap = space::lg;
+    constexpr int scrollBarSpace = 10, gap = 6, groupGap = space::lg, cardPadding = space::md;
     const auto stripHeight = MixerStrip::getContentHeight();
-    const auto bankTop = getHeight() - space::sm - scrollBarSpace - stripHeight;
-    inspector.setBounds (getLocalBounds().withBottom (bankTop - space::sm - 1));
+    const auto cardHeight = 2 * cardPadding + size::buttonCompact + space::sm + stripHeight + scrollBarSpace;
+    bankCard = { space::page, getHeight() - space::sm - cardHeight, getWidth() - 2 * space::page, cardHeight };
+    inspector.setBounds (getLocalBounds().withBottom (bankCard.getY()));
 
-    auto views = juce::Rectangle<int> (getWidth() - space::page - 200, space::md, 200, size::button);
-    channelsView.setBounds (views.removeFromLeft (100));
+    // The card's title on the left, and the Channels / Close mics switch on the right, above the strips it changes.
+    auto inner = bankCard.reduced (cardPadding);
+    bankHeader = inner.removeFromTop (size::buttonCompact);
+    auto views = bankHeader.removeFromRight (160);
+    channelsView.setBounds (views.removeFromLeft (80));
     trimsView.setBounds (views);
-
-    auto bank = juce::Rectangle<int> (space::page, bankTop, getWidth() - 2 * space::page, stripHeight + scrollBarSpace);
+    inner.removeFromTop (space::sm);
+    auto bank = inner;
 
     // The returns and master stay pinned on the right; the rest scrolls.
     masterStrip.setBounds (bank.removeFromRight (size::mixerStrip).withHeight (stripHeight));
