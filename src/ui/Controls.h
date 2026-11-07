@@ -107,6 +107,33 @@ private:
     const Direction direction;
 };
 
+/** Strikes a drum once (an audition): an impact mark, the dot where the
+    stick lands with short rays around it, to the left of the text "Strike".
+    With no text it's just the mark, for a narrow button. Not a play
+    triangle, which is the groove transport's, as a strike doesn't keep on
+    playing. */
+class StrikeButton final : public juce::TextButton
+{
+public:
+    explicit StrikeButton (const juce::String& buttonText = "Strike") : juce::TextButton (buttonText) {}
+
+    void paintButton (juce::Graphics&, bool isMouseOver, bool isDown) override;
+};
+
+/** The groove transport's Play / Stop button: a play triangle or a stop
+    square to the left of its text, the two centred together. Lit while
+    playing. */
+class PlayStopButton final : public juce::TextButton
+{
+public:
+    PlayStopButton() : juce::TextButton ("Play") {}
+
+    void setPlaying (bool);
+    bool isPlaying() const noexcept   { return getToggleState(); }
+
+    void paintButton (juce::Graphics&, bool isMouseOver, bool isDown) override;
+};
+
 /** A toggle button bound to a bool parameter. */
 class ParamToggle final : public juce::TextButton
 {

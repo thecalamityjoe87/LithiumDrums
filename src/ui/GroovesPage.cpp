@@ -1930,8 +1930,7 @@ GroovesPage::NowPlaying GroovesPage::nowPlaying() const
 void GroovesPage::updateTransportButtons()
 {
     const auto playing = processor.isGroovePlaying();
-    playButton.setButtonText (playing ? "Stop" : "Play");
-    playButton.setToggleState (playing, juce::dontSendNotification);
+    playButton.setPlaying (playing);
 
     const auto hasSelection = selectedGroove() != nullptr;
     playButton.setEnabled (hasSelection);
@@ -1951,7 +1950,7 @@ void GroovesPage::timerCallback()
         repaint (emptyArea);
     }
 
-    if (playing != (playButton.getButtonText() == "Stop"))
+    if (playing != playButton.isPlaying())
     {
         // The preview ended by itself (loop off), or the host project restored a stopped state.
         updateTransportButtons();

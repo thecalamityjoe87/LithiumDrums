@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Controls.h"
 #include "PluginProcessor.h"
 #include "grooves/GrooveLibrary.h"
 #include "packs/PackInstaller.h"
@@ -150,7 +151,8 @@ private:
     std::unique_ptr<DetailPane> detail;
 
     // Transport.
-    juce::TextButton playButton { "Play" }, loopButton { "Loop" };
+    PlayStopButton playButton;
+    juce::TextButton loopButton { "Loop" };
     juce::TextButton hostTempoButton { "Host" }, grooveTempoButton { "Groove" }, customTempoButton { "Custom" };
     juce::TextButton halfButton, normalButton, doubleButton;
     std::unique_ptr<TempoField> tempoField;

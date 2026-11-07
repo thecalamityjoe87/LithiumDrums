@@ -148,7 +148,7 @@ private:
 };
 
 /** The selected piece, over the stage's bottom left corner: its name, the
-    model it plays (click to swap it), its volume, mute, solo and play, and
+    model it plays (click to swap it), its volume, mute, solo and strike, and
     a way to the Edit tab. With no kit, it says why and what to do. The
     controls are re-attached to whichever piece is selected. */
 class KitPage::PieceCard final : public juce::Component, private SelectionModel::Listener
@@ -166,14 +166,14 @@ public:
         mute.setClickingTogglesState (true);
         mute.setColour (juce::TextButton::buttonOnColourId, textMuted);
         solo.setClickingTogglesState (true);
-        play.onClick = [this]
+        strike.onClick = [this]
         {
             if (const auto piece = processor.getSelection().getSelected(); piece >= 0)
                 processor.audition (piece, LithiumDrumsProcessor::auditionVelocity);
         };
         editButton.onClick = [this] { if (onEdit) onEdit(); };
 
-        for (auto* c : std::initializer_list<juce::Component*> { &model, &volume, &mute, &solo, &play, &editButton })
+        for (auto* c : std::initializer_list<juce::Component*> { &model, &volume, &mute, &solo, &strike, &editButton })
             addAndMakeVisible (c);
 
         processor.getSelection().addListener (this);
@@ -270,28 +270,12 @@ public:
         buttons.removeFromLeft (space::xs);
         solo.setBounds (buttons.removeFromLeft (w));
         buttons.removeFromLeft (space::xs);
-        play.setBounds (buttons);
+        strike.setBounds (buttons);
     }
 
     static constexpr int width = stagecard::width, height = stagecard::height;
 
 private:
-    class PlayButton final : public juce::Button
-    {
-    public:
-        PlayButton() : juce::Button ("Play") {}
-
-        void paintButton (juce::Graphics& g, bool isMouseOver, bool isDown) override
-        {
-            getLookAndFeel().drawButtonBackground (g, *this, {}, isMouseOver, isDown);
-            const auto c = getLocalBounds().toFloat().getCentre();
-            juce::Path triangle;
-            triangle.addTriangle (c.x - 4.0f, c.y - 5.5f, c.x - 4.0f, c.y + 5.5f, c.x + 6.0f, c.y);
-            g.setColour (isMouseOver ? theme::colours::accent : theme::colours::textMuted);
-            g.fillPath (triangle);
-        }
-    };
-
     const KitPieceInfo* piece() const
     {
         const auto selected = processor.getSelection().getSelected();
@@ -307,7 +291,7 @@ private:
 
         const auto* p = piece();
 
-        for (auto* c : std::initializer_list<juce::Component*> { &model, &volume, &mute, &solo, &play, &editButton })
+        for (auto* c : std::initializer_list<juce::Component*> { &model, &volume, &mute, &solo, &strike, &editButton })
             c->setVisible (p != nullptr);
 
         if (p != nullptr)
@@ -321,7 +305,7 @@ private:
             volume.setTooltip (p->name + " volume (double-click for 0 dB, Shift-drag for fine steps)");
             mute.setTooltip ("Mute " + p->name);
             solo.setTooltip ("Solo " + p->name);
-            play.setTooltip ("Play " + p->name);
+            strike.setTooltip ("Strike " + p->name);
             editButton.setTooltip ("Shape " + p->name + " and its channel on the Edit tab");
         }
 
@@ -335,7 +319,7 @@ private:
     ModelButton model;
     ControlSlider volume;
     juce::TextButton mute { "M" }, solo { "S" }, editButton { "Edit piece" };
-    PlayButton play;
+    StrikeButton strike { {} };   // just the mark: the button is narrow
 
     // After the controls they're attached to (destroyed first).
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> volumeAttachment;
@@ -524,8 +508,7 @@ private:
         if (changed)
         {
             const auto any = now.groove.isNotEmpty();
-            playButton.setButtonText (now.playing ? "Stop" : "Play");
-            playButton.setToggleState (now.playing, juce::dontSendNotification);
+            playButton.setPlaying (now.playing);
             playButton.setEnabled (any || now.playing);
             previous.setEnabled (any && now.hasPrevious);
             next.setEnabled (any && now.hasNext);
@@ -546,7 +529,8 @@ private:
 
     ChevronButton previous { "Previous tile", ChevronButton::Direction::left };
     ChevronButton next { "Next tile", ChevronButton::Direction::right };
-    juce::TextButton playButton { "Play" }, loopButton { "Loop" }, openButton { "Open Grooves" };
+    PlayStopButton playButton;
+    juce::TextButton loopButton { "Loop" }, openButton { "Open Grooves" };
 };
 
 //==============================================================================

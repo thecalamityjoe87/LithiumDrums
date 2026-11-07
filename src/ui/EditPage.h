@@ -13,7 +13,7 @@ namespace lithium
     On top, a piece card holds a big picture of the drum (in the finish of the
     kit it was recorded in; click it to play the drum, as on the Kit tab) with
     the controls that pick it: the drum, its model, its articulation, and
-    Play, mute and solo. Beside it, the Zones
+    Strike, mute and solo. Beside it, the Zones
     module shows the articulation's velocity zones, lights up the round-robin
     that just played, and has the crossfade switch. The first row below shapes
     each hit: velocity, pitch, tone, the volume envelope and how much of the
@@ -67,7 +67,7 @@ private:
     juce::Rectangle<int> pieceCardArea;
     ModelButton model;
     std::vector<std::unique_ptr<juce::TextButton>> tabs;
-    juce::TextButton play { "Play" };
+    StrikeButton strike;
     ParamToggle crossfade { "Crossfade", "Crossfade between neighbouring velocity zones, so there's no step between them" };
     ParamToggle mute { "M", "Mute this drum" }, solo { "S", "Solo this drum" };
 

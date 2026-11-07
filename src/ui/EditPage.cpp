@@ -277,22 +277,22 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
             processor.getSelection().select (id - 1);
     };
 
-    // The picture and Play do the same: play the articulation shown.
+    // The picture and Strike do the same: play the articulation shown.
     auto playShown = [this]
     {
         if (piece >= 0)
             processor.audition (piece, LithiumDrumsProcessor::auditionVelocity, articulation);
     };
 
-    play.setTooltip ("Play this articulation at velocity " + juce::String (LithiumDrumsProcessor::auditionVelocity));
-    play.onClick = playShown;
+    strike.setTooltip ("Strike this articulation at velocity " + juce::String (LithiumDrumsProcessor::auditionVelocity));
+    strike.onClick = playShown;
     picture->onClick = playShown;
     picture->setMouseCursor (juce::MouseCursor::PointingHandCursor);
 
     crossfade.attach (processor.getParameters(), params::velocityCrossfade);
     mute.setColour (juce::TextButton::buttonOnColourId, theme::colours::textMuted);
 
-    for (auto* c : std::initializer_list<juce::Component*> { picture.get(), &previous, &next, &pieceBox, &model, &play, &crossfade, &mute, &solo })
+    for (auto* c : std::initializer_list<juce::Component*> { picture.get(), &previous, &next, &pieceBox, &model, &strike, &crossfade, &mute, &solo })
         addAndMakeVisible (c);
 
     addChildComponent (articulationBox);
@@ -623,7 +623,7 @@ void EditPage::resized()
     // Piece card: [picture]  < [piece] >
     //                        [model]
     //                        [articulations...]
-    //                        [Play] [M] [S]
+    //                        [Strike] [M] [S]
     pieceCardArea = juce::Rectangle<int> (margin, 9, cardPadding * 2 + (cardHeight - 2 * cardPadding) + 12 + cardControlsWidth, cardHeight);
     auto card = pieceCardArea.reduced (cardPadding);
     picture->setBounds (card.removeFromLeft (card.getHeight()));
@@ -675,7 +675,7 @@ void EditPage::resized()
     actions.removeFromRight (4);
     mute.setBounds (actions.removeFromRight (40));
     actions.removeFromRight (8);
-    play.setBounds (actions);
+    strike.setBounds (actions);
 
     // Row one: shaping each hit.
     auto row = juce::Rectangle<int> (margin, topHeight + gap, getWidth() - 2 * margin, rowOneHeight);

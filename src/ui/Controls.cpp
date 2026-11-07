@@ -234,6 +234,159 @@ void ChevronButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isDow
 }
 
 //==============================================================================
+namespace
+{
+    // An icon and a text button's text as one group, centred in the button,
+    // in the text's colour (as the look and feel draws it: see drawButtonText).
+    // With no text, the icon alone, lit on hover.
+    template <typename DrawIcon>
+    void paintIconButton (juce::Graphics& g, juce::TextButton& b, bool isMouseOver, bool isDown, float iconSize, DrawIcon&& drawIcon)
+    {
+        using juce::TextButton;
+        auto& lf = b.getLookAndFeel();
+        const auto on = b.getToggleState();
+        lf.drawButtonBackground (g, b, b.findColour (on ? TextButton::buttonOnColourId : TextButton::buttonColourId), isMouseOver, isDown);
+
+        const auto text = b.getButtonText().toUpperCase();
+        const auto colour = text.isNotEmpty() ? b.findColour (on ? TextButton::textColourOnId : TextButton::textColourOffId)
+                                              : (isMouseOver ? theme::colours::accent : theme::colours::textMuted);
+        g.setColour (b.isEnabled() ? colour : colour.withMultipliedAlpha (0.5f));
+
+        constexpr float gap = 7.0f;
+        const auto font = lf.getTextButtonFont (b, b.getHeight());
+        const auto textWidth = text.isEmpty() ? 0.0f : theme::getTrackedTextWidth (text, font, 0.06f);
+        const auto bounds = b.getLocalBounds().toFloat();
+        // The icon's corner on a whole physical pixel, so its lines land the
+        // same way every time rather than smeared across two pixels.
+        const auto scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+        const auto snap = [scale] (float v) { return std::round (v * scale) / scale; };
+        const auto left = snap (bounds.getCentreX() - (iconSize + (text.isEmpty() ? 0.0f : gap + textWidth)) * 0.5f);
+        drawIcon (juce::Rectangle<float> (left, snap (bounds.getCentreY() - iconSize * 0.5f), iconSize, iconSize));
+
+        if (text.isNotEmpty())
+            theme::drawTrackedText (g, text, font, 0.06f, bounds.withLeft (left + iconSize + gap).withWidth (textWidth + 2.0f),
+                                    juce::Justification::centredLeft);
+    }
+}
+
+void StrikeButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isDown)
+{
+    paintIconButton (g, *this, isMouseOver, isDown, 18.0f, [&g] (juce::Rectangle<float> icon)
+    {
+        // A stick coming down onto a drum, with a jagged burst where it
+        // lands, on the side away from the stick. Points are in the icon's
+        // 0..1 square.
+        const auto w = icon.getWidth() / 14.0f;   // line widths were set at 14 px; they grow with the icon
+        const auto at = [icon] (float x, float y) { return icon.getRelativePoint (x, y); };
+        const auto line = [&g] (juce::Point<float> a, juce::Point<float> b, float thickness)
+        {
+            g.drawLine ({ a, b }, thickness);
+            g.fillEllipse (juce::Rectangle<float> (thickness, thickness).withCentre (a));   // round ends
+            g.fillEllipse (juce::Rectangle<float> (thickness, thickness).withCentre (b));
+        };
+
+        // The drum: an even cylinder seen from a little above. Its head is an
+        // ellipse; the shell's sides drop straight down to a bottom edge
+        // curving the same way as the head's front, with three vertical lines
+        // (the lugs) down the shell.
+        //
+        // Laid out on whole physical pixels so it stays crisp: every line is
+        // a whole number of pixels wide, and the five vertical lines (the two
+        // sides and the lugs) sit on pixel centres, the same whole number of
+        // pixels apart. (A line one pixel wide centred on a pixel boundary
+        // would be smeared over two pixels at half strength.)
+        const auto scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+        const auto pixels = [scale] (float v) { return std::max (1.0f, std::round (v * scale)) / scale; };
+        const auto thickness = pixels (1.1f * w);
+        const auto oddWidth = juce::roundToInt (thickness * scale) % 2 == 1;
+        const auto onCentre = [scale, oddWidth] (float v)   // to a pixel centre for odd widths, else a pixel edge
+        {
+            return oddWidth ? (std::floor (v * scale) + 0.5f) / scale : std::round (v * scale) / scale;
+        };
+
+        const auto size = icon.getWidth();
+        const auto spacing = pixels (0.72f * size / 4.0f);                     // between the five vertical lines
+        const auto x0 = onCentre (icon.getX() + 0.5f * size - 2.0f * spacing);  // the left side
+        const auto cx = x0 + 2.0f * spacing, rx = 2.0f * spacing;
+        const auto headTop = onCentre (icon.getY() + 0.40f * size);
+        const auto ry = pixels (0.18f * size) * 0.5f;
+        const auto headCy = headTop + ry;
+        const auto bottomCy = onCentre (icon.getBottom()) - ry;
+        const auto pi = juce::MathConstants<float>::pi;
+
+        g.drawEllipse (x0, headTop, 2.0f * rx, 2.0f * ry, thickness);
+
+        juce::Path bottomEdge;
+        // From 9 o'clock round through 6 to 3 (JUCE's angles run clockwise from 12).
+        bottomEdge.addCentredArc (cx, bottomCy, rx, ry, 0.0f, 1.5f * pi, 0.5f * pi, true);
+        g.strokePath (bottomEdge, juce::PathStrokeType (thickness, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+
+        for (int i = 0; i <= 4; ++i)
+        {
+            // The sides go from the head's widest point; the lugs from the
+            // front of the head to the front of the bottom edge.
+            const auto x = x0 + (float) i * spacing;
+            const auto t = (x - cx) / rx;
+            const auto drop = (i == 0 || i == 4) ? 0.0f : ry * std::sqrt (1.0f - t * t);
+            g.fillRect (juce::Rectangle<float> (x - thickness * 0.5f, headCy + drop, thickness, bottomCy - headCy));
+        }
+
+        line (at (1.10f, 0.11f), at (0.55f, 0.46f), 1.8f * w);                          // the stick, about 30 degrees
+        // The impact: a filled burst fanning out from the tip, its spikes of
+        // uneven length, from just above the head on the left round to just
+        // clear of the stick. Angles are in degrees from the right, upwards.
+        {
+            const auto tip = juce::Point<float> (0.52f, 0.46f);   // just above where the stick meets the head
+            const auto point = [&] (float degrees, float radius)
+            {
+                const auto a = juce::degreesToRadians (degrees);
+                return at (tip.x + std::cos (a) * radius, tip.y - std::sin (a) * radius);
+            };
+
+            constexpr float inner = 0.24f;
+            constexpr std::pair<float, float> spikes[] { { 150.0f, 0.44f }, { 118.0f, 0.52f }, { 88.0f, 0.50f }, { 60.0f, 0.38f } };
+            juce::Path burst;
+            burst.startNewSubPath (at (tip.x, tip.y));
+            burst.lineTo (point (172.0f, inner));
+
+            for (size_t i = 0; i < std::size (spikes); ++i)
+            {
+                burst.lineTo (point (spikes[i].first, spikes[i].second));
+                burst.lineTo (point (i + 1 < std::size (spikes) ? (spikes[i].first + spikes[i + 1].first) * 0.5f : 42.0f, inner));
+            }
+
+            burst.closeSubPath();
+            g.fillPath (burst);
+        }
+    });
+}
+
+void PlayStopButton::setPlaying (bool playing)
+{
+    setButtonText (playing ? "Stop" : "Play");
+    setToggleState (playing, juce::dontSendNotification);
+}
+
+void PlayStopButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isDown)
+{
+    paintIconButton (g, *this, isMouseOver, isDown, 10.0f, [&g, playing = getToggleState()] (juce::Rectangle<float> icon)
+    {
+        icon = icon.reduced (0.5f);
+
+        if (playing)
+        {
+            g.fillRoundedRectangle (icon.reduced (0.5f), 1.5f);   // stop
+        }
+        else
+        {
+            juce::Path triangle;
+            triangle.addTriangle (icon.getX() + 0.5f, icon.getY(), icon.getX() + 0.5f, icon.getBottom(), icon.getRight(), icon.getCentreY());
+            g.fillPath (triangle);
+        }
+    });
+}
+
+//==============================================================================
 ParamToggle::ParamToggle (const juce::String& buttonText, const juce::String& tooltip) : juce::TextButton (buttonText)
 {
     setClickingTogglesState (true);
