@@ -411,6 +411,101 @@
         "master_tape_on": true, "master_tape_drive": 7, "master_tape_tone": -20,
         "master_limit_on": true, "master_limit_ceiling": -0.5
       }
+    },
+    {
+      "name": "Stone Hall",
+      "group": "Rock",
+      "kit": "tchimera-open-kick",
+      "description": "Seventies hard rock in a big hall: the open kick booming, maple toms tuned down and left to ring, a cracking snare, all on hot tape.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "room_send": -12 },
+        "kick": { "tune": -0.5, "eq_low_freq": 60, "eq_low_gain": 3, "eq_mid1_freq": 300, "eq_mid1_gain": -3, "eq_mid2_freq": 2500, "eq_mid2_gain": 1.5, "comp_on": true, "comp_threshold": -18, "comp_ratio": 3, "comp_attack": 25, "comp_release": 150, "room_send": -14 },
+        "snare": { "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 2, "eq_mid2_freq": 4000, "eq_mid2_gain": 2, "comp_on": true, "comp_threshold": -20, "comp_ratio": 3, "comp_attack": 12, "comp_release": 120, "comp_makeup": 2, "room_send": -8 },
+        "toms": { "tune": -1, "eq_low_freq": 100, "eq_low_gain": 2, "eq_mid1_freq": 450, "eq_mid1_gain": -3, "room_send": -8 },
+        "hihat": { "volume": -2, "eq_hpf": 250 },
+        "cymbals": { "eq_hpf": 180 }
+      },
+      "mics": {
+        "overheads": { "volume": 1, "comp_on": true, "comp_threshold": -20, "comp_ratio": 3, "comp_attack": 25, "comp_release": 150, "comp_makeup": 1 }
+      },
+      "fx": {
+        "room_ir": "Hall", "room_return": -2, "room_predelay": 20, "room_lowcut": 150,
+        "master_comp_on": true, "master_comp_threshold": -14, "master_comp_ratio": 2, "master_comp_attack": 30, "master_comp_release": 200,
+        "master_tape_on": true, "master_tape_drive": 8, "master_tape_tone": 5,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Motor City",
+      "group": "Funk",
+      "kit": "tchimera",
+      "description": "Sixties soul: a short, damped kick, a tight snare tuned up with every ghost note heard, crisp hats and a small studio room, saturated on tape.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "room_send": -18 },
+        "kick": { "decay": 45, "eq_low_freq": 80, "eq_low_gain": 2, "eq_mid1_freq": 350, "eq_mid1_gain": -3, "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 15, "comp_release": 80, "room_send": -40 },
+        "snare": { "tune": 1.5, "decay": 55, "dynamics": -15, "eq_hpf": 120, "eq_mid2_freq": 3500, "eq_mid2_gain": 2, "comp_on": true, "comp_threshold": -22, "comp_ratio": 4, "comp_attack": 10, "comp_release": 90, "comp_makeup": 2 },
+        "hihat": { "volume": 1, "eq_hpf": 300, "eq_mid2_freq": 7000, "eq_mid2_gain": 1.5 },
+        "toms": { "decay": 55, "tune": 1 },
+        "cymbals": { "volume": -2 }
+      },
+      "fx": {
+        "room_ir": "Studio", "room_return": -4,
+        "master_comp_on": true, "master_comp_threshold": -12, "master_comp_ratio": 2, "master_comp_attack": 20, "master_comp_release": 120,
+        "master_tape_on": true, "master_tape_drive": 7, "master_tape_tone": -10,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Juke Joint",
+      "group": "Blues",
+      "kit": "tchimera",
+      "description": "A blues band in a small bar: warm and a little dark, the ride up front, the crashes pulled back and a natural room glued together gently.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "tone_lp": 10000, "room_send": -14 },
+        "kick": { "tune": -0.5, "decay": 70, "eq_low_freq": 80, "eq_low_gain": 1.5, "eq_mid1_freq": 350, "eq_mid1_gain": -2, "room_send": -24 },
+        "snare": { "tune": -0.5, "eq_mid1_freq": 250, "eq_mid1_gain": 1.5, "eq_high_freq": 8000, "eq_high_gain": -1, "comp_on": true, "comp_threshold": -20, "comp_ratio": 2.5, "comp_attack": 20, "comp_release": 150 },
+        "toms": { "tune": -1, "decay": 75 },
+        "ride": { "volume": 2, "tone_lp": 14000 },
+        "crash": { "volume": -3 },
+        "china": { "volume": -3 }
+      },
+      "mics": {
+        "overheads": { "eq_high_freq": 9000, "eq_high_gain": -1.5 }
+      },
+      "fx": {
+        "room_ir": "Seminar Room", "room_return": -3, "room_lowcut": 150,
+        "master_comp_on": true, "master_comp_threshold": -14, "master_comp_ratio": 1.5, "master_comp_attack": 30, "master_comp_release": 250,
+        "master_tape_on": true, "master_tape_drive": 5, "master_tape_tone": -20,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
+    },
+    {
+      "name": "Dirt Road",
+      "group": "Americana",
+      "kit": "tchimera",
+      "description": "Country and Americana, close and dry: a round kick, short toms, a snare with a natural plate on it and the cymbals kept polite.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "all": { "room_send": -24 },
+        "kick": { "tune": 0.5, "decay": 60, "eq_low_freq": 80, "eq_low_gain": 1.5, "eq_mid1_freq": 400, "eq_mid1_gain": -2.5, "comp_on": true, "comp_threshold": -18, "comp_ratio": 3, "comp_attack": 20, "comp_release": 100 },
+        "snare": { "eq_hpf": 90, "eq_mid2_freq": 3000, "eq_mid2_gain": 1.5, "comp_on": true, "comp_threshold": -20, "comp_ratio": 3, "comp_attack": 15, "comp_release": 110, "reverb_send": -12 },
+        "toms": { "decay": 50, "eq_mid1_freq": 400, "eq_mid1_gain": -2 },
+        "hihat": { "volume": -1, "eq_hpf": 250 },
+        "cymbals": { "volume": -3, "eq_hpf": 200 }
+      },
+      "mics": {
+        "overheads": { "volume": -2 }
+      },
+      "fx": {
+        "room_ir": "Studio", "room_return": -8,
+        "reverb_size": 45, "reverb_decay": 1.2, "reverb_predelay": 15, "reverb_damping": 7000, "reverb_lowcut": 200,
+        "master_comp_on": true, "master_comp_threshold": -14, "master_comp_ratio": 2, "master_comp_attack": 30, "master_comp_release": 150,
+        "master_tape_on": true, "master_tape_drive": 4,
+        "master_limit_on": true, "master_limit_ceiling": -0.5
+      }
     }
   ]
 }

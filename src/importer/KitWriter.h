@@ -54,6 +54,11 @@ struct KitModel
         juce::String id, name, chokeGroup;
         juce::StringArray chokes;
         std::vector<Zone> zones;
+
+        // Hi-hat ladder step and stroke ("tip"/"shank"), for kits whose ids
+        // don't say them (kit.json "openness"/"stroke"); negative/empty = unset.
+        double openness = -1.0;
+        juce::String stroke;
     };
 
     struct Piece

@@ -202,7 +202,8 @@ def empty(name, loc, rot):
 # little low, as on most ported front heads (drum-local x, y on the head).
 PORT_R, PORT_AT = 0.075, (0.15, -0.05)
 
-def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=False, wood_hoop=False):
+def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=False, wood_hoop=False, lug_turn=0.5):
+    # lug_turn: where the lugs start, in lug spacings from the drum's local x axis.
     e = empty(name, loc, rot)
     sh = cyl(r, d, (0, 0, 0), m=shell, parent=e, cname=name, verts=128, fill='NOTHING')
     sol = sh.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.006
@@ -223,7 +224,7 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=Fal
         else:
             torus(r + 0.004, 0.0055, (0, 0, z + side * 0.004), scale=(1, 1, 1.9), m='hoop', parent=e, cname=name)
     for i in range(lugs):
-        a = 2 * math.pi * (i + 0.5) / lugs
+        a = 2 * math.pi * (i + lug_turn) / lugs
         cx, cy = math.cos(a), math.sin(a)
         if rows == 1:
             zs = [(0.0, d * 0.22)]
@@ -252,7 +253,7 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=Fal
         # on the inside wall, top and bottom of the lug.
         hl = d * 0.22
         for i in range(lugs):
-            ang = 2 * math.pi * (i + 0.5) / lugs
+            ang = 2 * math.pi * (i + lug_turn) / lugs
             cx, cy = math.cos(ang), math.sin(ang)
             # A close pair of bolts (3 cm apart) at each end of the lug.
             for zc in (0.07, 0.04, -0.10, -0.13):
@@ -301,7 +302,9 @@ def cymbal(name, R, loc, rot, china=False, felt=True, parent=None, cname=None):
 # ---------- kit ----------
 R = math.radians
 KIT = {}
-KIT['kick'] = drum('kick', 0.279, 0.457, (0, 0, 0.31), (R(90), 0, 0), lugs=10, reso=True, port=True, wood_hoop=True)
+# The kick's lugs start on its side (lug_turn=0), so the top is between two
+# lugs: the tom holder's bracket sits there, as on a real kick.
+KIT['kick'] = drum('kick', 0.279, 0.457, (0, 0, 0.31), (R(90), 0, 0), lugs=10, reso=True, port=True, wood_hoop=True, lug_turn=0)
 KIT['tom1'] = drum('tom1', 0.127, 0.203, (0.165, 0.10, 0.84), (R(-13), R(-7), 0), lugs=6)
 KIT['tom2'] = drum('tom2', 0.152, 0.229, (-0.185, 0.10, 0.86), (R(-13), R(8), 0), lugs=6)
 KIT['floor'] = drum('floor', 0.203, 0.406, (-0.6, 0.42, 0.40), (R(-2), 0, 0), lugs=8, rows=2)
@@ -521,7 +524,15 @@ claim('snare', m)
 # L-arms go up into a bracket on each tom.
 holder = Vector((0, 0.06, 0.72))
 box((0.04, 0.08, 0.018), (0, 0.06, 0.595), m='chrome')
-t_bolt((0.03, 0.06, 0.6), FRONT)
+# A wing nut straight out of the bracket's side, square to it, made like the
+# cowbell's: stud, hub and two wings. The wings lie nearly flat (tipped 12
+# degrees, the front one up toward the camera): upright, the lower one would
+# sink into the shell. (The old T-bolt started 1 cm off the side and floated.)
+cyl(0.003, 0.016, (0.026, 0.06, 0.598), rot=(0, R(90), 0), m='chrome', verts=12)       # stud,
+cyl(0.0058, 0.011, (0.0255, 0.06, 0.598), rot=(0, R(90), 0), m='chrome', verts=16)     # hub
+for sy in (-1, 1):
+    wing = blob((0.008, 0.0105, 0.0022), (0.028, 0.06 + sy * 0.0115 * math.cos(R(12)), 0.598 - sy * 0.0115 * math.sin(R(12))), m='chrome')
+    wing.rotation_euler = (R(-12), 0, 0)                                                 # and wings
 tube((0, 0.06, 0.59), holder, 0.0127, m='chrome')
 ring((0, 0.06, 0.665), 0.019, 0.016, m='chrome')                   # memory lock
 box((0.075, 0.04, 0.032), tuple(holder), m='plastic')
@@ -1057,7 +1068,27 @@ cam.location = (-0.12, -3.4, 2.05)
 tgt = Vector((-0.12, 0.25, 0.74))
 cam.rotation_mode = 'QUATERNION'; cam.rotation_quaternion = (tgt - cam.location).to_track_quat('-Z', 'Y')
 
-def render(path):
+def render(path, objs=None):
+    # border=auto renders only the part of the frame that objs cover (with a
+    # margin, so the denoiser sees past the edges); the rest stays
+    # transparent. The frame and the pixels inside are as in a full render, so
+    # one piece's layer can be redone quickly and cropped as usual.
+    scn.render.use_border = False
+    if args.get('border') == 'auto' and objs:
+        from bpy_extras.object_utils import world_to_camera_view
+        dg = bpy.context.evaluated_depsgraph_get()
+        xs, ys = [], []
+        for o in objs:
+            if o.type != 'MESH' or o.hide_render:
+                continue
+            oe = o.evaluated_get(dg)
+            for c in oe.bound_box:
+                v = world_to_camera_view(scn, cam, oe.matrix_world @ Vector(c))
+                xs.append(v.x); ys.append(v.y)
+        pad = 0.03
+        scn.render.use_border = True; scn.render.use_crop_to_border = False
+        scn.render.border_min_x, scn.render.border_max_x = max(0.0, min(xs) - pad), min(1.0, max(xs) + pad)
+        scn.render.border_min_y, scn.render.border_max_y = max(0.0, min(ys) - pad), min(1.0, max(ys) + pad)
     scn.render.filepath = path
     bpy.ops.render.render(write_still=True)
 
@@ -1082,9 +1113,10 @@ elif MODE == 'pieces':
         # piece ends and can fade its boom arm (or stand) out from there.
         if L in ('crash', 'crash2', 'ride', 'china', 'splash', 'stack', 'clap', 'snap', 'snare'):
             show_only(set(COLL[L].all_objects))
-            render(os.path.join(OUT, 'pieces', L + '-bare.png'))
-        show_only(set(HW[L]) if L in FULL_MESH else set(COLL[L].all_objects) | set(HW.get(L, [])))
-        render(os.path.join(OUT, 'pieces', L + '.png'))
+            render(os.path.join(OUT, 'pieces', L + '-bare.png'), set(COLL[L].all_objects))
+        shown = set(HW[L]) if L in FULL_MESH else set(COLL[L].all_objects) | set(HW.get(L, []))
+        show_only(shown)
+        render(os.path.join(OUT, 'pieces', L + '.png'), shown)
         print('PIECE', L, flush=True)
 else:
     layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'splash', 'ride', 'china']
@@ -1098,7 +1130,7 @@ else:
             o.is_holdout = (o not in mine) and not o.is_shadow_catcher
             o.visible_shadow = True
         floor.hide_render = (L != 'base')
-        render(os.path.join(OUT, 'layers', L + '.png'))
+        render(os.path.join(OUT, 'layers', L + '.png'), None if L == 'base' else mine)
         print('LAYER', L, flush=True)
 
 if MODE == 'final':

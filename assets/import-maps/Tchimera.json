@@ -1,0 +1,377 @@
+{
+  "comment": "Import mapping for Michael Willis's Tchimera Drum Kit (github.com/michaelwillis/tchimera-drum-kit), an SFZ kit built from Vincent 'Tchackpoum' Sermone's ReaperDrummer recordings: a Premier kick, a Supraphonic-style snare and the Ludwig Black Cortex toms, hi-hat and cymbals. full_kit.sfz plays five outputs: kick, snare, toms and hi-hat close mics (mono) and a stereo overhead pair (samples/overheads and samples/cymbals; the cymbals have no close mics). Overheads and SFZ pans are from the drummer's seat, so the overheads are swapped and the close-mic pans are the SFZ's, mirrored. The SFZ balances each drum's close mic against the overheads with master/global volumes (kick 15/18 dB, snare 10/18, toms 6,4,6,3/3, hi-hat 10/0). The format has one level per zone for every mic of a hit (the importer averages them), so each close mic carries the difference (close - overheads) and the piece takes back half of it ((overheads - close) / 2): both mics then play at the SFZ's levels. The hi-hat's four openness steps are read at CC4 values inside each step's range (CC4 127 = closed); edge steps carry openness/stroke because their ids aren't standard ones. Tom 'rim' keys play head-edge hits (about 5 dB quieter than centre hits, not rimshots), so they're imported as 'edge' and follow positional sensing. The grabbed-cymbal copies (lopolyaft) and release triggers aren't imported; grabs choke by aftertouch.",
+  "format": "sfz",
+  "matches": [
+    "tchimera-drum-kit-master",
+    "tchimera-drum-kit",
+    "Tchimera",
+    "hihat_open_4_bow.sfz"
+  ],
+  "pack": {
+    "id": "tchimera-drum-kit",
+    "name": "Tchimera Drum Kit"
+  },
+  "author": "Vincent \"Tchackpoum\" Sermone (recordings); SFZ kit by Michael Willis",
+  "sourceUrl": "https://github.com/michaelwillis/tchimera-drum-kit",
+  "license": {
+    "name": "CC BY-SA 4.0",
+    "url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "shareAlike": true,
+    "files": [
+      "README.md"
+    ]
+  },
+  "licenseNote": "The creation of music using Tchimera Drum Kit is allowed under the terms of the CC0 license. The creation of derivative virtual drum kits is allowed under the terms of the CC BY-SA 4.0 license. Specifically, any modified or derivative drum kit using these samples must credit Vincent Sermone as having originally recorded the samples, and must itself be licensed under the same terms.",
+  "credits": "Tchimera Drum Kit by Michael Willis, using samples recorded by Vincent \"Tchackpoum\" Sermone (tchackpoum.com, ReaperDrummer) in Reaper through an RME Fireface 802 and Audient preamps. Music made with it: CC0. Derivative kits (this conversion included): CC BY-SA 4.0, crediting Vincent Sermone.",
+  "description": "A late-70s Ludwig maple kit with a Premier kick, built for e-kits: four-step hi-hat openness on CC4 (tip and shank), 15 snare velocity layers, close mics and overheads.",
+  "audienceView": true,
+  "levelDb": -6,
+  "cc": {
+    "4": 127
+  },
+  "mics": [
+    { "id": "kick", "name": "Kick", "role": "close", "channels": 1, "volumeDb": -3, "samples": ["*samples/kick/*"] },
+    { "id": "snare", "name": "Snare", "role": "close", "channels": 1, "pan": 0.15, "volumeDb": -8, "samples": ["*samples/snare/*"] },
+    { "id": "hihat", "name": "Hi-Hat", "role": "close", "channels": 1, "pan": 0.5, "volumeDb": 10, "samples": ["*samples/hihat/*"] },
+    { "id": "tom1", "name": "Tom 12\"", "role": "close", "channels": 1, "pan": 0.25, "volumeDb": 3, "samples": ["*samples/toms/black_cortex_tom_12_*"] },
+    { "id": "tom2", "name": "Tom 13\"", "role": "close", "channels": 1, "pan": 0, "volumeDb": 1, "samples": ["*samples/toms/black_cortex_tom_13_*"] },
+    { "id": "tom3", "name": "Tom 14\"", "role": "close", "channels": 1, "pan": -0.25, "volumeDb": 3, "samples": ["*samples/toms/black_cortex_tom_14_*"] },
+    { "id": "floor", "name": "Floor Tom 18\"", "role": "close", "channels": 1, "pan": -0.5, "samples": ["*samples/toms/black_cortex_floor_tom_18_*"] },
+    { "id": "overheads", "name": "Overheads", "role": "overheads", "channels": 2, "swapStereo": true,
+      "samples": ["*samples/overheads/*", "*samples/cymbals/*"] }
+  ],
+  "pieces": [
+    { "id": "kick", "name": "Kick 22\"", "role": "kick", "volumeDb": 1.5, "articulations": [
+      { "id": "hit", "name": "Damped", "key": 36 },
+      { "id": "free", "name": "Free", "key": 35 } ] },
+    { "id": "snare", "name": "Snare", "role": "snare", "volumeDb": 4, "articulations": [
+      { "id": "center", "name": "Center", "key": 38 },
+      { "id": "edge", "name": "Edge", "key": 39 },
+      { "id": "rimshot", "name": "Rimshot", "key": 40 },
+      { "id": "sidestick", "name": "Sidestick", "key": 37 } ] },
+    { "id": "hihat", "name": "Hi-Hat", "role": "hihat", "volumeDb": -5, "articulations": [
+      { "id": "closed", "name": "Closed", "key": 42, "cc": { "4": 127 }, "chokes": ["hihat_open"] },
+      { "id": "closed_edge", "name": "Closed edge", "key": 22, "cc": { "4": 127 }, "chokes": ["hihat_open"] },
+      { "id": "pedal", "name": "Pedal", "key": 44, "chokes": ["hihat_open"] },
+      { "id": "quarter_open", "name": "Open 1", "key": 46, "note": 97, "cc": { "4": 100 }, "chokeGroup": "hihat_open" },
+      { "id": "half_open", "name": "Open 2", "key": 46, "note": 23, "cc": { "4": 70 }, "chokeGroup": "hihat_open" },
+      { "id": "three_quarter", "name": "Open 3", "key": 46, "note": 98, "cc": { "4": 45 }, "chokeGroup": "hihat_open" },
+      { "id": "open", "name": "Open 4", "key": 46, "cc": { "4": 0 }, "chokeGroup": "hihat_open" },
+      { "id": "quarter_open_edge", "name": "Open 1 edge", "key": 26, "note": 99, "cc": { "4": 100 }, "openness": 0.25, "stroke": "shank", "chokeGroup": "hihat_open" },
+      { "id": "half_open_edge", "name": "Open 2 edge", "key": 26, "note": 24, "cc": { "4": 70 }, "openness": 0.5, "stroke": "shank", "chokeGroup": "hihat_open" },
+      { "id": "three_quarter_edge", "name": "Open 3 edge", "key": 26, "note": 100, "cc": { "4": 45 }, "openness": 0.75, "stroke": "shank", "chokeGroup": "hihat_open" },
+      { "id": "open_edge", "name": "Open 4 edge", "key": 26, "cc": { "4": 0 }, "chokeGroup": "hihat_open" },
+      { "id": "splash", "name": "Foot splash", "key": 21, "chokeGroup": "hihat_open" } ] },
+    { "id": "tom1", "name": "Tom 12\"", "role": "tom", "volumeDb": -1.5, "articulations": [
+      { "id": "center", "name": "Center", "key": 48 },
+      { "id": "edge", "name": "Edge", "key": 50 } ] },
+    { "id": "tom2", "name": "Tom 13\"", "role": "tom", "volumeDb": -0.5, "articulations": [
+      { "id": "center", "name": "Center", "key": 45 },
+      { "id": "edge", "name": "Edge", "key": 47 } ] },
+    { "id": "tom3", "name": "Tom 14\"", "role": "tom", "volumeDb": -1.5, "articulations": [
+      { "id": "center", "name": "Center", "key": 41 },
+      { "id": "edge", "name": "Edge", "key": 43 } ] },
+    { "id": "floor", "name": "Floor Tom 18\"", "role": "floor_tom", "articulations": [
+      { "id": "center", "name": "Center", "key": 31 },
+      { "id": "edge", "name": "Edge", "key": 33 } ] },
+    { "id": "crash1", "name": "Crash 15\"", "role": "crash", "articulations": [
+      { "id": "hit", "name": "Edge", "key": 55 },
+      { "id": "bow", "name": "Bow", "key": 49 } ] },
+    { "id": "crash2", "name": "Crash 20\"", "role": "crash", "articulations": [
+      { "id": "hit", "name": "Edge", "key": 52 },
+      { "id": "bow", "name": "Bow", "key": 57 } ] },
+    { "id": "ride", "name": "Ride", "role": "ride", "articulations": [
+      { "id": "bow", "name": "Bow", "key": 51 },
+      { "id": "bell", "name": "Bell", "key": 53 },
+      { "id": "edge", "name": "Crash (edge)", "key": 59 } ] },
+    { "id": "trash", "name": "Trash", "role": "china", "articulations": [
+      { "id": "hit", "name": "Edge", "key": 32 },
+      { "id": "bow", "name": "Bow", "key": 30 } ] }
+  ],
+  "presets": [
+    {
+      "id": "tchimera-four-piece",
+      "name": "Tchimera Four-Piece",
+      "base": "tchimera",
+      "description": "The classic vintage Ludwig setup: kick, snare, hi-hat, the 12\" rack tom, the 18\" floor tom, the 20\" crash and the ride.",
+      "tags": [
+        "acoustic",
+        "vintage",
+        "rock",
+        "e-kit",
+        "multi-mic"
+      ],
+      "pieces": [
+        {
+          "piece": "kick"
+        },
+        {
+          "piece": "snare"
+        },
+        {
+          "piece": "hihat"
+        },
+        {
+          "piece": "tom1"
+        },
+        {
+          "piece": "floor"
+        },
+        {
+          "piece": "crash2"
+        },
+        {
+          "piece": "ride"
+        }
+      ],
+      "mics": {
+        "tom2": {
+          "enabled": false
+        },
+        "tom3": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "id": "tchimera-open-kick",
+      "name": "Tchimera Open Kick",
+      "base": "tchimera",
+      "description": "The undamped kick as the main kick, for a big, ringing rock sound; the damped one is a second kick on note 35.",
+      "tags": [
+        "acoustic",
+        "vintage",
+        "rock",
+        "e-kit",
+        "multi-mic"
+      ],
+      "pieces": [
+        {
+          "piece": "kick",
+          "name": "Kick 22\" (free)",
+          "articulations": [
+            "free"
+          ]
+        },
+        {
+          "piece": "kick",
+          "id": "kick_damped",
+          "name": "Kick 22\" (damped)",
+          "articulations": [
+            "hit"
+          ]
+        },
+        {
+          "piece": "snare"
+        },
+        {
+          "piece": "hihat"
+        },
+        {
+          "piece": "tom1"
+        },
+        {
+          "piece": "tom2"
+        },
+        {
+          "piece": "tom3"
+        },
+        {
+          "piece": "floor"
+        },
+        {
+          "piece": "crash1"
+        },
+        {
+          "piece": "crash2"
+        },
+        {
+          "piece": "ride"
+        },
+        {
+          "piece": "trash"
+        }
+      ],
+      "midiMap": [
+        {
+          "note": 21,
+          "piece": "hihat",
+          "articulation": "splash"
+        },
+        {
+          "note": 22,
+          "piece": "hihat",
+          "articulation": "closed_edge"
+        },
+        {
+          "note": 23,
+          "piece": "hihat",
+          "articulation": "half_open"
+        },
+        {
+          "note": 24,
+          "piece": "hihat",
+          "articulation": "half_open_edge"
+        },
+        {
+          "note": 26,
+          "piece": "hihat",
+          "articulation": "open_edge"
+        },
+        {
+          "note": 30,
+          "piece": "trash",
+          "articulation": "bow"
+        },
+        {
+          "note": 31,
+          "piece": "floor",
+          "articulation": "center"
+        },
+        {
+          "note": 32,
+          "piece": "trash",
+          "articulation": "hit"
+        },
+        {
+          "note": 33,
+          "piece": "floor",
+          "articulation": "edge"
+        },
+        {
+          "note": 35,
+          "piece": "kick_damped",
+          "articulation": "hit"
+        },
+        {
+          "note": 36,
+          "piece": "kick",
+          "articulation": "free"
+        },
+        {
+          "note": 37,
+          "piece": "snare",
+          "articulation": "sidestick"
+        },
+        {
+          "note": 38,
+          "piece": "snare",
+          "articulation": "center"
+        },
+        {
+          "note": 39,
+          "piece": "snare",
+          "articulation": "edge"
+        },
+        {
+          "note": 40,
+          "piece": "snare",
+          "articulation": "rimshot"
+        },
+        {
+          "note": 41,
+          "piece": "tom3",
+          "articulation": "center"
+        },
+        {
+          "note": 42,
+          "piece": "hihat",
+          "articulation": "closed"
+        },
+        {
+          "note": 43,
+          "piece": "tom3",
+          "articulation": "edge"
+        },
+        {
+          "note": 44,
+          "piece": "hihat",
+          "articulation": "pedal"
+        },
+        {
+          "note": 45,
+          "piece": "tom2",
+          "articulation": "center"
+        },
+        {
+          "note": 46,
+          "piece": "hihat",
+          "articulation": "open"
+        },
+        {
+          "note": 47,
+          "piece": "tom2",
+          "articulation": "edge"
+        },
+        {
+          "note": 48,
+          "piece": "tom1",
+          "articulation": "center"
+        },
+        {
+          "note": 49,
+          "piece": "crash1",
+          "articulation": "bow"
+        },
+        {
+          "note": 50,
+          "piece": "tom1",
+          "articulation": "edge"
+        },
+        {
+          "note": 51,
+          "piece": "ride",
+          "articulation": "bow"
+        },
+        {
+          "note": 52,
+          "piece": "crash2",
+          "articulation": "hit"
+        },
+        {
+          "note": 53,
+          "piece": "ride",
+          "articulation": "bell"
+        },
+        {
+          "note": 55,
+          "piece": "crash1",
+          "articulation": "hit"
+        },
+        {
+          "note": 57,
+          "piece": "crash2",
+          "articulation": "bow"
+        },
+        {
+          "note": 59,
+          "piece": "ride",
+          "articulation": "edge"
+        },
+        {
+          "note": 97,
+          "piece": "hihat",
+          "articulation": "quarter_open"
+        },
+        {
+          "note": 98,
+          "piece": "hihat",
+          "articulation": "three_quarter"
+        },
+        {
+          "note": 99,
+          "piece": "hihat",
+          "articulation": "quarter_open_edge"
+        },
+        {
+          "note": 100,
+          "piece": "hihat",
+          "articulation": "three_quarter_edge"
+        }
+      ]
+    }
+  ],
+  "kits": [
+    { "file": "full_kit.sfz", "id": "tchimera", "name": "Tchimera Drum Kit", "tags": ["acoustic", "vintage", "rock", "e-kit", "multi-mic"] }
+  ]
+}

@@ -288,6 +288,34 @@
       "unpackedSize": 661151109
     },
     {
+      "id": "tchimera-drum-kit",
+      "name": "Tchimera Drum Kit",
+      "type": "kits",
+      "author": "Vincent \"Tchackpoum\" Sermone (recordings); SFZ kit by Michael Willis",
+      "license": {
+        "name": "CC BY-SA 4.0",
+        "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+      },
+      "homepage": "https://github.com/michaelwillis/tchimera-drum-kit",
+      "description": "A late-70s Ludwig maple kit with a Premier kick, built for e-kits: four-step hi-hat openness (tip and shank), 15 snare velocity layers, close mics and overheads.",
+      "kits": [
+        "Tchimera Drum Kit"
+      ],
+      "presets": [
+        "Tchimera Four-Piece",
+        "Tchimera Open Kick"
+      ],
+      "downloads": [
+        {
+          "url": "https://codeload.github.com/michaelwillis/tchimera-drum-kit/zip/refs/heads/master",
+          "file": "Tchimera.zip",
+          "size": 0,
+          "approximateSize": 804290671
+        }
+      ],
+      "unpackedSize": 1384743293
+    },
+    {
       "id": "groove-midi-dataset",
       "name": "Groove MIDI Dataset",
       "type": "grooves",

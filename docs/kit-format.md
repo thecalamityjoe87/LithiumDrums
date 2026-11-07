@@ -600,6 +600,9 @@ regions into hits like this:
 1. **Fix the controllers.** The instrument is evaluated at one controller
    state: its own `set_ccN` (and high-resolution `set_hdccN`, 0-1) defaults,
    then the mapping's `cc`, then the kit's.
+   Aftertouch is 0, as at any note-on, so regions that need some
+   (`lopolyaft`, `lochanaft`) are left out: Tchimera keeps a copy of each
+   cymbal for the grabbed state.
    A region whose `loccN`/`hiccN` range excludes the state is left out, so the
    mapping can switch every mic on, switch alternative layers off (Virtuosity's
    pitched-down "epic" layers), or pick snares on or off. Release-triggered
@@ -619,7 +622,8 @@ regions into hits like this:
 5. **Round-robins.** Within a zone, each mic's regions are put in round-robin
    order (`seq_position`, then `lorand` for random-robin kits), and hit n
    plays every mic's nth region together, sample-aligned.
-6. **Levels.** A zone's `gainDb` is its regions' `volume`, `amplitude` and
+6. **Levels.** A zone's `gainDb` is its regions' `volume`, `amplitude` (with
+   the SFZ v2 `global_`, `master_` and `group_` volumes and amplitudes) and
    controller gains (`amplitude_onccN`/`amplitude_ccN` as ARIA plays them: a
    multiplier from 0 at CC 0 to N% at CC 127, which is how library mixers use
    them as faders), plus the velocity curve (`amp_veltrack`,
@@ -671,6 +675,15 @@ An SFZ mapping adds these keys to the shared ones:
   was unpacked to.
 - An articulation's MIDI note is its `key`, unless `note` gives another (two
   articulations read from one key need two notes); `notes` adds more.
+- `openness` and `stroke` are copied to the articulation in `kit.json`, for
+  hi-hat steps whose ids aren't standard ones (Tchimera's four edge openings).
+- A zone has one level for all its mics, the average of their regions'. Where
+  an SFZ sets each mic's level per drum (Tchimera's close mics against its
+  overheads), the mapping gives each close mic the difference as its
+  `volumeDb` and the piece half of it back, so every mic plays at the SFZ's
+  level.
+- A region with a negative `width` (`width=-100`) plays its stereo sides
+  swapped.
 - `swapStereo` swaps a stereo mic's sides. Kits recorded from the drummer's
   seat put the hi-hat on the left; Lithium Drums shows the kit from the
   audience's side, so the mappings swap them where needed. `audienceView`

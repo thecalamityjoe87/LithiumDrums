@@ -521,7 +521,7 @@ namespace
                     continue;
                 }
 
-                KitModel::Articulation art { a.id, a.name.isNotEmpty() ? a.name : a.id, a.chokeGroup, a.chokes, {} };
+                KitModel::Articulation art { a.id, a.name.isNotEmpty() ? a.name : a.id, a.chokeGroup, a.chokes, {}, -1.0, {} };
 
                 // Each sample is a hit; its audio usually comes from one
                 // multichannel file, with one file channel per kit channel.

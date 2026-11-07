@@ -244,6 +244,12 @@ namespace
         if (! a.chokes.isEmpty())
             put (art, "chokes", stringArray (a.chokes));
 
+        if (a.openness >= 0.0)
+            put (art, "openness", a.openness);
+
+        if (a.stroke.isNotEmpty())
+            put (art, "stroke", a.stroke);
+
         // When every hit is one file with the same channel layout (DrumGizmo's
         // multichannel files), the channel map is written once and the hits
         // are plain file names, which keeps kit.json small.

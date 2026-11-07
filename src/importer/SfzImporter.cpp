@@ -57,6 +57,14 @@ namespace
         if (trigger != "attack" && trigger != "first")
             return false;
 
+        // A note-on happens with no aftertouch yet (pressure 0). Regions that
+        // need some (lopolyaft/lochanaft above 0) play only while a pad is
+        // held: Tchimera keeps a copy of each cymbal for the grabbed state,
+        // which would otherwise double every hit. Grabs reach Lithium Drums as
+        // aftertouch chokes instead (DrumEngine::polyAftertouch).
+        if (r.getNumber ("lopolyaft", 0.0) > 0.0 || r.getNumber ("lochanaft", 0.0) > 0.0)
+            return false;
+
         double gain = 1.0;
         controllerGainDb = 0.0;
 
@@ -106,8 +114,21 @@ namespace
 
     double baseGainDb (const sfz::Region& r)
     {
-        const auto amplitude = std::max (1.0e-4, r.getNumber ("amplitude", 100.0) / 100.0);
-        return r.getNumber ("volume", 0.0) + r.getNumber ("gain", 0.0) + 20.0 * std::log10 (amplitude);
+        // SFZ v2 adds a level per header on top of the region's own: the
+        // global_, master_ and group_ volumes add up, the amplitudes multiply
+        // (Tchimera balances each drum's close mic against the overheads with
+        // them).
+        double amplitude = 1.0, volume = r.getNumber ("volume", 0.0) + r.getNumber ("gain", 0.0);
+
+        for (const auto* prefix : { "", "global_", "master_", "group_" })
+        {
+            amplitude *= std::max (1.0e-4, r.getNumber (juce::String (prefix) + "amplitude", 100.0) / 100.0);
+
+            if (*prefix != 0)
+                volume += r.getNumber (juce::String (prefix) + "volume", 0.0);
+        }
+
+        return volume + 20.0 * std::log10 (amplitude);
     }
 
     double pitchShiftSemitones (const sfz::Region& r, int key)
@@ -463,6 +484,8 @@ namespace
             KitModel::Articulation art;
             art.id = spec["id"].toString();
             art.name = spec["name"].toString().isNotEmpty() ? spec["name"].toString() : art.id;
+            art.openness = spec.hasProperty ("openness") ? juce::jlimit (0.0, 1.0, (double) spec["openness"]) : -1.0;
+            art.stroke = spec["stroke"].toString();
 
             const auto key = sfz::noteNumber (spec["key"].toString());
             const auto include = toStringArray (spec["samples"]);
@@ -699,7 +722,10 @@ namespace
                         // Stereo recordings on stereo mics keep both sides; anything
                         // else uses the first channel (centred on a stereo mic).
                         const auto stereo = info.channels >= 2 && micChannels != 1;
-                        const auto swap = stereo && rules[(size_t) c->mic].swapStereo;
+                        // A negative width (Tchimera's width=-100) plays the
+                        // recording's sides swapped.
+                        const auto reversed = c->region->getNumber ("width", 100.0) < 0.0;
+                        const auto swap = stereo && (rules[(size_t) c->mic].swapStereo != reversed);
                         part.channels.push_back ({ c->mic, { swap ? 2 : 1, stereo ? (swap ? 1 : 2) : 0 } });
                         micFileChannels[c->mic] = std::max (micFileChannels[c->mic], stereo ? 2 : 1);
                         h.parts.push_back (std::move (part));

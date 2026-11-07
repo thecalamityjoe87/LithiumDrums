@@ -91,6 +91,12 @@
       "shell": { "style": "pearl", "color": [0.55, 0.55, 0.53], "color2": [0.9, 0.9, 0.88] },
       "snare": { "style": "metal", "color": [0.62, 0.63, 0.65], "rough": 0.12 },
       "reso": [0.012, 0.012, 0.014]
+    },
+    "tchimera": {
+      "comment": "Champagne sparkle like a vintage Ludwig (the user asked for champagne gold sparkle with a silver snare, from a photo of a Ludwig champagne kit); a chrome snare and a white front head, as in the photo.",
+      "shell": { "style": "sparkle", "color": [0.46, 0.4, 0.28], "color2": [0.88, 0.84, 0.72] },
+      "snare": { "style": "metal", "color": [0.62, 0.63, 0.65], "rough": 0.1 },
+      "reso": [0.82, 0.8, 0.75]
     }
   }
 }

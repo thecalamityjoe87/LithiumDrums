@@ -224,7 +224,8 @@ juce_add_binary_data(LithiumImportMaps
         assets/import-maps/BigRustyDrums.json
         assets/import-maps/SMDrums.json
         assets/import-maps/NakedDrums.json
-        assets/import-maps/OpenSourceDrumKit.json)
+        assets/import-maps/OpenSourceDrumKit.json
+        assets/import-maps/Tchimera.json)
 
 target_compile_definitions(LithiumDrums
     PUBLIC
