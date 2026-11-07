@@ -81,6 +81,8 @@ namespace
     static_assert (SlotGrid::columns * SlotGrid::rows == kitslots::numSlots);
 
     constexpr int labelHeight = 18, modelHeight = 24, buttonRow = 22, faderWidth = 18;
+    constexpr int readoutHeight = 11, readoutWidth = 44;   // the volume's value, under the fader
+    constexpr int faderInset = 6;   // the fader in from the card's edge, so its value centred under it clears the edge
 
     // Below this a card puts its model button and buttons on one row.
     constexpr int roomyCardHeight = 196;
@@ -138,6 +140,7 @@ public:
         volume.setColour (juce::Slider::trackColourId, colour);
         volume.setPopupDisplayEnabled (true, false, nullptr);
         volume.setTooltip (name + " volume (double-click for 0 dB)");
+        volume.onValueChange = [this] { repaint (readoutArea); };
         addAndMakeVisible (volume);
 
         mute.setClickingTogglesState (true);
@@ -260,6 +263,15 @@ public:
                 g.drawImage (picture, iconArea, juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize);
             }
         }
+
+        // The volume's value, written like the Mixer's fader readouts
+        // ("+0.3 dB", "-inf dB"), so a preset's levels can be read here as
+        // well as on the Edit page.
+        const auto db = volume.getValue();
+        const auto text = db <= params::minVolumeDb + 0.05 ? juce::String ("-inf") : (db > 0.05 ? "+" : "") + juce::String (db, 1);
+        g.setColour (colours::textMuted);
+        g.setFont (mono (8.5f));
+        g.drawText (text + " dB", readoutArea, juce::Justification::centred, false);
     }
 
     void resized() override
@@ -287,7 +299,14 @@ public:
             buttons.removeFromLeft (space::xs);
         }
 
-        volume.setBounds (area.removeFromRight (faderWidth));
+        // The fader's column, with its value under it. The picture keeps
+        // the column's full height.
+        area.removeFromRight (faderInset);
+        auto column = area.removeFromRight (faderWidth);
+        const auto side = space::md + faderInset + faderWidth;   // kept clear on both sides, so the picture stays centred
+        pictureArea = { side, column.getY(), getWidth() - 2 * side, column.getHeight() };
+        readoutArea = column.removeFromBottom (readoutHeight).withSizeKeepingCentre (readoutWidth, readoutHeight);
+        volume.setBounds (column);
 
         const auto w = (buttons.getWidth() - space::xs) / 2;
         mute.setBounds (buttons.removeFromLeft (w));
@@ -296,11 +315,8 @@ public:
     }
 
 private:
-    juce::Rectangle<int> getIconArea() const
-    {
-        // Between the label and the controls, clear of the fader on either side.
-        return { theme::space::md + faderWidth, volume.getY(), getWidth() - 2 * (theme::space::md + faderWidth), volume.getHeight() };
-    }
+    /** Between the label and the controls, clear of the fader on either side. */
+    juce::Rectangle<int> getIconArea() const    { return pictureArea; }
 
     void paintEmpty (juce::Graphics& g, juce::Rectangle<float> bounds)
     {
@@ -341,6 +357,7 @@ private:
     juce::Colour colour;
     bool selected = false, flashShown = false;
     double flashUntil = 0.0;
+    juce::Rectangle<int> pictureArea, readoutArea;   // set by resized()
 
     ModelButton model;
     ControlSlider volume;

@@ -4,8 +4,12 @@
 //   LithiumDrumsTests --only <words>  run the tests whose name contains them, e.g. --only Groove
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
 //                                     [--mixer-channel piece:<n> | mic:<n> | fx:<module>]   (module: 0 Room .. 8 Limiter)
-//                                     [--swap <piece or slot-id>=<kit id>/<piece id>,...] [--midi-activity]
+//                                     [--swap <piece or slot-id>=<kit id>/<piece id>,...] [--midi-activity] [--preset <file>]
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
+//   LithiumDrumsTests --preset-sync <preset file>,... [--kit <folder>] [--image f.png]
+//                                     open the editor, load each preset in turn and check that every mixer
+//                                     fader, parameter knob and Kit tab slot volume shows the value the preset set
+//                                     (needs a display); --image renders the editor at the end
 //   LithiumDrumsTests --sfz-dump <file.sfz> [n]
 //                                     parse an SFZ instrument and print its first n regions (default 5),
 //                                     its controller defaults and warnings: for writing import mappings
@@ -55,12 +59,16 @@
 #include "engine/StreamCache.h"
 #include "engine/MidiMapping.h"
 #include "grooves/GrooveMidi.h"
+#include "ui/MixerPage.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <optional>
+#include <set>
 #include <new>
 #include <thread>
 
@@ -130,7 +138,7 @@ class SnapshotWriter final : private juce::Timer
 {
 public:
     SnapshotWriter (juce::File f, float s, juce::String select, const juce::File& kit, juce::String click, const juce::String& mixerChannel,
-                    const juce::String& swaps, bool midi)
+                    const juce::String& swaps, bool midi, const juce::File& preset = {})
         : file (std::move (f)), scale (s), selectId (std::move (select)), clickName (std::move (click)), midiActivity (midi)
     {
         if (mixerChannel.startsWith ("fx:"))
@@ -148,6 +156,10 @@ public:
                                       swap.fromFirstOccurrenceOf ("=", false, false).upToFirstOccurrenceOf ("/", false, false),
                                       swap.fromFirstOccurrenceOf ("/", false, false) });
 
+        if (preset != juce::File())
+            if (const auto r = processor.loadPreset (preset); r.failed())
+                std::cout << r.getErrorMessage() << std::endl;
+
         startTimer (50);
     }
 
@@ -158,7 +170,7 @@ private:
     {
         ++ticks;
 
-        if (editor == nullptr && (! processor.isKitLoading() || ticks > 600))
+        if (editor == nullptr && ((! processor.isKitLoading() && ! processor.isPresetLoading()) || ticks > 600))
         {
             if (const auto info = processor.getKitInfo())
                 for (size_t i = 0; i < info->pieces.size(); ++i)
@@ -229,6 +241,285 @@ private:
     bool midiActivity = false;
     int ticks = 0, readyTick = 0;
 };
+
+//==============================================================================
+/** Checks that the controls follow a preset: opens the editor on a kit, loads
+    the preset (in the background if it plays another kit), then compares
+    every Mixer fader and every knob named after a parameter with the value
+    the parameter now holds. */
+class PresetSync final : private juce::Timer
+{
+public:
+    PresetSync (const juce::File& kit, juce::StringArray presetFiles, juce::File imageFile)
+        : presetsToLoad (std::move (presetFiles)), image (std::move (imageFile))
+    {
+        if (kit != juce::File())
+            processor.loadKit (kit, true);
+
+        startTimer (50);
+    }
+
+    int result = 1;
+
+private:
+    void timerCallback() override
+    {
+        ++ticks;
+
+        if (processor.isKitLoading() || processor.isPresetLoading())
+        {
+            if (ticks < 2400)
+                return;
+
+            std::cout << "Timed out waiting for the kit" << std::endl;
+            finish();
+            return;
+        }
+
+        if (editor == nullptr)
+        {
+            editor.reset (processor.createEditor());
+            editor->setSize (1280, 800);
+            editor->setVisible (true);
+
+            // The Kit tab's slot cards, so their volume sliders are checked too.
+            if (auto* slots = findButton (*editor, "Slots"))
+                slots->triggerClick();
+
+            settleTick = ticks;
+            return;
+        }
+
+        if (ticks < settleTick + 4)
+            return;
+
+        if (loaded.isNotEmpty())
+            problems += compare (loaded);
+
+        if (presetsToLoad.isEmpty() && ! interacted)
+        {
+            // As a user would: drag a slot card's volume, then check the
+            // Edit page and the parameter followed; then all the way down.
+            interacted = true;
+            problems += interact();
+            settleTick = ticks;
+            return;
+        }
+
+        if (presetsToLoad.isEmpty())
+        {
+            if (image != juce::File())
+            {
+                juce::PNGImageFormat png;
+                image.deleteFile();
+                juce::FileOutputStream out (image);
+                png.writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), out);
+            }
+
+            std::cout << "\n" << (problems == 0 ? "PRESET SYNC PASSED" : "PRESET SYNC FOUND " + juce::String (problems) + " PROBLEMS") << std::endl;
+            result = problems == 0 ? 0 : 1;
+            finish();
+            return;
+        }
+
+        const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (presetsToLoad[0]);
+        presetsToLoad.remove (0);
+        loaded = file.getFileNameWithoutExtension();
+
+        if (const auto r = processor.loadPreset (file); r.failed())
+        {
+            std::cout << loaded << ": " << r.getErrorMessage() << std::endl;
+            ++problems;
+            loaded = {};
+        }
+
+        settleTick = ticks;
+    }
+
+    int compare (const juce::String& presetName)
+    {
+        auto& state = processor.getParameters();
+        int checked = 0, wrong = 0;
+
+        auto check = [&] (const juce::Slider& slider, const juce::String& id, const juce::String& where)
+        {
+            auto* p = state.getParameter (id);
+
+            if (p == nullptr)
+                return;
+
+            ++checked;
+            const auto expected = p->convertFrom0to1 (p->getValue());
+
+            if (std::abs (slider.getValue() - (double) expected) > 1.0e-3 * std::max (1.0, (double) std::abs (expected)))
+            {
+                std::cout << "  " << presetName << ": " << where << " shows " << slider.getValue() << ", " << id << " is " << expected << std::endl;
+                ++wrong;
+            }
+        };
+
+        // Knobs carry their parameter's name as their tooltip; only names
+        // that belong to one parameter tell which one it is.
+        std::map<juce::String, juce::String> byName;
+        std::set<juce::String> ambiguous;
+
+        for (auto* p : state.processor.getParameters())
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
+                if (! byName.emplace (ranged->getName (64), ranged->getParameterID()).second)
+                    ambiguous.insert (ranged->getName (64));
+
+        std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
+        {
+            if (auto* strip = dynamic_cast<lithium::MixerStrip*> (&c))
+            {
+                using Kind = lithium::MixerStrip::Kind;
+
+                for (auto* child : strip->getChildren())
+                    if (auto* s = dynamic_cast<juce::Slider*> (child); s != nullptr && s->getSliderStyle() == juce::Slider::LinearVertical)
+                    {
+                        if (strip->kind == Kind::piece || strip->kind == Kind::mic)
+                            check (*s, lithium::params::ChannelId { strip->kind == Kind::piece, strip->slot }.fader(), "mixer fader " + juce::String (strip->slot));
+                        else if (strip->kind == Kind::trim)
+                            check (*s, lithium::params::micParamId (strip->slot, "volume"), "trim fader " + juce::String (strip->slot));
+                    }
+            }
+            else if (auto* s = dynamic_cast<juce::Slider*> (&c))
+            {
+                // A Kit tab slot card's volume: "<piece name> volume (double-click for 0 dB)".
+                const juce::String slotSuffix (" volume (double-click for 0 dB)");
+
+                if (const auto name = s->getTooltip(); byName.count (name) != 0 && ambiguous.count (name) == 0)
+                    check (*s, byName[name], "knob \"" + name + "\"");
+                else if (name.endsWith (slotSuffix))
+                    if (const auto info = processor.getKitInfo())
+                        for (size_t i = 0; i < info->pieces.size(); ++i)
+                            if (info->pieces[i].name == name.dropLastCharacters (slotSuffix.length()))
+                                check (*s, lithium::params::pieceParamId ((int) i, "volume"), "slot card \"" + info->pieces[i].name + "\"");
+            }
+
+            for (auto* child : c.getChildren())
+                walk (*child);
+        };
+
+        walk (*editor);
+        std::cout << presetName << ": " << checked << " controls checked, " << wrong << " out of step" << std::endl;
+        return wrong;
+    }
+
+    static juce::Button* findButton (juce::Component& c, const juce::String& name)
+    {
+        if (auto* b = dynamic_cast<juce::Button*> (&c); b != nullptr && b->getName() == name)
+            return b;
+
+        for (auto* child : c.getChildren())
+            if (auto* found = findButton (*child, name))
+                return found;
+
+        return nullptr;
+    }
+
+    static juce::Slider* findSlider (juce::Component& c, const juce::String& tooltip)
+    {
+        if (auto* s = dynamic_cast<juce::Slider*> (&c); s != nullptr && s->getTooltip() == tooltip)
+            return s;
+
+        for (auto* child : c.getChildren())
+            if (auto* found = findSlider (*child, tooltip))
+                return found;
+
+        return nullptr;
+    }
+
+    int interact()
+    {
+        const auto info = processor.getKitInfo();
+        auto snare = -1;
+
+        for (size_t i = 0; info != nullptr && i < info->pieces.size() && snare < 0; ++i)
+            if (info->pieces[i].role == lithium::PieceRole::snare)
+                snare = (int) i;
+
+        if (snare < 0)
+            return 0;
+
+        const auto name = info->pieces[(size_t) snare].name;
+        auto* slot = findSlider (*editor, name + " volume (double-click for 0 dB)");
+
+        if (slot == nullptr)
+        {
+            std::cout << "  no slot card volume for " << name << std::endl;
+            return 1;
+        }
+
+        auto* param = processor.getParameters().getParameter (lithium::params::pieceParamId (snare, "volume"));
+        int wrong = 0;
+
+        auto expectDb = [&] (float db, const juce::String& what)
+        {
+            const auto value = param->convertFrom0to1 (param->getValue());
+
+            if (std::abs (value - db) > 0.05f)
+            {
+                std::cout << "  " << what << ": the parameter is " << value << ", expected " << db << std::endl;
+                ++wrong;
+            }
+        };
+
+        slot->setValue (-12.0, juce::sendNotificationSync);   // what a drag ends in
+        expectDb (-12.0f, "dragging the slot card to -12 dB");
+        wrong += compare ("after dragging the slot card");
+
+        slot->setValue (slot->getMinimum(), juce::sendNotificationSync);
+        expectDb (lithium::params::minVolumeDb, "dragging the slot card to the bottom");
+        wrong += compare ("at the bottom");
+
+        if (! juce::approximatelyEqual (slot->getDoubleClickReturnValue(), 0.0))
+        {
+            std::cout << "  double-click returns to " << slot->getDoubleClickReturnValue() << ", not 0 dB" << std::endl;
+            ++wrong;
+        }
+
+        slot->setValue (slot->getDoubleClickReturnValue(), juce::sendNotificationSync);
+        expectDb (0.0f, "double-clicking the slot card");
+        wrong += compare ("after a double-click");
+
+        // The preset now counts as changed (the header shows it).
+        if (! processor.isPresetModified())
+        {
+            std::cout << "  moving a slot card didn't mark the preset as changed" << std::endl;
+            ++wrong;
+        }
+
+        slot->setValue (-1.5, juce::sendNotificationSync);   // left there for --image
+        return wrong;
+    }
+
+    void finish()
+    {
+        stopTimer();
+        editor = nullptr;
+        juce::MessageManager::getInstance()->stopDispatchLoop();
+    }
+
+    lithium::LithiumDrumsProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor;
+    juce::StringArray presetsToLoad;
+    juce::File image;
+    bool interacted = false;
+    juce::String loaded;
+    int ticks = 0, settleTick = 0, problems = 0;
+};
+
+static int presetSync (const juce::StringArray& args)
+{
+    const auto kit = args.contains ("--kit") ? juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--kit") + 1])
+                                             : juce::File();
+    const auto image = args.contains ("--image") ? juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--image") + 1])
+                                                 : juce::File();
+    PresetSync check (kit, juce::StringArray::fromTokens (args[args.indexOf ("--preset-sync") + 1], ",", {}), image);
+    juce::MessageManager::getInstance()->runDispatchLoop();
+    return check.result;
+}
 
 //==============================================================================
 /** The loudest the main output gets after a piece is played from its card.
@@ -927,7 +1218,9 @@ static int writeSnapshot (const juce::StringArray& args)
 
     const auto mixerChannel = args.contains ("--mixer-channel") ? args[args.indexOf ("--mixer-channel") + 1] : juce::String();
     const auto swaps = args.contains ("--swap") ? args[args.indexOf ("--swap") + 1] : juce::String();
-    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel, swaps, args.contains ("--midi-activity"));
+    const auto preset = args.contains ("--preset") ? juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--preset") + 1])
+                                                   : juce::File();
+    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel, swaps, args.contains ("--midi-activity"), preset);
     juce::MessageManager::getInstance()->runDispatchLoop();
     return writer.result;
 }
@@ -1776,6 +2069,9 @@ int main (int argc, char* argv[])
 
     if (args.contains ("--snapshot"))
         return writeSnapshot (args);
+
+    if (args.contains ("--preset-sync"))
+        return presetSync (args);
 
     if (args.contains ("--sfz-dump"))
         return sfzDump (args);

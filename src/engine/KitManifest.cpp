@@ -582,6 +582,38 @@ namespace
     // and optionally its own MIDI map. Audio paths keep pointing into the
     // base kit's folder, so no audio is ever duplicated.
 
+    // A preset's changes to a piece's or mic's level, pan, tuning and decay
+    // become the starting values of the controls (Volume, Pan, Tune, Decay),
+    // so the Edit and Mixer pages show what the preset did. Only a change the
+    // control can show goes there; one beyond the control's range (see
+    // Parameters.cpp: -60..+12 dB, +-12 semitones, decay up to Natural, pan
+    // fully left or right) stays built into the piece or mic.
+    constexpr float startMinDb = -60.0f, startMaxDb = 12.0f, startMaxTune = 12.0f;
+
+    bool fitsVolume (float db)   { return db > startMinDb && db <= startMaxDb; }
+
+    void splitPieceChanges (const PieceManifest& base, PieceManifest& piece)
+    {
+        if (const auto db = piece.volumeDb - base.volumeDb; fitsVolume (db))
+        {
+            piece.start.volumeDb = db;
+            piece.volumeDb = base.volumeDb;
+        }
+
+        if (const auto st = piece.tuneSemitones - base.tuneSemitones; std::abs (st) <= startMaxTune)
+        {
+            piece.start.tuneSemitones = st;
+            piece.tuneSemitones = base.tuneSemitones;
+        }
+
+        // Decay multiplies: the base kit's own decay times the control's.
+        if (base.decay > 0.0f && piece.decay <= base.decay)
+        {
+            piece.start.decay = piece.decay / base.decay;
+            piece.decay = base.decay;
+        }
+    }
+
     void choosePieces (const juce::var& list, KitManifest& result, std::vector<juce::String>& sourceIds)
     {
         const auto base = std::move (result.pieces);
@@ -627,6 +659,7 @@ namespace
                 piece.role = parseRole (role, where);
 
             parsePieceSettings (sel, where, piece);
+            splitPieceChanges (*it, piece);
 
             if (! isValidId (piece.id) || result.findPiece (piece.id) >= 0)
                 fail (where, "piece \"" + piece.id + "\" is used twice; give the second one its own \"id\"");
@@ -639,6 +672,7 @@ namespace
     void changeMics (const juce::DynamicObject& changes, KitManifest& result)
     {
         std::vector<bool> keep (result.mics.size(), true);
+        const auto base = result.mics;
 
         for (const auto& [name, change] : changes.getProperties())
         {
@@ -659,6 +693,30 @@ namespace
 
         if (std::none_of (keep.begin(), keep.end(), [] (bool k) { return k; }))
             fail ("mics", "a preset must keep at least one mic");
+
+        // Level and pan changes start the mixer's controls there (see
+        // splitPieceChanges). Not in a preset that keeps a single mic: that
+        // mic is the whole mix, and its level matches it to the base kit's
+        // (Virtuosity's ribbon mic plays 12 dB up), so it stays built in.
+        if (std::count (keep.begin(), keep.end(), true) > 1)
+        {
+            for (size_t i = 0; i < result.mics.size(); ++i)
+            {
+                auto& m = result.mics[i];
+
+                if (const auto db = m.volumeDb - base[i].volumeDb; fitsVolume (db))
+                {
+                    m.startVolumeDb = db;
+                    m.volumeDb = base[i].volumeDb;
+                }
+
+                if (const auto pan = m.pan - base[i].pan; std::abs (pan) <= 1.0f)
+                {
+                    m.startPan = pan;
+                    m.pan = base[i].pan;
+                }
+            }
+        }
 
         // Renumber the kept mics, and drop the left-out mics' audio from every
         // hit, so it is never loaded.

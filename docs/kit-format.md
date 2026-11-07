@@ -113,8 +113,9 @@ defaults, so 0 dB and centre mean "as the kit was mixed". A kit has at most
 
 The piece controls (Volume, Tune, Decay) work on top of `volumeDb`, `tune` and
 `decay`, the way the mixer works on top of the mics' defaults: at their neutral
-settings the piece plays as the kit sets it up. Presets use these to retune a
-kit without touching its audio.
+settings the piece plays as the kit sets it up. Kit presets use the same keys
+to retune a kit without touching its audio, but their changes start the
+controls instead (see "Kit presets").
 
 **Roles and the stage.** The rendered kit stage has eleven slots: kick, snare,
 hi-hat, two rack toms, floor tom, two crashes, splash, ride and china. Pieces
@@ -293,6 +294,26 @@ DRSKit Full, and "MuldjordKit Low" is MuldjordKit tuned down.
 | `mics`        | Changes to the base kit's mics, by id: `enabled: false` leaves a mic out (it is never loaded, so the preset needs less memory), and `volumeDb`, `pan` and `name` replace the kit's defaults. |
 | `midiMap`     | The preset's own map. Without one, the base kit's map is used for the pieces the preset keeps (under their new ids). |
 | `name`, `description`, `tags` | The preset's own. |
+
+**Where a preset's changes show.** A preset's changes to a piece's `tune`,
+`volumeDb` and `decay`, and to a mic's `volumeDb` and `pan`, aren't built into
+the kit the way the base kit's own settings are: they are where the controls
+start. Chosen from the menu, "MuldjordKit Dry" starts the overheads' fader at
+-6 dB and the toms' Decay at 60%, so the Edit and Mixer pages show what the
+preset did (the base kit's settings stay its 0 dB, as for any kit). Two kinds
+of change stay built in instead:
+
+- one the control can't show: a level change outside -60..+12 dB, a tuning
+  change beyond 12 semitones, a decay longer than the base kit's;
+- the level of the only mic a preset keeps. That mic is the whole mix, and its
+  level matches it to the base kit's mix (the Virtuosity Ribbon preset plays
+  the ribbon mic 12 dB up), so it isn't a fader move.
+
+A piece swapped in from a preset keeps that preset's changes built in, since a
+swap leaves the slot's controls as they were. Projects and preset files saved
+before this (project state version 1, `.lithiumpreset` format 1) stored their
+values on top of the preset's changes; they get the changes added when they
+are loaded (`params::addKitStarts`), so they play as they did.
 
 The credits and licence are always the base kit's: the About dialog and the
 kit browser show them for the preset, with "Preset of DRSKit Full". A preset of

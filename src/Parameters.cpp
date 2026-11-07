@@ -3,6 +3,7 @@
 #include "engine/IrLoader.h"
 
 #include <map>
+#include <optional>
 
 namespace lithium::params
 {
@@ -141,6 +142,30 @@ namespace
             p->setValueNotifyingHost (p->convertTo0to1 (value));
             p->endChangeGesture();
         }
+    }
+
+    /** Where a kit preset starts one of a piece's controls, if that's one
+        it can start. */
+    std::optional<float> pieceStart (const KitInfo& info, int piece, const juce::String& name)
+    {
+        if (! juce::isPositiveAndBelow (piece, (int) info.pieces.size()))
+            return {};
+
+        const auto& p = info.pieces[(size_t) piece];
+
+        if (name == "volume")   return p.startVolumeDb;
+        if (name == "tune")     return p.startTune;
+        if (name == "decay")    return p.startDecay * 100.0f;
+
+        return {};
+    }
+
+    /** Sets a parameter to a kit preset's starting value, unless that's its
+        default anyway (which saves the host an automation gesture). */
+    void setStart (juce::AudioProcessorValueTreeState& state, const juce::String& id, float value)
+    {
+        if (auto* p = state.getParameter (id); p != nullptr && ! juce::approximatelyEqual (p->convertTo0to1 (value), p->getDefaultValue()))
+            set (state, id, value);
     }
 }
 
@@ -565,9 +590,51 @@ void resetForKit (juce::AudioProcessorValueTreeState& state, const KitInfo& info
             if (const auto& id = ranged->getParameterID(); id.startsWith ("piece") || id.startsWith ("mic"))
                 setToDefault (*ranged);
 
-    // ... except the choke notes, which come from the kit.
+    // ... except the choke notes, which come from the kit...
     for (int i = 0; i < maxPieces; ++i)
         set (state, pieceParamId (i, "choke_note"), i < (int) info.pieces.size() ? (float) info.pieces[(size_t) i].defaultChokeNote : -1.0f);
+
+    // ... and the controls a kit preset starts somewhere else.
+    for (int i = 0; i < (int) info.pieces.size(); ++i)
+        for (const auto* name : { "volume", "tune", "decay" })
+            setStart (state, pieceParamId (i, name), *pieceStart (info, i, name));
+
+    for (int i = 0; i < (int) info.mics.size(); ++i)
+    {
+        setStart (state, micParamId (i, "volume"), info.mics[(size_t) i].startVolumeDb);
+        setStart (state, micParamId (i, "pan"), info.mics[(size_t) i].startPan * 100.0f);
+    }
+}
+
+void addKitStarts (juce::ValueTree& tree, const juce::AudioProcessorValueTreeState& state, const KitInfo& info)
+{
+    // change: the saved value -> the value now. Clamped to the parameter's range.
+    auto shift = [&] (const juce::String& id, auto&& change)
+    {
+        auto child = tree.getChildWithProperty ("id", id);
+        const auto* p = state.getParameter (id);
+
+        if (child.isValid() && p != nullptr)
+            child.setProperty ("value", p->getNormalisableRange().snapToLegalValue (change ((float) child["value"])), nullptr);
+    };
+
+    // A fader at the bottom (silence) stays there.
+    auto addDb = [] (float db) { return [db] (float v) { return v <= minVolumeDb + 0.05f ? v : v + db; }; };
+
+    for (int i = 0; i < (int) info.pieces.size(); ++i)
+    {
+        const auto& p = info.pieces[(size_t) i];
+        shift (pieceParamId (i, "volume"), addDb (p.startVolumeDb));
+        shift (pieceParamId (i, "tune"), [t = p.startTune] (float v) { return v + t; });
+        shift (pieceParamId (i, "decay"), [d = p.startDecay] (float v) { return v * d; });
+    }
+
+    for (int i = 0; i < (int) info.mics.size(); ++i)
+    {
+        const auto& m = info.mics[(size_t) i];
+        shift (micParamId (i, "volume"), addDb (m.startVolumeDb));
+        shift (micParamId (i, "pan"), [pan = m.startPan * 100.0f] (float v) { return v + pan; });
+    }
 }
 
 void movePieces (juce::AudioProcessorValueTreeState& state, const KitInfo& info, const std::vector<int>& from)
@@ -605,6 +672,8 @@ void movePieces (juce::AudioProcessorValueTreeState& state, const KitInfo& info,
             ranged->setValueNotifyingHost (value->second);
         else if (name == "choke_note")
             set (state, ranged->getParameterID(), piece < (int) info.pieces.size() ? (float) info.pieces[(size_t) piece].defaultChokeNote : -1.0f);
+        else if (const auto start = pieceStart (info, piece, name))
+            set (state, ranged->getParameterID(), *start);
         else
             setToDefault (*ranged);
     }

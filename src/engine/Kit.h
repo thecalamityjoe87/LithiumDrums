@@ -36,6 +36,11 @@ struct MicChannel
     // stereo pair, say) sends every mic to the drum channels instead, so
     // each drum still has a channel to work on.
     bool direct = true;
+
+    // Where a kit preset starts the mic's controls (see MicManifest): the
+    // values EngineParams::resetForKit gives them.
+    float startGain = 1.0f;      // linear
+    float startPan = 0.0f;       // -1..1, on top of defaultPan
 };
 
 struct Zone
@@ -105,6 +110,11 @@ struct PieceData
     float defaultGain = 1.0f;    // linear
     float defaultTune = 0.0f;    // semitones
     float defaultDecay = 1.0f;   // 0..1, multiplies the Decay parameter
+
+    // Where a kit preset starts the piece's controls (see PieceManifest::Start).
+    float startGain = 1.0f;      // linear
+    float startTune = 0.0f;      // semitones
+    float startDecay = 1.0f;     // 0..1
 
     // A piece swapped in from another kit plays its own recordings, which
     // may be at another sample rate, through this kit's mics: micGain puts
@@ -253,6 +263,8 @@ struct KitPieceInfo
     PieceRole role = PieceRole::other;
     std::vector<KitArticulationInfo> articulations;
     int defaultChokeNote = -1;
+    float startVolumeDb = 0.0f, startTune = 0.0f;   // a kit preset's starting Volume and Tune for the piece
+    float startDecay = 1.0f;                        // and Decay, 0..1 (see PieceManifest::Start)
     int firstArticulation = 0;        // index of the first one in the kit's (flattened) articulations
     bool hasDirectSignal = true;      // false if no mic that feeds the drum channels recorded it
     std::array<int, 2> hatSteps {};   // steps on the tip and shank openness ladders
@@ -299,6 +311,7 @@ struct KitMicInfo
     int numChannels = 1;
     MicRole role = MicRole::close;
     float defaultDb = 0.0f, defaultPan = 0.0f;
+    float startVolumeDb = 0.0f, startPan = 0.0f;   // a kit preset's starting Volume and Pan (pan -1..1)
     bool direct = true;               // see MicChannel::direct
 };
 

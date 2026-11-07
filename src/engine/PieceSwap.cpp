@@ -111,7 +111,9 @@ namespace
 
     float gainOf (const MicManifest& mic)
     {
-        return juce::Decibels::decibelsToGain (mic.volumeDb, -200.0f) * (mic.invertPolarity ? -1.0f : 1.0f);
+        // With a kit preset's own change, which the fader starts at: the
+        // level the mic plays at untouched, in either kit.
+        return juce::Decibels::decibelsToGain (mic.volumeDb + mic.startVolumeDb, -200.0f) * (mic.invertPolarity ? -1.0f : 1.0f);
     }
 
     std::vector<int> closeMics (const KitManifest& kit)

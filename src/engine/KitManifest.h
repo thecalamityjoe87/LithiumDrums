@@ -87,6 +87,17 @@ struct PieceManifest
     float tuneSemitones = 0.0f;            // the kit's own tuning, under the Tune parameter
     float volumeDb = 0.0f;                 // the kit's own level, under the Volume parameter
     float decay = 1.0f;                    // 0..1, the kit's own decay, scaling the Decay parameter
+
+    // A kit preset's own changes to the piece (on top of its base kit's
+    // settings above). They aren't built into the piece: the piece controls
+    // start at them, so Volume, Tune and Decay show what the preset did.
+    struct Start
+    {
+        float volumeDb = 0.0f;             // the Volume control's starting value
+        float tuneSemitones = 0.0f;        // the Tune control's
+        float decay = 1.0f;                // 0..1, the Decay control's (1 = Natural)
+    } start;
+
     std::vector<ArticulationManifest> articulations;
     std::optional<SwapManifest> swap;      // set if this piece was swapped in from another kit
     juce::String swapProblem;              // why a swap asked for couldn't be made
@@ -100,6 +111,11 @@ struct MicManifest
     MicRole role = MicRole::close;
     float volumeDb = 0.0f, pan = 0.0f;
     bool invertPolarity = false;
+
+    // A kit preset's own changes to the mic's level and pan, which the
+    // mixer's controls start at rather than being built into the mic (see
+    // PieceManifest::Start).
+    float startVolumeDb = 0.0f, startPan = 0.0f;   // pan -1..1, added to `pan`
 };
 
 /** Where a swapped-in piece's audio lives: another kit's audio folder. */

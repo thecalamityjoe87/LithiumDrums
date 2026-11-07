@@ -80,6 +80,7 @@ juce::Result read (const juce::File& file, Contents& result)
     result.kitPath = tree[kitPathId].toString();
     result.kitName = tree[kitNameId].toString();
     result.description = tree[descriptionId].toString();
+    result.version = (int) tree.getProperty (versionId, 1);
     result.swaps = swaps::fromValueTree (tree.getChildWithName (swaps::treeType));
 
     for (const auto& child : tree)

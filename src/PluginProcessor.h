@@ -271,6 +271,8 @@ private:
     /** Returns the request's reset token (0 if it has none, or nothing was requested). */
     std::uint64_t requestKit (const KitRequest&);
     void applyPresetBaseline (const presets::Contents&);
+    void addKitStarts (presets::Contents&, const KitInfo&);
+    void migrateLegacyState (const KitInfo&);
     void handleAsyncUpdate() override;
     void applyLoadResult (const KitLoader::Result&);
     void applySelection();
@@ -404,6 +406,13 @@ private:
     juce::String presetKitId;
     PieceSwaps presetSwaps;
     std::vector<std::pair<juce::RangedAudioParameter*, float>> presetValues;   // as the preset set them
+    std::optional<presets::Contents> legacyBaseline;  // a version 1 preset file's, waiting for its kit (see addKitStarts)
+
+    // A project saved before state version 2 played a kit preset's own
+    // changes under the parameters (see params::addKitStarts); this is the
+    // kit whose starts still have to be added to the restored parameters
+    // once it's loaded. Empty if there's nothing to add. Under stateMutex.
+    juce::File legacyStateKit;
 
     // Message thread only.
     juce::String kitError;

@@ -11,6 +11,10 @@ namespace lithium
 
 namespace
 {
+    // 2: a kit preset's own changes are in the parameters (see params::addKitStarts).
+    const juce::Identifier stateVersion { "stateVersion" };
+    constexpr int currentStateVersion = 2;
+
     const juce::Identifier stateKitFolder { "kitFolder" };
     const juce::Identifier stateKitId { "kitId" };
     const juce::Identifier stateSelectedPiece { "selectedPiece" };
@@ -473,10 +477,12 @@ void LithiumDrumsProcessor::loadKit (const juce::File& folder, bool resetMixer)
         // A kit from the menu is a fresh start: its own pieces, no preset.
         presetFile = juce::File();
         pendingPreset.reset();
+        legacyBaseline.reset();
 
         std::scoped_lock lock (stateMutex);
         force = ! pieceSwaps.empty();
         pieceSwaps.clear();
+        legacyStateKit = juce::File();
     }
 
     requestKit ({ folder, resetMixer ? KitSettings::reset : KitSettings::keep, force });
@@ -604,6 +610,7 @@ void LithiumDrumsProcessor::applyLoadResult (const KitLoader::Result& result)
     // from the menu starts neutral.
     if (reset && pendingPreset != nullptr && pendingPreset->resetToken == result.resetToken)
     {
+        addKitStarts (pendingPreset->contents, *info);
         parameters.replaceState (pendingPreset->contents.parameters.createCopy());
         applyPresetBaseline (pendingPreset->contents);
         pendingPreset.reset();
@@ -633,6 +640,18 @@ void LithiumDrumsProcessor::applyLoadResult (const KitLoader::Result& result)
 
         if (moved)
             params::movePieces (parameters, *info, from);
+    }
+
+    // A project from before state version 2, now that its kit is here; and
+    // the version 1 preset file it was using, to tell whether it has been
+    // changed since.
+    migrateLegacyState (*info);
+
+    if (legacyBaseline.has_value() && ! isKitLoading())
+    {
+        addKitStarts (*legacyBaseline, *info);
+        applyPresetBaseline (*legacyBaseline);
+        legacyBaseline.reset();
     }
 
     // Whether or not anything was reset, the audio thread can now use the
@@ -867,6 +886,7 @@ void LithiumDrumsProcessor::setControllers (const ControllerSettings& controller
 void LithiumDrumsProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = parameters.copyState();
+    state.setProperty (stateVersion, currentStateVersion, nullptr);
     state.setProperty (stateKitFolder, getKitFolder().getFullPathName(), nullptr);
 
     // The id finds the kit again if its folder moves (a new kits folder, or
@@ -927,8 +947,9 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
     const auto savedMapModified = (bool) state[stateMidiMapModified];
 
     const auto savedPreset = state[statePresetFile].toString();
+    const auto legacy = (int) state.getProperty (stateVersion, 1) < 2;
 
-    for (const auto& id : { stateKitFolder, stateKitId, stateSelectedPiece, stateMidiMap, stateMidiMapModified, statePresetFile })
+    for (const auto& id : { stateVersion, stateKitFolder, stateKitId, stateSelectedPiece, stateMidiMap, stateMidiMapModified, statePresetFile })
         state.removeProperty (id, nullptr);
 
     // Swapped pieces: projects from before piece swapping have none.
@@ -991,7 +1012,14 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
     }
 
     if (const auto folder = kitlibrary::resolveSavedKit (savedFolder, savedId, settings->getKitsFolder()); folder != juce::File())
+    {
+        {
+            std::scoped_lock lock (stateMutex);
+            legacyStateKit = legacy ? folder : juce::File();
+        }
+
         requestKit ({ folder, KitSettings::keep, swapsChanged });
+    }
 
     // The preset the project was using, to tell whether it has been changed
     // since. (Hosts may restore state off the message thread; the preset
@@ -1002,11 +1030,33 @@ void LithiumDrumsProcessor::setStateInformation (const void* data, int sizeInByt
             return;
 
         pendingPreset.reset();
+        legacyBaseline.reset();
         presetFile = juce::File::isAbsolutePath (savedPreset) ? juce::File (savedPreset) : juce::File();
         presetValues.clear();
 
+        // If the kit was loaded already (the project plays the kit that
+        // was playing), nothing else will add its starts.
+        const auto info = getKitInfo();
+        const auto kitHere = info != nullptr && ! isKitLoading() && info->folder == getKitFolder();
+
+        if (kitHere)
+            migrateLegacyState (*info);
+
         if (presets::Contents contents; presetFile.existsAsFile() && presets::read (presetFile, contents).wasOk())
-            applyPresetBaseline (contents);
+        {
+            // A version 1 file's values only mean something with its kit's starts.
+            if (contents.version >= presets::formatVersion || kitHere)
+            {
+                if (kitHere)
+                    addKitStarts (contents, *info);
+
+                applyPresetBaseline (contents);
+            }
+            else
+            {
+                legacyBaseline = std::move (contents);
+            }
+        }
 
         sendChangeMessage();
     });
@@ -1045,6 +1095,13 @@ juce::Result LithiumDrumsProcessor::loadPreset (const juce::File& file)
                                    + ", which isn't installed. Download it from the kit browser (Browse), then load the preset again.");
 
     presetFile = file;
+    legacyBaseline.reset();
+
+    {
+        // The preset's settings replace a restored project's.
+        std::scoped_lock lock (stateMutex);
+        legacyStateKit = juce::File();
+    }
 
     // The same kit, with the same pieces: just the settings, at once. (The
     // mixer and EQ smooth their changes, so this doesn't click.)
@@ -1060,6 +1117,7 @@ juce::Result LithiumDrumsProcessor::loadPreset (const juce::File& file)
     if (sameKit)
     {
         pendingPreset.reset();
+        addKitStarts (contents, *info);
         parameters.replaceState (contents.parameters.createCopy());
         applyPresetBaseline (contents);
         sendChangeMessage();
@@ -1114,9 +1172,36 @@ juce::Result LithiumDrumsProcessor::savePreset (const juce::File& file)
 
     presetFile = file;
     pendingPreset.reset();
+    legacyBaseline.reset();
     applyPresetBaseline (contents);
     sendChangeMessage();
     return juce::Result::ok();
+}
+
+void LithiumDrumsProcessor::addKitStarts (presets::Contents& contents, const KitInfo& info)
+{
+    // Version 1 files played a kit preset's own changes inside the kit.
+    if (contents.version < presets::formatVersion)
+    {
+        params::addKitStarts (contents.parameters, parameters, info);
+        contents.version = presets::formatVersion;
+    }
+}
+
+void LithiumDrumsProcessor::migrateLegacyState (const KitInfo& info)
+{
+    {
+        std::scoped_lock lock (stateMutex);
+
+        if (legacyStateKit == juce::File() || legacyStateKit != info.folder)
+            return;
+
+        legacyStateKit = juce::File();
+    }
+
+    auto state = parameters.copyState();
+    params::addKitStarts (state, parameters, info);
+    parameters.replaceState (state);
 }
 
 void LithiumDrumsProcessor::applyPresetBaseline (const presets::Contents& contents)

@@ -163,15 +163,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const SlotName
 
 /** Puts every piece and mic parameter back to its default (0 dB, centred,
     unmuted, no shaping, flat channels, no reverb, the main output), with
-    the kit's own choke notes. The reverb bus and master keep their
-    settings. Message thread. */
+    the kit's own choke notes, and the Volume, Tune, Decay and Pan a kit
+    preset starts its pieces and mics at (KitPieceInfo::startVolumeDb etc.).
+    The reverb bus and master keep their settings. Message thread. */
 void resetForKit (juce::AudioProcessorValueTreeState&, const KitInfo&);
+
+/** Saves made before kit presets started the controls (projects before
+    state version 2, preset files before format 2) played a kit preset's
+    own changes inside the kit, under the controls. This adds them onto the
+    saved values in a parameters' state (as the APVTS keeps it), so the save
+    plays as it did and its controls show the real values. info is the kit
+    the save plays, as loaded. Does nothing for a kit, whose starts are all
+    neutral. */
+void addKitStarts (juce::ValueTree& parameterState, const juce::AudioProcessorValueTreeState&, const KitInfo& info);
 
 /** After a reload that added or removed pieces (filling or emptying a Kit
     tab slot), moves each piece's settings to its new place: from[n] is the
     index piece n had before, or -1 for a new piece, which starts at the
-    defaults (with the kit's choke note). Places past the kit's last piece
-    are reset too. Message thread. */
+    defaults (with the kit's choke note and a kit preset's starts). Places
+    past the kit's last piece are reset too. Message thread. */
 void movePieces (juce::AudioProcessorValueTreeState&, const KitInfo&, const std::vector<int>& from);
 
 /** Puts one part of a channel back to its defaults. Message thread. */

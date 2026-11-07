@@ -1288,15 +1288,25 @@ public:
             expectEquals ((int) m.pieces.size(), 4);
             expectEquals (m.pieces[0].articulations[0].id, juce::String ("rimshot"));    // the preset's order
             expectEquals ((int) m.pieces[0].articulations.size(), 2);
-            expectWithinAbsoluteError (m.pieces[0].tuneSemitones, 3.0f, 1.0e-6f);
-            expectWithinAbsoluteError (m.pieces[0].decay, 0.5f, 1.0e-6f);
+            // The preset's changes are where the controls start; the piece
+            // itself keeps the base kit's settings.
+            const auto& baseSnare = base.pieces[(size_t) base.findPiece ("snare")];
+            expectWithinAbsoluteError (m.pieces[0].tuneSemitones, baseSnare.tuneSemitones, 1.0e-6f);
+            expectWithinAbsoluteError (m.pieces[0].volumeDb, baseSnare.volumeDb, 1.0e-6f);
+            expectWithinAbsoluteError (m.pieces[0].decay, baseSnare.decay, 1.0e-6f);
+            expectWithinAbsoluteError (m.pieces[0].start.tuneSemitones, 3.0f - baseSnare.tuneSemitones, 1.0e-6f);
+            expectWithinAbsoluteError (m.pieces[0].start.volumeDb, -6.0f - baseSnare.volumeDb, 1.0e-6f);
+            expectWithinAbsoluteError (m.pieces[0].start.decay, 0.5f / baseSnare.decay, 1.0e-6f);
             expectEquals (m.pieces[3].id, juce::String ("tom_up"));
+            expectWithinAbsoluteError (m.pieces[1].start.volumeDb, 0.0f, 1.0e-6f);   // the kick is as the base kit has it
 
             // The room mic is gone, from the mic list and from every hit.
             expectEquals ((int) m.mics.size(), (int) base.mics.size() - 1);
             expect (m.findMic ("room") < 0);
             const auto oh = m.findMic ("overheads");
-            expectWithinAbsoluteError (m.mics[(size_t) oh].volumeDb, -3.0f, 1.0e-6f);
+            const auto& baseOh = base.mics[(size_t) base.findMic ("overheads")];
+            expectWithinAbsoluteError (m.mics[(size_t) oh].volumeDb, baseOh.volumeDb, 1.0e-6f);
+            expectWithinAbsoluteError (m.mics[(size_t) oh].startVolumeDb, -3.0f - baseOh.volumeDb, 1.0e-6f);
 
             for (const auto& p : m.pieces)
                 for (const auto& a : p.articulations)
@@ -1318,9 +1328,10 @@ public:
                 expect (info.isPreset);
                 expect (info.folder == presetFolder);
                 expect (info.memoryBytes < shared().info.memoryBytes / 2);
-                expectWithinAbsoluteError (kit->pieces[0].defaultTune, 3.0f, 1.0e-6f);
-                expectWithinAbsoluteError (kit->pieces[0].defaultGain, juce::Decibels::decibelsToGain (-6.0f), 1.0e-4f);
-                expectWithinAbsoluteError (kit->pieces[0].defaultDecay, 0.5f, 1.0e-6f);
+                expectWithinAbsoluteError (kit->pieces[0].startTune, 3.0f, 1.0e-6f);
+                expectWithinAbsoluteError (kit->pieces[0].startGain, juce::Decibels::decibelsToGain (-6.0f), 1.0e-4f);
+                expectWithinAbsoluteError (kit->pieces[0].startDecay, 0.5f, 1.0e-6f);
+                expectWithinAbsoluteError (info.pieces[0].startVolumeDb, -6.0f, 1.0e-6f);
 
                 // The same tom, tuned up five semitones, plays about 2^(-5/12) as long.
                 EngineFeedback feedback;
@@ -1358,6 +1369,117 @@ public:
                 expectEquals (bus.getMagnitude (0, 512) + pieceBus.getMagnitude (0, 512), 0.0f);
                 engine.stopAll (*kit);
             }
+        }
+
+        beginTest ("A kit preset's changes show on its controls, and old saves keep their sound");
+        {
+            // The message loop doesn't run in the tests: load results are applied by hand.
+            auto waitFor = [] (LithiumDrumsProcessor& p, const juce::File& folder)
+            {
+                for (int i = 0; i < 300; ++i)
+                {
+                    p.applyPendingKitLoad();
+
+                    if (const auto info = p.getKitInfo(); info != nullptr && info->folder == folder && ! p.isKitLoading()
+                                                          && ! p.isPresetLoading())
+                        return true;
+
+                    juce::Thread::sleep (20);
+                }
+
+                return false;
+            };
+
+            auto value = [] (LithiumDrumsProcessor& p, const juce::String& id) { return p.getParameters().getRawParameterValue (id)->load(); };
+            auto set = [] (LithiumDrumsProcessor& p, const juce::String& id, float v)
+            {
+                auto* param = p.getParameters().getParameter (id);
+                param->setValueNotifyingHost (param->convertTo0to1 (v));
+            };
+
+            LithiumDrumsProcessor processor;
+            processor.loadKit (presetFolder, true);
+            expect (waitFor (processor, presetFolder), "the preset kit never arrived");
+
+            const auto info = processor.getKitInfo();
+            const auto oh = [&] { for (size_t i = 0; i < info->mics.size(); ++i) if (info->mics[i].id == "overheads") return (int) i; return -1; }();
+            const auto snareVolume = params::pieceParamId (0, "volume"), snareTune = params::pieceParamId (0, "tune");
+            const auto snareDecay = params::pieceParamId (0, "decay"), ohVolume = params::micParamId (oh, "volume");
+
+            // Chosen from the menu, the kit starts its controls where the preset set them.
+            expectWithinAbsoluteError (value (processor, snareVolume), -6.0f, 0.05f);
+            expectWithinAbsoluteError (value (processor, snareTune), 3.0f, 0.01f);
+            expectWithinAbsoluteError (value (processor, snareDecay), 50.0f, 0.1f);
+            expectWithinAbsoluteError (value (processor, ohVolume), -3.0f, 0.05f);
+            expectWithinAbsoluteError (value (processor, params::pieceParamId (3, "tune")), 5.0f, 0.01f);   // tom_up
+            expectWithinAbsoluteError (value (processor, params::pieceParamId (1, "volume")), 0.0f, 0.05f);  // the kick
+
+            // A project saved now comes back as it was.
+            set (processor, snareVolume, -8.0f);
+            juce::MemoryBlock saved;
+            processor.getStateInformation (saved);
+
+            {
+                LithiumDrumsProcessor restored;
+                restored.setStateInformation (saved.getData(), (int) saved.getSize());
+                expect (waitFor (restored, presetFolder));
+                expectWithinAbsoluteError (value (restored, snareVolume), -8.0f, 0.05f);
+                expectWithinAbsoluteError (value (restored, ohVolume), -3.0f, 0.05f);
+            }
+
+            // A project from before state version 2 kept the preset's changes
+            // in the kit: its controls read 0 dB, Natural and no tuning for
+            // the preset as it came. They come back with the changes added.
+            set (processor, snareVolume, -2.0f);
+            set (processor, snareTune, 0.0f);
+            set (processor, snareDecay, 100.0f);
+            set (processor, ohVolume, params::minVolumeDb);   // silenced stays silenced
+            juce::MemoryBlock current, old;
+            processor.getStateInformation (current);
+            auto xml = juce::AudioProcessor::getXmlFromBinary (current.getData(), (int) current.getSize());
+            xml->removeAttribute ("stateVersion");
+            juce::AudioProcessor::copyXmlToBinary (*xml, old);
+
+            {
+                LithiumDrumsProcessor restored;
+                restored.setStateInformation (old.getData(), (int) old.getSize());
+                expect (waitFor (restored, presetFolder));
+                expectWithinAbsoluteError (value (restored, snareVolume), -8.0f, 0.05f);
+                expectWithinAbsoluteError (value (restored, snareTune), 3.0f, 0.01f);
+                expectWithinAbsoluteError (value (restored, snareDecay), 50.0f, 0.1f);
+                expectWithinAbsoluteError (value (restored, ohVolume), params::minVolumeDb, 0.05f);
+            }
+
+            // A preset file of format 1, the same way. It's unmodified once loaded.
+            set (processor, ohVolume, 0.0f);
+            const auto presetFile = presetFolder.getSiblingFile ("Old Format.lithiumpreset");
+            presets::Contents contents;
+            contents.kitId = "preset-test";
+            contents.kitPath = presetFolder.getFullPathName();
+            contents.parameters = processor.getParameters().copyState();
+            expect (presets::write (presetFile, contents).wasOk());
+            presetFile.replaceWithText (presetFile.loadFileAsString().replace ("formatVersion=\"2\"", "formatVersion=\"1\""));
+
+            {
+                LithiumDrumsProcessor other;
+                expect (waitFor (other, testKitFolder));
+                const auto r = other.loadPreset (presetFile);
+                expect (r.wasOk(), r.getErrorMessage());
+                expect (waitFor (other, presetFolder));
+                expectWithinAbsoluteError (value (other, snareVolume), -8.0f, 0.05f);
+                expectWithinAbsoluteError (value (other, snareTune), 3.0f, 0.01f);
+                expectWithinAbsoluteError (value (other, ohVolume), -3.0f, 0.05f);
+                expect (! other.isPresetModified());
+
+                // Loaded again over its own kit (the quick way), it's the same.
+                set (other, snareVolume, 0.0f);
+                expect (other.loadPreset (presetFile).wasOk());
+                expectWithinAbsoluteError (value (other, snareVolume), -8.0f, 0.05f);
+                expectWithinAbsoluteError (value (other, ohVolume), -3.0f, 0.05f);
+                expect (! other.isPresetModified());
+            }
+
+            presetFile.deleteFile();
         }
 
         beginTest ("Presets fail clearly without their base kit");

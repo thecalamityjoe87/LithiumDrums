@@ -451,9 +451,11 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         mic.busChannel = kit->numBusChannels;
         mic.defaultGain = juce::Decibels::decibelsToGain (m.volumeDb, -200.0f) * (m.invertPolarity ? -1.0f : 1.0f);
         mic.defaultPan = m.pan;
+        mic.startGain = juce::Decibels::decibelsToGain (m.startVolumeDb, -200.0f);
+        mic.startPan = m.startPan;
         kit->numBusChannels += m.channels;
 
-        info.mics.push_back ({ m.id, m.name, m.channels, m.role, m.volumeDb, m.pan });
+        info.mics.push_back ({ m.id, m.name, m.channels, m.role, m.volumeDb, m.pan, m.startVolumeDb, m.startPan });
     }
 
     const auto hasCloseMics = std::any_of (manifest.mics.begin(), manifest.mics.end(),
@@ -485,9 +487,17 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         pd.firstArticulation = (int) kit->articulations.size();
         pd.numArticulations = (int) pm.articulations.size();
         pd.defaultChokeNote = pm.chokeNote;
-        pd.defaultGain = juce::Decibels::decibelsToGain (pm.volumeDb, -200.0f);
-        pd.defaultTune = pm.tuneSemitones;
-        pd.defaultDecay = pm.decay;
+        // A piece swapped in from a kit preset keeps that preset's changes
+        // built in: a swap leaves the slot's controls as they were, so they
+        // can't take them.
+        const auto builtIn = pm.swap.has_value() ? pm.start : PieceManifest::Start {};
+        const auto start = pm.swap.has_value() ? PieceManifest::Start {} : pm.start;
+        pd.defaultGain = juce::Decibels::decibelsToGain (pm.volumeDb + builtIn.volumeDb, -200.0f);
+        pd.defaultTune = pm.tuneSemitones + builtIn.tuneSemitones;
+        pd.defaultDecay = pm.decay * builtIn.decay;
+        pd.startGain = juce::Decibels::decibelsToGain (start.volumeDb, -200.0f);
+        pd.startTune = start.tuneSemitones;
+        pd.startDecay = start.decay;
         pd.sampleRate = pm.swap.has_value() ? pm.swap->sampleRate : manifest.sampleRate;
         pd.micGain.fill (1.0f);
 
@@ -496,6 +506,9 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
         pieceInfo.name = pm.name;
         pieceInfo.role = pm.role;
         pieceInfo.defaultChokeNote = pm.chokeNote;
+        pieceInfo.startVolumeDb = start.volumeDb;
+        pieceInfo.startTune = start.tuneSemitones;
+        pieceInfo.startDecay = start.decay;
         pieceInfo.firstArticulation = pd.firstArticulation;
         pieceInfo.slot = pm.slot;
 

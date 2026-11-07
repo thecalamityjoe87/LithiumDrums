@@ -139,19 +139,41 @@ struct EngineParams
         return false;
     }
 
-    /** Neutral settings for a kit: what its pieces and mics play like before
-        anyone touches a control. The returns and the master chain aren't
-        part of the kit, so they keep their settings. */
+    /** Starting settings for a kit: what its pieces and mics play like
+        before anyone touches a control (neutral, or where a kit preset
+        starts them; params::resetForKit sets the parameters the same way).
+        The returns and the master chain aren't part of the kit, so they
+        keep their settings. */
     void resetForKit (const Kit& kit) noexcept
     {
         for (size_t i = 0; i < pieces.size(); ++i)
         {
             pieces[i] = {};
-            pieces[i].chokeNote = i < kit.pieces.size() ? kit.pieces[i].defaultChokeNote : -1;
+
+            if (i < kit.pieces.size())
+            {
+                const auto& pd = kit.pieces[i];
+                pieces[i].chokeNote = pd.defaultChokeNote;
+                pieces[i].volume = pd.startGain;
+                pieces[i].tuneSemitones = pd.startTune;
+                pieces[i].decay = pd.startDecay;
+            }
+            else
+            {
+                pieces[i].chokeNote = -1;
+            }
         }
 
-        for (auto& m : mics)
-            m = {};
+        for (size_t i = 0; i < mics.size(); ++i)
+        {
+            mics[i] = {};
+
+            if (i < (size_t) kit.numMics)
+            {
+                mics[i].volume = kit.mics[i].startGain;
+                mics[i].pan = kit.mics[i].startPan;
+            }
+        }
     }
 };
 

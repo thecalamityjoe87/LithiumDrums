@@ -26,7 +26,10 @@ namespace lithium::presets
 {
 
 inline constexpr auto fileExtension = ".lithiumpreset";
-inline constexpr int formatVersion = 1;
+// 2: a kit preset's own changes (its levels, pans, tunings and decays) are
+//    in the parameters, where the kit starts them; version 1 files played
+//    them inside the kit, under the parameters (see params::addKitStarts).
+inline constexpr int formatVersion = 2;
 
 struct Entry
 {
@@ -47,6 +50,7 @@ struct Contents
     juce::String description;              // optional: what the preset is for
     PieceSwaps swaps;
     juce::ValueTree parameters;            // the parameters' state, as the APVTS keeps it
+    int version = formatVersion;           // the format the file was saved in
 };
 
 juce::Result read (const juce::File&, Contents&);
