@@ -341,9 +341,10 @@ struct KitInfo
 };
 
 /** Assigns pieces to stage slots by role: each slot takes the nth piece of
-    its role, in kit order. Splashes (splash[p], if given) don't count as
-    crashes, as in the MIDI maps. Pieces left over get no slot (they still
-    play and still get a strip); slots left over are shown dimmed. */
+    its role, in kit order. Splashes (splash[p], if given) have the crash role
+    but don't count as crashes, as in the MIDI maps: they go to the splash
+    slot, and crashes never do. Pieces left over get no slot (they still play
+    and still get a strip); slots left over are shown dimmed. */
 inline std::array<int, numStageSlots> assignStageSlots (const std::vector<PieceRole>& roles, const std::vector<bool>& splash = {})
 {
     std::array<int, numStageSlots> result;
@@ -352,10 +353,13 @@ inline std::array<int, numStageSlots> assignStageSlots (const std::vector<PieceR
     for (const auto& s : slotInfos)
     {
         int seen = 0;
+        const auto isSplashSlot = s.slot == StageSlot::splash;
 
         for (size_t p = 0; p < roles.size(); ++p)
         {
-            if (s.role == PieceRole::crash && p < splash.size() && splash[p])
+            const auto isSplash = p < splash.size() && splash[p];
+
+            if (s.role == PieceRole::crash && isSplash != isSplashSlot)
                 continue;
 
             if (roles[p] == s.role && seen++ == s.nth)

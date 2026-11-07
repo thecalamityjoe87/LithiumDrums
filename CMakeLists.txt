@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(LithiumDrums VERSION 0.8.4 LANGUAGES C CXX)
+project(LithiumDrums VERSION 0.8.5 LANGUAGES C CXX)
 
 if(APPLE)
     # JUCE's macOS sources are Objective-C++.
@@ -162,6 +162,7 @@ juce_add_binary_data(LithiumAssets
         assets/kit-renders/crash2.png
         assets/kit-renders/ride.png
         assets/kit-renders/china.png
+        assets/kit-renders/splash.png
         assets/kit-renders/slot-kick.png
         assets/kit-renders/slot-snare.png
         assets/kit-renders/slot-hihat.png
@@ -174,7 +175,22 @@ juce_add_binary_data(LithiumAssets
         assets/kit-renders/slot-china.png
         assets/kit-renders/slot-cowbell.png
         assets/kit-renders/slot-chimes.png
+        assets/kit-renders/slot-gong.png
         assets/kit-renders/slot-splash.png
+        assets/kit-renders/slot-tambourine.png
+        assets/kit-renders/slot-maraca.png
+        assets/kit-renders/slot-shaker.png
+        assets/kit-renders/slot-claves.png
+        assets/kit-renders/slot-belltree.png
+        assets/kit-renders/slot-bucket.png
+        assets/kit-renders/slot-stack.png
+        assets/kit-renders/slot-snap.png
+        assets/kit-renders/slot-clap.png
+        assets/kit-renders/slot-stomp.png
+        assets/kit-renders/slot-stickclick.png
+        assets/kit-renders/slot-cajon.png
+        assets/kit-renders/slot-conga-small.png
+        assets/kit-renders/slot-conga-large.png
         assets/kit-finishes.json
         ${lithium_finish_images}
         assets/midi-maps/lithium-standard.json

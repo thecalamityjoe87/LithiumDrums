@@ -33,6 +33,41 @@ def fade_beyond(img, keep, solid=0.04, gone=0.26, steps=24):
     return Image.merge('RGBA', (r, g, b, ImageChops.multiply(a, mask)))
 
 
+def centre_on_rod(img):
+    """Pads img with transparency for a piece on a mounting rod, as the card
+    centres whole pictures. Sideways, the middle is halfway between the rod
+    and the piece's visual weight: on the rod the piece hangs off to one side,
+    and on the weight the rod does. Up and down, it's the wide part of the piece."""
+    opaque = img.getchannel('A').point(lambda v: 255 if v > 8 else 0)
+    spans = []
+
+    for y in range(img.height):
+        row = opaque.crop((0, y, img.width, y + 1)).getbbox()
+        spans.append((row[0], row[2]) if row else (0, 0))
+
+    widest = max(right - left for left, right in spans)
+    wide = [y for y, (left, right) in enumerate(spans) if right - left >= 0.4 * widest]
+
+    # The top of the rod: the rows above the piece, leaving out whatever is
+    # fixed to the rod just above it.
+    rod = spans[:wide[0] * 3 // 5]
+    rod_x = sum(left + right for left, right in rod) / (2 * len(rod))
+
+    columns = img.getchannel('A').resize((img.width, 1), Image.BOX).tobytes()
+    weight_x = sum((x + 0.5) * v for x, v in enumerate(columns)) / sum(columns)
+
+    cx = (rod_x + weight_x) / 2
+    cy = (wide[0] + wide[-1] + 1) / 2
+    half_w, half_h = max(cx, img.width - cx), max(cy, img.height - cy)
+
+    padded = Image.new('RGBA', (round(half_w * 2), round(half_h * 2)), (0, 0, 0, 0))
+    padded.paste(img, (round(half_w - cx), round(half_h - cy)))
+    return padded
+
+
+CENTRE_ON_ROD = {'cowbell'}
+
+
 def crop_piece(src_folder, name):
     """A piece render, cropped to its pixels (and for a cymbal, its boom faded out)."""
     img = Image.open(os.path.join(src_folder, name + '.png')).convert('RGBA')
@@ -43,7 +78,8 @@ def crop_piece(src_folder, name):
 
     # Pixels the fade left almost transparent don't count toward the crop.
     box = img.getchannel('A').point(lambda v: 255 if v > 8 else 0).getbbox()
-    return img.crop(box)
+    img = img.crop(box)
+    return centre_on_rod(img) if name in CENTRE_ON_ROD else img
 
 
 # python3 crop-layers.py --finish <kit id> <render folder>: one kit's finish of
@@ -77,7 +113,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, 'layers')
 DST = os.path.join(HERE, 'kit-renders')
 STAGE_1X = (1280, 744)
-DRAW_ORDER = ['base', 'china', 'ride', 'crash2', 'crash', 'hihat', 'floor', 'kick', 'tom2', 'tom1', 'snare']
+DRAW_ORDER = ['base', 'china', 'ride', 'crash2', 'crash', 'hihat', 'splash', 'floor', 'kick', 'tom2', 'tom1', 'snare']
 
 pieces = {}
 render_scale = None
@@ -108,7 +144,7 @@ PIECES_SRC = os.path.join(HERE, 'pieces')
 # They're named slot-<piece>.png, as the build embeds files by name and
 # kick.png is already the stage layer.
 if os.path.isdir(PIECES_SRC) and '--layers-only' not in sys.argv:
-    for name in DRAW_ORDER[1:] + ['cowbell', 'chimes', 'splash']:   # and the pieces that aren't on the stage
+    for name in DRAW_ORDER[1:] + ['cowbell', 'chimes', 'gong', 'tambourine', 'maraca', 'shaker', 'claves', 'belltree', 'bucket', 'stack', 'snap', 'clap', 'stomp', 'stickclick', 'cajon', 'conga-small', 'conga-large']:   # and the pieces that aren't on the stage
         if not os.path.exists(os.path.join(PIECES_SRC, name + '.png')):
             print('No piece render for', name, '(slot-' + name + '.png left as it was)')
             continue

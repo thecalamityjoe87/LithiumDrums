@@ -129,6 +129,50 @@ namespace
     {
         return kit.findPiece (mic.id) >= 0;
     }
+
+    /** Which of a kit's mics have a recording of this piece. In a kit with a
+        mic per piece, that's often just the piece's own. */
+    std::vector<bool> micsRecording (const KitManifest& kit, int piece)
+    {
+        std::vector<bool> used (kit.mics.size(), false);
+
+        for (const auto& a : kit.pieces[(size_t) piece].articulations)
+            for (const auto& zone : a.zones)
+                for (const auto& hit : zone.roundRobins)
+                    for (const auto& source : hit.sources)
+                        used[(size_t) source.mic] = true;
+
+        return used;
+    }
+
+    /** Where a close mic goes when the target has no mic of its own for it,
+        as with an empty slot: any close mic carries it to the piece's own
+        channel. The mic of the same name, else one with as many channels,
+        then the most central, so the piece isn't panned off to one side.
+        -1 if the kit has no close mics. */
+    int closeMicFor (const MicManifest& mic, const KitManifest& target)
+    {
+        int best = -1;
+        auto bestScore = 0.0f;
+
+        for (const auto t : closeMics (target))
+        {
+            const auto& candidate = target.mics[(size_t) t];
+
+            if (candidate.id == mic.id)
+                return t;
+
+            const auto score = (candidate.channels == mic.channels ? 0.0f : 10.0f) + std::abs (candidate.pan);
+
+            if (best < 0 || score < bestScore)
+            {
+                best = t;
+                bestScore = score;
+            }
+        }
+
+        return best;
+    }
 }
 
 //==============================================================================
@@ -188,6 +232,10 @@ std::vector<int> mapMics (const KitManifest& source, int sourcePiece, const KitM
     std::vector<int> result (source.mics.size(), -1);
     std::vector<bool> taken (target.mics.size(), false);
 
+    // Only the mics that recorded this piece go anywhere: the others have
+    // nothing of it to carry.
+    const auto recorded = micsRecording (source, sourcePiece);
+
     auto assign = [&] (int s, int t)
     {
         result[(size_t) s] = t;
@@ -198,6 +246,8 @@ std::vector<int> mapMics (const KitManifest& source, int sourcePiece, const KitM
     //    placement where both say (top to top, bottom to bottom), else in order.
     auto sourceOwn = ownMics (source, sourcePiece);
     const auto targetOwn = ownMics (target, targetPiece);
+
+    sourceOwn.erase (std::remove_if (sourceOwn.begin(), sourceOwn.end(), [&] (int m) { return ! recorded[(size_t) m]; }), sourceOwn.end());
 
     std::stable_sort (sourceOwn.begin(), sourceOwn.end(), [&] (int a, int b)
     {
@@ -253,7 +303,7 @@ std::vector<int> mapMics (const KitManifest& source, int sourcePiece, const KitM
     {
         for (const auto s : sourceClose)
         {
-            if (result[(size_t) s] >= 0 || std::find (sourceOwn.begin(), sourceOwn.end(), s) != sourceOwn.end())
+            if (! recorded[(size_t) s] || result[(size_t) s] >= 0 || std::find (sourceOwn.begin(), sourceOwn.end(), s) != sourceOwn.end())
                 continue;
 
             for (const auto t : targetClose)
@@ -285,7 +335,7 @@ std::vector<int> mapMics (const KitManifest& source, int sourcePiece, const KitM
             {
                 for (size_t s = 0; s < source.mics.size(); ++s)
                 {
-                    if (source.mics[s].role != role || result[s] >= 0)
+                    if (source.mics[s].role != role || ! recorded[s] || result[s] >= 0)
                         continue;
 
                     for (size_t t = 0; t < target.mics.size(); ++t)
@@ -305,20 +355,31 @@ std::vector<int> mapMics (const KitManifest& source, int sourcePiece, const KitM
         }
     }
 
-    // 4. If nothing at all would be heard (a kit recorded only as a stereo
-    //    pair meeting one with only close mics, or ambience off on a kit
-    //    with no close mics), the piece's main mic goes onto the target
-    //    piece's own mic, else the kit's overheads, else its first mic.
-    if (std::none_of (result.begin(), result.end(), [] (int t) { return t >= 0; }) && ! source.mics.empty() && ! target.mics.empty())
+    // 4. If nothing at all would be heard (a piece from a kit with a mic per
+    //    piece going to an empty slot, a kit recorded only as a stereo pair
+    //    meeting one with only close mics, or ambience off on a kit with no
+    //    close mics), the piece's main mic goes onto the target piece's own
+    //    mic. Failing that a close mic goes onto a close mic, so the piece
+    //    has its own channel; anything else onto the kit's overheads, else
+    //    its first mic.
+    if (std::none_of (result.begin(), result.end(), [] (int t) { return t >= 0; }) && ! target.mics.empty())
     {
-        const auto s = ! sourceOwn.empty() ? sourceOwn.front() : 0;
-        auto t = ! targetOwn.empty() ? targetOwn.front() : -1;
+        const auto first = std::find (recorded.begin(), recorded.end(), true);
 
-        for (size_t m = 0; m < target.mics.size() && t < 0; ++m)
-            if (target.mics[m].role == MicRole::overheads)
-                t = (int) m;
+        if (first != recorded.end())
+        {
+            const auto s = ! sourceOwn.empty() ? sourceOwn.front() : (int) std::distance (recorded.begin(), first);
+            auto t = ! targetOwn.empty() ? targetOwn.front() : -1;
 
-        result[(size_t) s] = std::max (0, t);
+            if (t < 0 && source.mics[(size_t) s].role == MicRole::close)
+                t = closeMicFor (source.mics[(size_t) s], target);
+
+            for (size_t m = 0; m < target.mics.size() && t < 0; ++m)
+                if (target.mics[m].role == MicRole::overheads)
+                    t = (int) m;
+
+            result[(size_t) s] = std::max (0, t);
+        }
     }
 
     return result;
@@ -453,6 +514,7 @@ void apply (KitManifest& kit, const PieceSwaps& swaps)
         }
 
         const auto micMap = mapMics (*source, sourceIndex, kit, targetIndex, swap.ambience);
+        const auto recorded = micsRecording (*source, sourceIndex);
 
         SwapManifest info;
         info.kitId = source->isPreset ? source->baseId : source->id;
@@ -465,7 +527,7 @@ void apply (KitManifest& kit, const PieceSwaps& swaps)
         {
             if (micMap[s] >= 0)
                 info.micGain[(size_t) micMap[s]] = gainOf (source->mics[s]) / gainOf (kit.mics[(size_t) micMap[s]]);
-            else if (swap.ambience || source->mics[s].role == MicRole::close)
+            else if (recorded[s] && (swap.ambience || source->mics[s].role == MicRole::close))
                 info.dropped.add (source->mics[s].name);
         }
 

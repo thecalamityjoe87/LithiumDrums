@@ -304,6 +304,18 @@ public:
             expectEquals (basalt[(size_t) index (StageSlot::crash2)], 2);
             expectEquals (drs[(size_t) index (StageSlot::china)], -1);
 
+            // A splash has its own slot; without one that slot stays empty,
+            // and a crash never fills it.
+            expectEquals (basalt[(size_t) index (StageSlot::splash)], 1);
+            expectEquals (basalt[(size_t) index (StageSlot::crash)], 0);
+            expectEquals (drs[(size_t) index (StageSlot::splash)], -1);
+
+            // A second splash has no slot: it still plays and has its card.
+            const auto twoSplashes = assignStageSlots ({ R::crash, R::crash, R::crash }, { true, true, false });
+            expectEquals (twoSplashes[(size_t) index (StageSlot::splash)], 0);
+            expectEquals (twoSplashes[(size_t) index (StageSlot::crash)], 2);
+            expectEquals (twoSplashes[(size_t) index (StageSlot::crash2)], -1);
+
             // MuldjordKit: two kicks, three rack toms, a china.
             const auto mj = assignStageSlots ({ R::kick, R::kick, R::snare, R::hihat, R::tom, R::tom, R::tom, R::floorTom,
                                                 R::crash, R::crash, R::ride, R::ride, R::china });
@@ -2259,7 +2271,8 @@ public:
         expect (stage.getSlotAt (at (786.7f, 122.0f)) == StageSlot::crash);
         expect (stage.getSlotAt (at (563.3f, 119.3f)) == StageSlot::crash2);
         expect (stage.getSlotAt (at (474.0f, 183.3f)) == StageSlot::ride);
-        expect (stage.getSlotAt (at (376.0f, 91.3f)) == StageSlot::china);
+        expect (stage.getSlotAt (at (412.7f, 109.3f)) == StageSlot::china);
+        expect (stage.getSlotAt (at (790.7f, 198.0f)) == StageSlot::splash);
         expect (stage.getSlotAt (at (724.7f, 247.3f)) == StageSlot::tom1);
         expect (stage.getSlotAt (at (620.7f, 242.0f)) == StageSlot::tom2);
         expect (stage.getSlotAt (at (511.3f, 332.0f)) == StageSlot::floorTom);

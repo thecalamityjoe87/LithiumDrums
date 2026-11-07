@@ -9,16 +9,47 @@ namespace lithium
 
 namespace
 {
+    /** The render of a percussion piece, found by its name; null if there's none. */
+    const char* percussionPicture (const juce::String& words)
+    {
+        // A word in the piece's id or name, and the picture it means.
+        static constexpr std::pair<const char*, const char*> byWord[] {
+            { "cowbell", "cowbell" }, { "chime", "chimes" }, { "gong", "gong" },
+            { "bell tree", "belltree" }, { "bucket", "bucket" }, { "clap", "clap" },
+            { "clave", "claves" }, { "maraca", "maraca" }, { "shaker", "shaker" },
+            { "snap", "snap" }, { "stack", "stack" }, { "stick", "stickclick" },
+            { "stomp", "stomp" },
+        };
+
+        for (const auto& [word, picture] : byWord)
+            if (words.contains (word))
+                return picture;
+
+        return nullptr;
+    }
+
     /** The rendered picture of a piece (assets/kit-renders/slot-*.png: each
-        piece of the stage kit rendered alone, plus a cowbell and a chime).
-        The nth rack tom or crash alternates between the stage's two, so
-        neighbouring cards differ. Other percussion is found by its name; null
-        for percussion there's no render of. */
+        piece of the stage kit rendered alone, plus the percussion that isn't
+        on the stage). The nth rack tom or crash alternates between the
+        stage's two, so neighbouring cards differ. Null for percussion there's
+        no render of. */
     juce::Image pictureFor (const KitPieceInfo& piece, int nth)
     {
         const char* name = nullptr;
         const auto role = piece.role;
         const auto words = (piece.id + " " + piece.name).toLowerCase();
+
+        // Some kits play hand percussion from a drum's slot (Cobblestone's
+        // cajon is its kick, its large conga its floor tom), so these go by
+        // what they are, not the role they fill.
+        if (words.contains ("cajon"))
+            return kitart::slotPicture (piece.recordedIn, "cajon");
+
+        if (words.contains ("conga"))
+            return kitart::slotPicture (piece.recordedIn, words.contains ("large") || words.contains ("low") ? "conga-large" : "conga-small");
+
+        if (words.contains ("tambourine"))
+            return kitart::slotPicture (piece.recordedIn, "tambourine");
 
         switch (role)
         {
@@ -31,7 +62,7 @@ namespace
             case PieceRole::ride:     name = "ride"; break;
             case PieceRole::china:    name = "china"; break;
             case PieceRole::other:
-                name = words.contains ("cowbell") ? "cowbell" : words.contains ("chime") ? "chimes" : nullptr;
+                name = percussionPicture (words.replaceCharacter ('_', ' '));
                 break;
         }
 

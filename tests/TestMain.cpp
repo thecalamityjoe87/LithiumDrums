@@ -13,6 +13,10 @@
 //                                     check every installed kit and preset against every built-in MIDI map:
 //                                     what each map reaches, what only spare notes reach, and (unless
 //                                     --no-play) that every articulation makes a sound
+//   LithiumDrumsTests --play-audit [--host <kit id>,...]
+//                                     through the real processor, as the UI does it: every piece of every installed
+//                                     kit played from its card, then every extra piece of every kit added to an empty
+//                                     slot of each host kit (default basalt-onyx) and played from its card; lists what's silent
 //   LithiumDrumsTests --swap-audit
 //                                     swap every installed kit's pieces into every other kit and report where the
 //                                     mics go and anything left silent; then play real swaps (needs DRSKit Full,
@@ -210,6 +214,233 @@ private:
 };
 
 //==============================================================================
+/** The loudest the main output gets after a piece is played from its card.
+    Lets the last sound die away first, so it can't pass for this one. */
+static float playedPeak (lithium::LithiumDrumsProcessor& processor, juce::AudioBuffer<float>& buffer, int piece)
+{
+    const auto block = [&]
+    {
+        juce::MidiBuffer none;
+        processor.processBlock (buffer, none);
+        return std::max (buffer.getMagnitude (0, 0, buffer.getNumSamples()), buffer.getMagnitude (1, 0, buffer.getNumSamples()));
+    };
+
+    auto residual = 1.0f;
+
+    for (int i = 0; i < 4000 && residual > 0.0002f; ++i)
+        residual = block();
+
+    processor.audition (piece, lithium::LithiumDrumsProcessor::auditionVelocity);
+    float peak = 0.0f;
+
+    for (int i = 0; i < 40; ++i)
+    {
+        peak = std::max (peak, block());
+        juce::Thread::sleep (1);     // time for the disk thread, in a streaming kit
+    }
+
+    return peak > residual * 4.0f ? peak : 0.0f;    // a tail still ringing isn't this piece
+}
+
+/** Waits for a load to finish, keeping the processor running as a host would. */
+static bool waitForLoad (lithium::LithiumDrumsProcessor& processor, juce::AudioBuffer<float>& buffer)
+{
+    for (int i = 0; i < 12000; ++i)
+    {
+        processor.applyPendingKitLoad();
+        juce::MidiBuffer none;
+        processor.processBlock (buffer, none);
+
+        if (! processor.isKitLoading() && processor.getKitInfo() != nullptr)
+            return true;
+
+        juce::Thread::sleep (10);
+    }
+
+    return false;
+}
+
+static int playAudit (const juce::StringArray& args)
+{
+    using namespace lithium;
+
+    const auto library = kitlibrary::scan (juce::SharedResourcePointer<Settings>()->getKitsFolder());
+    const auto hosts = juce::StringArray::fromTokens (args.contains ("--host") ? args[args.indexOf ("--host") + 1] : juce::String ("basalt-onyx"), ",", {});
+    constexpr float silence = 0.0005f;       // -66 dB
+    int played = 0, silent = 0;
+
+    LithiumDrumsProcessor processor;
+    juce::AudioBuffer<float> buffer (processor.getTotalNumOutputChannels(), 512);
+    processor.prepareToPlay (44100.0, 512);
+
+    // The kits' extra pieces, to add to the hosts below.
+    struct Extra { juce::String kitId, pieceId, label; };
+    std::vector<Extra> extras;
+
+    // --saved-state: start from what the standalone saved, and report what's in it.
+    if (args.contains ("--saved-state"))
+    {
+        const auto file = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (".config/Lithium Drums.settings");
+        const auto settingsXml = juce::parseXML (file);
+        juce::MemoryBlock saved;
+
+        if (settingsXml != nullptr)
+            for (auto* v : settingsXml->getChildIterator())
+                if (v->getStringAttribute ("name") == "filterState")
+                    saved.fromBase64Encoding (v->getStringAttribute ("val"));
+
+        if (const auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), (int) saved.getSize()))
+            xml->writeTo (juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--saved-state") + 1]));
+
+        processor.setStateInformation (saved.getData(), (int) saved.getSize());
+        const auto loaded = waitForLoad (processor, buffer);
+        const auto info = processor.getKitInfo();
+        std::cout << "saved state: " << (loaded && info != nullptr ? info->id : juce::String ("no kit")) << ", map " << processor.getMidiMap().name << ", "
+                  << processor.getPieceSwaps().size() << " swaps" << std::endl;
+
+        if (info != nullptr)
+        {
+            const auto table = resolveMidiMap (processor.getMidiMap(), *info);
+
+            for (size_t p = 0; p < info->pieces.size(); ++p)
+            {
+                const auto& piece = info->pieces[p];
+                const auto numArticulations = (int) piece.articulations.size();
+                juce::StringArray notes;
+
+                for (int n = 0; n < 128; ++n)
+                {
+                    const auto& t = table.targets[(size_t) n];
+
+                    if (t.articulation >= piece.firstArticulation && t.articulation < piece.firstArticulation + numArticulations)
+                        notes.add (juce::String (n) + (t.spare ? " (spare)" : ""));
+                }
+
+                const auto peak = playedPeak (processor, buffer, (int) p);
+                std::cout << "  " << piece.id << " [" << piece.name << "] peak " << juce::Decibels::gainToDecibels (peak) << " dB, notes " << notes.joinIntoString (" ") << std::endl;
+            }
+        }
+    }
+
+    std::cout << "== Each kit's own pieces, played from their cards" << std::endl;
+
+    for (const auto& e : library.kits)
+    {
+        if (e.summary.isPreset)
+            continue;
+
+        processor.loadKit (e.folder, true);
+
+        if (! waitForLoad (processor, buffer))
+        {
+            std::cout << e.summary.id << ": didn't load: " << processor.getKitError() << std::endl;
+            ++silent;
+            continue;
+        }
+
+        const auto info = processor.getKitInfo();
+        juce::StringArray quiet;
+
+        for (size_t p = 0; p < info->pieces.size(); ++p)
+        {
+            const auto peak = playedPeak (processor, buffer, (int) p);
+            ++played;
+
+            if (peak < silence)
+            {
+                ++silent;
+                quiet.add (info->pieces[p].name);
+            }
+
+            if (info->pieces[p].role == PieceRole::other)
+                extras.push_back ({ e.summary.id, info->pieces[p].id, info->pieces[p].name + " (" + e.summary.id + ")" });
+        }
+
+        std::cout << e.summary.id << ": " << info->pieces.size() << " pieces" << (quiet.isEmpty() ? juce::String() : ", SILENT: " + quiet.joinIntoString (", ")) << std::endl;
+    }
+
+    std::cout << played << " played, " << silent << " silent\n\n== Extras added to an empty slot" << std::endl;
+    int added = 0, addedSilent = 0;
+
+    for (const auto& hostId : hosts)
+    {
+        const auto* host = library.findById (hostId);
+
+        if (host == nullptr)
+        {
+            std::cout << hostId << ": not installed" << std::endl;
+            continue;
+        }
+
+        for (const auto& extra : extras)
+        {
+            if (extra.kitId == hostId)
+                continue;
+
+            processor.loadKit (host->folder, true);
+
+            if (! waitForLoad (processor, buffer))
+                continue;
+
+            // The first slot the kit has nothing in that takes any piece.
+            const auto before = processor.getKitInfo();
+            int slot = -1;
+
+            for (int s = 0; s < kitslots::numSlots && slot < 0; ++s)
+                if (before->slotOwners[(size_t) s].id.isEmpty() && kitslots::all()[(size_t) s].kind == kitslots::Kind::extra)
+                    slot = s;
+
+            if (slot < 0)
+            {
+                std::cout << hostId << ": no free extra slot" << std::endl;
+                break;
+            }
+
+            const auto id = kitslots::addedPieceId (slot);
+            processor.setPieceSwap ({ id, extra.kitId, extra.pieceId, true });
+
+            // A swap's reload starts a moment later, so wait for the piece itself.
+            std::shared_ptr<const KitInfo> info;
+            int index = -1;
+
+            for (int i = 0; i < 6000 && index < 0; ++i)
+            {
+                waitForLoad (processor, buffer);
+                info = processor.getKitInfo();
+
+                for (size_t p = 0; p < info->pieces.size(); ++p)
+                    if (info->pieces[p].id == id)
+                        index = (int) p;
+
+                if (index < 0)
+                    juce::Thread::sleep (10);
+            }
+
+            ++added;
+
+            if (index < 0)
+            {
+                ++addedSilent;
+                std::cout << extra.label << " in " << hostId << ": NOT ADDED" << std::endl;
+                continue;
+            }
+
+            const auto peak = playedPeak (processor, buffer, index);
+            const auto& piece = info->pieces[(size_t) index];
+
+            if (peak < silence)
+            {
+                ++addedSilent;
+                std::cout << extra.label << " in " << hostId << ": SILENT (signal " << (piece.hasDirectSignal ? "yes" : "no")
+                          << "; " << piece.swapNotes.joinIntoString ("; ") << ")" << std::endl;
+            }
+        }
+    }
+
+    std::cout << added << " added, " << addedSilent << " silent" << std::endl;
+    return silent + addedSilent == 0 ? 0 : 1;
+}
+
 /** --swap-audit: every installed kit's pieces swapped into every other kit
     (on the manifests: which mics go where, and whether anything is left to
     hear), then a few real swaps loaded and played through the processor. */
@@ -1535,6 +1766,9 @@ int main (int argc, char* argv[])
 
     if (args.contains ("--swap-audit"))
         return swapAudit();
+
+    if (args.contains ("--play-audit"))
+        return playAudit (args);
 
     if (args.contains ("--idle-check"))
         return idleCheck (args);

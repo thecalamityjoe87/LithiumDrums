@@ -1,5 +1,6 @@
-import bpy, math, sys, os, json
-from mathutils import Vector, Euler
+import bpy, bmesh, math, sys, os, json
+from mathutils import Vector, Euler, Matrix
+from mathutils.bvhtree import BVHTree
 
 args = dict(a.split('=') for a in sys.argv[1:] if '=' in a)
 OUT = args.get('out', os.path.dirname(os.path.abspath(__file__)))
@@ -78,6 +79,7 @@ M = {
     'rubber': mat('rubber', (0.012, 0.012, 0.013), rough=0.85),
     'plastic': mat('plastic', (0.02, 0.02, 0.022), rough=0.35),
     'cast': mat('cast', (0.42, 0.43, 0.44), metal=1.0, rough=0.42),   # cast aluminium pedal parts
+    'rope': mat('rope', (0.30, 0.20, 0.10), rough=0.95),                # natural fibre
     'wood': mat('wood', (0.78, 0.56, 0.34), rough=0.6),                 # bare maple inside the shell
 }
 
@@ -321,7 +323,7 @@ KIT['ride'] = cymbal('ride', 0.267, (-0.66, 0.1, 1.06), (R(-12), R(8), 0))
 # kit's centre. Tilting it toward the drummer like the other cymbals turns it
 # edge-on to the camera, and it no longer reads as a china.
 CHINA_ROT = (R(180), R(12), 0)
-KIT['china'] = cymbal('china', 0.229, (-1.02, 0.36, 1.32), CHINA_ROT, china=True, felt=False)
+KIT['china'] = cymbal('china', 0.229, (-0.90, 0.36, 1.26), CHINA_ROT, china=True, felt=False)
 
 # ---------- hardware (base layer) ----------
 # The hardware belongs to the base layer on the stage. For the slot pictures
@@ -461,7 +463,7 @@ cymbal_stand(0.66, -0.20, 1.06, *CRASH1, 0.229, owner='crash')
 # In the gap between the kick and the floor tom, in front of the kit.
 cymbal_stand(-0.62, -0.30, 1.06, *CRASH2, 0.229, facing=90, owner='crash2')
 cymbal_stand(-0.98, 0.02, 0.86, (-0.66, 0.1, 1.06), (R(-12), R(8), 0), 0.267, facing=150, owner='ride')
-cymbal_stand(-1.30, 0.50, 1.02, (-1.02, 0.36, 1.32), CHINA_ROT, 0.229, china=True, owner='china')
+cymbal_stand(-1.17, 0.21, 0.96, (-0.90, 0.36, 1.26), CHINA_ROT, 0.229, china=True, owner='china')   # in front, the boom reaching back like the others'
 
 # Hi-hat: the tripod is turned so no leg hides the chain from the camera,
 # with the pedal between two of its legs.
@@ -578,8 +580,8 @@ def mesh_object(name, verts, faces, cname, m):
     return o
 
 # Cowbell: tapered black steel, the sides bowing out a little toward the
-# mouth, with a mounting clamp; turned three quarters to the camera with its
-# mouth tipped up, so you look into it.
+# mouth, with a mounting clamp on its closed back, held by a wing nut; turned
+# three quarters to the camera with its mouth tipped up, so you look into it.
 cb = bpy.data.objects.new('cowbell', None); cb.location = (0.0, -1.0, 0.7); cb.rotation_euler = (R(24), 0, R(-32))
 scn.collection.objects.link(cb); coll('cowbell').objects.link(cb); scn.collection.objects.unlink(cb)
 # Rings of the bell from the mouth to the closed back: (y, width, height).
@@ -596,8 +598,12 @@ bell.parent = cb
 sol = bell.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.003
 bev = bell.modifiers.new('b', 'BEVEL'); bev.width = 0.008; bev.segments = 4
 sub = bell.modifiers.new('sub', 'SUBSURF'); sub.levels = 1; sub.render_levels = 2
-box((0.03, 0.05, 0.016), (0, 0.045, 0.03), m='chrome', parent=cb, cname='cowbell')                         # clamp
-cyl(0.0055, 0.09, (0, 0.045, 0.078), m='chrome', parent=cb, cname='cowbell', verts=16)                      # mounting rod
+box((0.03, 0.02, 0.036), (0, 0.095, 0), m='chrome', parent=cb, cname='cowbell')                             # clamp, on the closed back
+cyl(0.0055, 0.17, (0, 0.1, 0.02), rot=(R(-24), 0, 0), m='chrome', parent=cb, cname='cowbell', verts=16)     # mounting rod, upright through the clamp
+cyl(0.003, 0.02, (0, 0.115, 0), rot=(R(90), 0, 0), m='chrome', parent=cb, cname='cowbell', verts=12)        # wing nut on the clamp's back: its stud,
+cyl(0.0058, 0.011, (0, 0.113, 0), rot=(R(90), 0, 0), m='chrome', parent=cb, cname='cowbell', verts=16)      # hub
+for sx in (-1, 1):
+    blob((0.0105, 0.008, 0.0022), (sx * 0.0115, 0.117, 0), m='chrome', parent=cb, cname='cowbell')          # and wings
 
 # Bell chime: a single brass chime tube, hanging by its cord from a small
 # bracket on a mounting rod, turned a little so it reads as round.
@@ -611,21 +617,418 @@ cyl(0.0022, 0.03, (0.0, 0, -0.012), m='cast', parent=ch, cname='chimes', verts=8
 cyl(0.014, CHIME_L, (0.0, 0, -0.027 - CHIME_L / 2), m='brass', parent=ch, cname='chimes', verts=32)         # the chime
 torus(0.014, 0.0018, (0.0, 0, -0.027), m='brass', parent=ch, cname='chimes')                                # rolled top edge
 
-# Splash: a 10" cymbal (the crashes are 18"), on a boom like the crashes'.
-# Its stand's tripod and column are in the base collection, so everything
-# made here is remembered and hidden outside mode=pieces.
-before_splash = mark()
-SPLASH = ((0.0, -0.55, 1.2), (R(-17), R(-6), 0))
-KIT['splash'] = cymbal('splash', 0.127, *SPLASH)
-cymbal_stand(0.28, -0.8, 1.0, *SPLASH, 0.127, owner='splash')
-splash_objects = [o for o in scn.objects if o not in before_splash]
+# Gong: a 24" bronze chau gong (a raised centre boss, a flat face and a
+# turned-back rim) hung by two ropes from the top bar of a black steel frame,
+# turned a little so it reads as round. Built in world coordinates, so the
+# frame's parts are placed with gong_at().
+GONG_BASE, GONG_YAW, GONG_R, GONG_Z = Vector((0.0, 0.1, 0.0)), R(-25), 0.305, 0.62
+def gong_at(x, y, z):
+    return GONG_BASE + Euler((0, 0, GONG_YAW)).to_matrix() @ Vector((x, y, z))
 
-EXTRAS = ('cowbell', 'chimes', 'splash')
+gong = lathe('gong_face', [(0.001, 0.016), (0.07, 0.016), (0.09, 0.002), (GONG_R * 0.9, 0.0), (GONG_R * 0.97, -0.008), (GONG_R, -0.03), (GONG_R, -0.07)], seg=128)
+gong.location = gong_at(0, -0.05, GONG_Z); gong.rotation_euler = (R(90), 0, GONG_YAW)   # the face looks toward the camera; the rim's middle is in the frame's plane
+sol = gong.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.004
+place(gong, None, 'gong', 'bronze')
+
+FRAME_X, FRAME_TOP, FOOT_Y = 0.42, 1.06, 0.3
+
+def rope(a, b, strands=3, lay=0.045, radius=0.0028, strand_r=0.0026, steps=110, sides=10):
+    """A laid rope from point a to point b (in the gong's frame): strands
+    twisted round each other, one turn every `lay`. A mesh in world coordinates."""
+    a, b = Vector(a), Vector(b)
+    d = (b - a).normalized(); u = d.cross(Vector((0, 1, 0))).normalized(); v = d.cross(u)
+    verts, faces = [], []
+    for s in range(strands):
+        phase = 2 * math.pi * s / strands
+        pts = []
+        for i in range(steps + 1):
+            t = i / steps
+            ang = phase + 2 * math.pi * (b - a).length * t / lay
+            pts.append(a + (b - a) * t + radius * (math.cos(ang) * u + math.sin(ang) * v))
+        base = len(verts)
+        for i, p in enumerate(pts):
+            tan = (pts[min(i + 1, steps)] - pts[max(i - 1, 0)]).normalized()
+            n1 = tan.cross(Vector((0, 1, 0))).normalized(); n2 = tan.cross(n1)
+            for k in range(sides):
+                th = 2 * math.pi * k / sides
+                verts.append(tuple(gong_at(*(p + strand_r * (math.cos(th) * n1 + math.sin(th) * n2)))))
+        for i in range(steps):
+            for k in range(sides):
+                a0 = base + i * sides + k; a1 = base + i * sides + (k + 1) % sides
+                faces.append((a0, a1, a1 + sides, a0 + sides))
+    return mesh_object('rope', verts, faces, 'gong', 'rope')
+
+HOLE_R = 0.0065   # a 13 mm hole through each side of the rim, for a rope about 11 mm across
+for sx in (-1, 1):
+    tube(gong_at(sx * FRAME_X, 0, 0.02), gong_at(sx * FRAME_X, 0, FRAME_TOP), 0.017, m='black', cname='gong')            # upright
+    tube(gong_at(sx * FRAME_X, -FOOT_Y, 0.02), gong_at(sx * FRAME_X, FOOT_Y, 0.02), 0.017, m='black', cname='gong')    # foot
+    tube(gong_at(sx * FRAME_X, -FOOT_Y * 0.9, 0.025), gong_at(sx * FRAME_X, 0, 0.42), 0.009, m='black', cname='gong')   # braces
+    tube(gong_at(sx * FRAME_X, FOOT_Y * 0.9, 0.025), gong_at(sx * FRAME_X, 0, 0.42), 0.009, m='black', cname='gong')
+    for sy in (-1, 1):
+        blob((0.022, 0.022, 0.016), gong_at(sx * FRAME_X, sy * FOOT_Y, 0.012), m='rubber', cname='gong')                # feet
+    # A hole through the rim near the top, cut straight through the flange.
+    # The rope goes up from a knot inside the rim, through the hole, to the
+    # top bar, and is wrapped a few times round the bar.
+    ex = sx * 0.16
+    ry = math.sqrt(GONG_R ** 2 - ex ** 2)
+    out = Vector((ex / GONG_R, 0, ry / GONG_R))              # straight out from the gong's centre
+    hole = Vector((ex, 0, GONG_Z + ry))
+    cutter = tube(gong_at(*(hole - out * 0.02)), gong_at(*(hole + out * 0.02)), HOLE_R, m=None, cname='gong')
+    cutter.hide_render = True; cutter.hide_viewport = True
+    cut = gong.modifiers.new('hole', 'BOOLEAN'); cut.operation = 'DIFFERENCE'; cut.object = cutter; cut.solver = 'EXACT'
+    knot = hole - out * 0.014
+    rope(knot, (ex, 0, FRAME_TOP - 0.02))
+    blob((0.013, 0.011, 0.013), gong_at(*knot), m='rope', cname='gong')
+    for i in range(3):
+        wrap = torus(0.0206, 0.0036, gong_at(ex + (i - 1) * 0.008, 0, FRAME_TOP), m='rope', cname='gong')
+        wrap.rotation_euler = (0, R(90), GONG_YAW)    # the ring's axis along the bar
+tube(gong_at(-FRAME_X, 0, FRAME_TOP), gong_at(FRAME_X, 0, FRAME_TOP), 0.017, m='black', cname='gong')                   # top bar
+for sx in (-1, 1):
+    blob((0.024, 0.024, 0.024), gong_at(sx * FRAME_X, 0, FRAME_TOP), m='black', cname='gong')                            # corner joints
+
+# Splash: a 10" cymbal (the crashes are 18"), low and between the snare and
+# the hi-hat, on its own boom stand beside the kit.
+SPLASH = ((0.45, 0.3, 0.96), (R(-16), R(-12), 0))
+KIT['splash'] = cymbal('splash', 0.127, *SPLASH)
+cymbal_stand(0.77, 0.12, 0.85, *SPLASH, 0.127, spread=0.24, owner='splash')
+
+# ---------- more percussion (slot pictures only) ----------
+# Like the cowbell and chimes: modelled only for the slot cards, hidden in
+# every other mode. Small things are drawn bigger than life so their pictures
+# are as detailed as the drums'. Parts are placed in each piece's own frame
+# (an empty), so they follow its position and tilt.
+M['rosewood'] = mat('rosewood', (0.16, 0.05, 0.025), rough=0.35, coat=0.4)
+M['skin'] = mat('skin', (0.5, 0.31, 0.22), rough=0.55)
+M['galv'] = mat('galv', (0.58, 0.6, 0.62), metal=1.0, rough=0.34)   # galvanised steel
+
+def frame(name, loc, rot, parent=None):
+    e = empty(name, loc, rot)
+    if parent: e.parent = parent
+    return e
+
+def limb(a, b, r, m, parent, cname, ends=True):
+    """A rounded rod from a to b, in the parent's frame (a finger, a handle)."""
+    a, b = Vector(a), Vector(b); d = b - a
+    o = cyl(r, d.length, (a + b) / 2, m=m, parent=parent, cname=cname, verts=20)
+    o.rotation_mode = 'QUATERNION'; o.rotation_quaternion = d.to_track_quat('Z', 'Y')
+    if ends:
+        for p in (a, b):
+            blob((r, r, r), p, m=m, parent=parent, cname=cname)
+    return o
+
+def revolve(name, profile, parent, cname, m, thickness=None, seg=64, smooth_levels=0):
+    o = lathe(name, profile, seg)
+    if thickness: o.modifiers.new('s', 'SOLIDIFY').thickness = thickness
+    if smooth_levels:
+        sub = o.modifiers.new('sub', 'SUBSURF'); sub.levels = smooth_levels; sub.render_levels = smooth_levels + 1
+    return place(o, parent, cname, m)
+
+# Tambourine: a headed tambourine like the usual product shot: a white head
+# under a black counter-hoop, a figured wood shell with four slots holding
+# pairs of nickel jingles, and a nickel tuning bracket between each slot.
+# Tilted up toward the camera so the shell and jingles show.
+TAMB_R = 0.15
+M['tamb_wood'] = finish_mat('tamb_wood', {'style': 'stain', 'color': [0.16, 0.05, 0.015], 'color2': [0.5, 0.22, 0.07], 'rough': 0.38, 'coat': 0.5})
+M['head_white'] = mat('head_white', (0.9, 0.92, 0.95), rough=0.32, coat=0.3)
+M['hoop'] = mat('hoop', (0.012, 0.012, 0.014), metal=0.8, rough=0.3)
+tb = frame('tambourine', (0.0, -1.0, 0.75), (R(31.8), 0, R(-49.4)))
+shell = cyl(TAMB_R, 0.06, (0, 0, 0), m='tamb_wood', parent=tb, cname='tambourine', verts=96, fill='NOTHING')
+shell.modifiers.new('s', 'SOLIDIFY').thickness = 0.012
+cyl(TAMB_R - 0.004, 0.003, (0, 0, 0.026), m='head_white', parent=tb, cname='tambourine', verts=96)
+torus(TAMB_R - 0.001, 0.0065, (0, 0, 0.03), m='hoop', parent=tb, cname='tambourine')                     # the counter-hoop
+for k in range(4):
+    a = R(45 + 90 * k)
+    c = Vector((TAMB_R * math.cos(a), TAMB_R * math.sin(a), -0.004))
+    tangent = Vector((-math.sin(a), math.cos(a), 0))
+    slot = box((0.13, 0.05, 0.02), tuple(c), rot=(0, 0, a + R(90)), parent=tb, cname='tambourine')
+    slot.hide_render = True; slot.hide_viewport = True
+    shell.modifiers.new('slot', 'BOOLEAN').object = slot
+    shell.modifiers[-1].operation = 'DIFFERENCE'; shell.modifiers[-1].solver = 'EXACT'
+    for pair in (-0.032, 0.032):
+        for face in (-1, 1):
+            j = cyl(0.027, 0.0014, tuple(c + tangent * (pair + face * 0.0045)), rot=(R(90), 0, a), m='chrome', parent=tb, cname='tambourine', verts=32)
+            j.rotation_euler = (R(90 + face * 4), 0, a)                                                    # each pair opens a little, like real jingles
+        limb(tuple(c + tangent * (pair - 0.012)), tuple(c + tangent * (pair + 0.012)), 0.0022, 'chrome', tb, 'tambourine', ends=False)   # the pin
+for k in range(4):                                                                                         # tuning brackets: a hook over the hoop and a strap down the shell
+    a = R(90 * k)
+    box((0.016, 0.018, 0.0045), (( TAMB_R - 0.003) * math.cos(a), (TAMB_R - 0.003) * math.sin(a), 0.0395), rot=(0, 0, a), m='chrome', parent=tb, cname='tambourine')
+    box((0.0035, 0.016, 0.052), ((TAMB_R + 0.0018) * math.cos(a), (TAMB_R + 0.0018) * math.sin(a), 0.008), rot=(0, 0, a), m='chrome', parent=tb, cname='tambourine')
+    cyl(0.0042, 0.006, ((TAMB_R + 0.004) * math.cos(a), (TAMB_R + 0.004) * math.sin(a), -0.012), rot=(0, R(90), a), m='chrome', parent=tb, cname='tambourine', verts=16)   # bolt head
+
+# Maracas: a pair of rosewood gourds held up on their handles, leaning apart.
+maraca_profile = [(0.0005, 0.0)]
+for i in range(1, 15):
+    t = i / 14 * 0.85 * math.pi
+    maraca_profile.append((0.055 * math.sin(t), 0.056 - 0.056 * math.cos(t)))
+maraca_profile += [(0.017, 0.122), (0.0125, 0.138), (0.012, 0.17), (0.0145, 0.186), (0.017, 0.196), (0.016, 0.206), (0.011, 0.214), (0.0005, 0.217)]
+for sx in (-1, 1):
+    g = frame('maraca', (sx * 0.025, -1.0, 0.62), (R(-12), sx * R(16), 0))    # at the handle's end
+    held = frame('maraca', (0, 0, 0.217), (R(180), 0, 0), parent=g)           # the profile runs gourd first, so turn it over
+    revolve('maraca', maraca_profile, held, 'maraca', 'rosewood', smooth_levels=1)
+    torus(0.0175, 0.0025, (0, 0, 0.13), m='brass', parent=held, cname='maraca')
+
+# Shaker: a glossy plastic egg shaker, leaning, with a seam round its middle.
+M['shaker_shell'] = mat('shaker_shell', (0.03, 0.35, 0.42), rough=0.3, coat=0.5)
+EGG = [(0.05 * math.sin(t) * (1 + 0.12 * math.cos(t)) + 0.0005, 0.07 - 0.07 * math.cos(t)) for t in (i / 24 * math.pi for i in range(25))]
+g = frame('shaker', (0.0, -1.0, 0.7), (R(-28), R(24), 0))
+g.scale = (1.4, 1.4, 1.4)
+revolve('shaker', EGG, g, 'shaker', 'shaker_shell', smooth_levels=1)
+torus(0.0505, 0.0016, (0, 0, 0.07), m='black', parent=g, cname='shaker')   # sunk half into the shell: a seam
+
+# Claves: two rosewood sticks crossed, turned a little toward the camera. The
+# ends are cut flat with a small eased edge; the extra rings keep the smooth
+# shading from rounding the flat face.
+CLAVE_R, CLAVE_HALF = 0.017, 0.15
+CLAVE_END = [(0.000001, 0), (CLAVE_R - 0.0024, 0), (CLAVE_R - 0.0012, 0), (CLAVE_R - 0.0002, 0.001), (CLAVE_R, 0.0022), (CLAVE_R, 0.0036)]
+CLAVE = [(r, z - CLAVE_HALF) for r, z in CLAVE_END] + [(r, CLAVE_HALF - z) for r, z in reversed(CLAVE_END)]
+g = frame('claves', (0.0, -1.0, 0.75), (R(20), 0, R(-20)))
+for phi, dy in ((55, 0.0), (125, -0.034)):
+    holder = frame('claves', (0, dy, 0), (0, R(phi), 0), parent=g)
+    revolve('claves', CLAVE, holder, 'claves', 'rosewood', seg=48)
+
+# Bell tree: twelve brass bells nested on a chrome rod, biggest at the bottom.
+g = frame('belltree', (0.0, -1.0, 0.45), (R(-6), 0, R(-18)))
+cyl(0.0035, 0.5, (0, 0, 0.25), m='chrome', parent=g, cname='belltree', verts=12)
+blob((0.009, 0.009, 0.009), (0, 0, 0.5), m='chrome', parent=g, cname='belltree')
+for i in range(12):
+    rb = 0.075 - 0.0045 * i; h = 0.62 * rb
+    top_z = 0.035 + 0.62 * 0.075 + i * 0.034
+    dome = [(rb * f, -h * f * f) for f in (0.04 + 0.96 * j / 9 for j in range(10))]
+    bell = revolve('bell', dome, g, 'belltree', 'brass', thickness=0.0025)
+    bell.location = (0, 0, top_z)
+    torus(rb, 0.0025, (0, 0, top_z - h), m='brass', parent=g, cname='belltree')
+
+# Bucket: a galvanised pail with a rolled rim, ribs, ears and a wire handle.
+g = frame('bucket', (0.0, -0.9, 0.45), (0, 0, R(-20)))
+revolve('bucket', [(0.001, 0), (0.098, 0), (0.1, 0.004), (0.108, 0.07), (0.118, 0.17), (0.128, 0.26), (0.131, 0.27)], g, 'bucket', 'galv', thickness=0.0025, seg=96)
+torus(0.1325, 0.0045, (0, 0, 0.27), m='galv', parent=g, cname='bucket')
+for z, r in ((0.1, 0.111), (0.19, 0.1198)):
+    torus(r, 0.003, (0, 0, z), m='galv', parent=g, cname='bucket')
+handle = [Vector((0.135 * math.cos(t), 0.135 * math.sin(t) * math.sin(R(25)), 0.255 + 0.135 * math.sin(t) * math.cos(R(25)))) for t in (i / 20 * math.pi for i in range(21))]
+for a, b in zip(handle, handle[1:]):
+    limb(a, b, 0.0035, 'galv', g, 'bucket')
+for sx in (-1, 1):
+    box((0.012, 0.022, 0.03), (sx * 0.133, 0, 0.255), m='cast', parent=g, cname='bucket')
+
+# Stack: two small cymbals on one rod, face to face, on a boom like the splash's.
+before_stack = mark()
+STACK = ((0.0, -0.55, 1.1), (R(-12), R(-8), 0))
+lower = cymbal('stack', 0.15, *STACK, felt=False)
+top_cymbal = frame('stack', (0, 0, 0.045), (R(180), 0, 0), parent=lower)
+cymbal('stack', 0.15, (0, 0, 0), None, felt=False, parent=top_cymbal, cname='stack')
+KIT['stack'] = lower
+cyl(0.004, 0.07, (0, 0, 0.032), m='chrome', parent=lower, cname='stack', verts=12)
+cyl(0.018, 0.008, (0, 0, 0.034), m='felt', parent=lower, cname='stack', verts=32)
+box((0.036, 0.012, 0.014), (0, 0, 0.062), m='chrome', parent=lower, cname='stack')   # wing nut
+cymbal_stand(0.28, -0.8, 0.9, *STACK, 0.15, owner='stack')
+stack_objects = [o for o in scn.objects if o not in before_stack]
+
+# Hands and the boot are real models rather than shapes built here. The hands
+# are a MakeHuman body (CC0), posed in Blender and cut down to the hand and
+# forearm; the boot is Poly Haven's Rubber Boots (CC0). See assets/models/README.md.
+
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+M['skin_real'] = mat('skin_real', (0.5, 0.31, 0.22), rough=0.5)
+def _skin_detail():                                      # a little subsurface scatter, so it doesn't look like plastic
+    nt = M['skin_real'].node_tree; p = nt.nodes['Principled BSDF']
+    p.inputs['Subsurface Weight'].default_value = 0.25
+    p.inputs['Subsurface Radius'].default_value = (1.0, 0.4, 0.25)
+    p.inputs['Subsurface Scale'].default_value = 0.02
+_skin_detail()
+
+def load_hand(pose, part, parent, cname, wrist, fingers, palm, mirror=False):
+    """A hand from assets/models (see README there), with its wrist at `wrist`
+    in the parent's frame, its fingers pointing along `fingers` and its palm
+    facing `palm`. `part` is 'hand' (to the wrist) or 'full' (with the forearm).
+    `mirror` makes it the other hand."""
+    info = json.load(open(os.path.join(HERE, 'models', 'hand_%s.json' % pose)))
+    bpy.ops.wm.obj_import(filepath=os.path.join(HERE, 'models', 'hand_%s_%s.obj' % (pose, part)))
+    o = bpy.context.selected_objects[0]
+    o.data.transform(o.matrix_world); o.matrix_world = Matrix.Identity(4)   # the importer keeps its axis conversion on the object; bake it into the mesh
+    def basis(y, z):
+        y = Vector(y).normalized(); z = Vector(z); z = (z - y * z.dot(y)).normalized()
+        return Matrix((y.cross(z), y, z)).transposed()
+    rotation = basis(fingers, palm) @ basis(info['finger_dir'], info['palm_dir']).transposed()
+    if mirror:                                           # reflect across the plane that holds the fingers and the palm's normal
+        s = basis(fingers, palm).col[0]
+        rotation = (Matrix.Identity(3) - 2 * Matrix([[s[i] * s[j] for j in range(3)] for i in range(3)])) @ rotation
+    o.data.transform(Matrix.Translation(wrist) @ rotation.to_4x4() @ Matrix.Translation(-Vector(info['wrist'])))
+    o.matrix_world = Matrix.Identity(4)
+    if mirror:
+        bm = bmesh.new(); bm.from_mesh(o.data); bmesh.ops.reverse_faces(bm, faces=bm.faces); bm.to_mesh(o.data); bm.free()
+    smooth(o)
+    sub = o.modifiers.new('sub', 'SUBSURF'); sub.levels = 1; sub.render_levels = 2
+    return place(o, parent, cname, 'skin_real')
+
+# Hand clap: two bare hands meeting at an angle, as in a photo of a clap. The
+# front hand is seen from the back, fingers up and to the left; the one behind
+# shows its palm, fingers pointing left. The forearms are kept in their own
+# collection: they're drawn with the picture but not counted when cropping, so
+# crop-layers.py fades them out.
+g = frame('clap', (0.0, -1.0, 0.75), (0, 0, 0))
+# Right hand in front, back toward the camera, fingers up and a little to the right; the left hand behind it,
+# palm toward the camera, angled further right. Both wrists at the bottom.
+CLAP_A = ((-0.02, -0.019, 0.0), (math.sin(R(25)), 0, math.cos(R(25))), (0, 1, 0), False)
+CLAP_B = ((0.0, 0.019, -0.012), (math.sin(R(48)), 0, math.cos(R(48))), (0, -1, 0), True)
+clap_a = [load_hand('flat', part, g, cn, *CLAP_A[:3], mirror=CLAP_A[3]) for part, cn in (('hand', 'clap'), ('full', 'clap_arms'))]
+clap_b = [load_hand('flat', part, g, cn, *CLAP_B[:3], mirror=CLAP_B[3]) for part, cn in (('hand', 'clap'), ('full', 'clap_arms'))]
+def _overlaps(a, b, dy):
+    ta = BVHTree.FromPolygons([tuple(v.co) for v in a.data.vertices], [tuple(p.vertices) for p in a.data.polygons])
+    tb = BVHTree.FromPolygons([tuple(v.co + Vector((0, dy, 0))) for v in b.data.vertices], [tuple(p.vertices) for p in b.data.polygons])
+    return bool(ta.overlap(tb))
+# Slide the left hand toward the camera-facing side until the hands just stop touching, so no finger goes through the other hand.
+dy = 0.03
+while dy > -0.03 and not _overlaps(clap_a[0], clap_b[0], dy):
+    dy -= 0.001
+dy += 0.0025
+for o in clap_b:
+    o.data.transform(Matrix.Translation((0, dy, 0)))
+HW['clap'] = list(COLL['clap_arms'].all_objects)
+
+# Finger snaps, as in the photo: the palm faces up and toward the camera, the fingers
+# curl in with the middle finger pressed to the thumb, and the forearm runs off to the lower right.
+g = frame('snap', (0.0, -1.0, 0.82), (0, 0, 0))
+for part, cn in (('hand', 'snap'), ('full', 'snap_arms')):
+    load_hand('snap', part, g, cn, (0.0, 0.0, 0.0), (-0.8796, 0.2511, 0.4041), (0.2839, -0.4046, 0.8693))
+HW['snap'] = list(COLL['snap_arms'].all_objects)
+
+# Foot stomp: Poly Haven's rubber boot (CC0), made into a black lace-up ankle
+# boot, with its heel raised mid-stomp on a plywood stomp board. The boot pivots
+# on its toe, which stays on the board.
+g = frame('stomp', (0.0, -0.85, 0.5), (0, 0, R(-35)))
+box((0.55, 0.36, 0.03), (0, 0, -0.015), m='wood', parent=g, cname='stomp')
+foot = frame('stomp', (0.12, 0, 0.0), (0, R(18), 0), parent=g)
+before_boot = set(scn.objects)
+bpy.ops.import_scene.gltf(filepath=os.path.join(HERE, 'models', 'rubber_boots', 'rubber_boots_1k.gltf'))
+imported = [o for o in scn.objects if o not in before_boot]
+boot = next(o for o in imported if o.name == 'rubber_boots_r')   # the pack has a clean and a dirty pair; one boot is enough
+for o in imported:
+    if o is not boot: bpy.data.objects.remove(o)
+turn = Matrix.Rotation(R(90), 4, 'Z')                             # toe toward +x, as the frame expects
+corners = [turn @ boot.matrix_world @ Vector(c) for c in boot.bound_box]
+boot.data.transform(Matrix.Translation((-max(c.x for c in corners), -(min(c.y for c in corners) + max(c.y for c in corners)) / 2, -min(c.z for c in corners))) @ turn @ boot.matrix_world)
+boot.matrix_world = Matrix.Identity(4)                            # the toe's tip, on the ground, is now the origin
+place(boot, foot, 'stomp', None)
+for mt in boot.data.materials:                                    # plain black leather: the colour texture is what carries the green and the logo
+    nt = mt.node_tree
+    bsdf = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+    for link in list(bsdf.inputs['Base Color'].links):
+        nt.links.remove(link)
+    bsdf.inputs['Base Color'].default_value = (0.012, 0.011, 0.012, 1)
+    bsdf.inputs['Coat Weight'].default_value = 0.35
+M['boot_black'] = mat('boot_black', (0.012, 0.011, 0.012), rough=0.3, coat=0.4)
+M['lace'] = mat('lace', (0.82, 0.8, 0.72), rough=0.8)
+
+def boot_surface(x=None, z=None, y=0.0):
+    """The boot's outer surface above a point on the vamp (given x) or in front of a point on the shaft (given z), at width y."""
+    for reach in (0.006, 0.012, 0.02, 0.03):                      # widen the search until it finds the surface
+        near = [v.co for v in boot.data.vertices if abs(v.co.y - y) < reach and (abs(v.co.x - x) < reach if z is None else abs(v.co.z - z) < reach)]
+        if near: break
+    if z is None:
+        top = max(near, key=lambda p: p.z)
+        return Vector((x, y, top.z))
+    front = max(near, key=lambda p: p.x)
+    return Vector((front.x, y, z))
+
+LACING = [dict(x=-0.07), dict(x=-0.09), dict(x=-0.105), dict(x=-0.118), dict(z=0.13), dict(z=0.15), dict(z=0.17), dict(z=0.19)]
+def lace_at(i, y):
+    return boot_surface(y=y, **LACING[i]) + Vector((0, 0, 0.0015)) if 'x' in LACING[i] else boot_surface(y=y, **LACING[i]) + Vector((0.0015, 0, 0))
+for i in range(len(LACING) - 1):                                  # laces crossing over the front
+    limb(lace_at(i, -0.022), lace_at(i + 1, 0.022), 0.0021, 'lace', foot, 'stomp')
+    limb(lace_at(i, 0.022), lace_at(i + 1, -0.022), 0.0021, 'lace', foot, 'stomp')
+for side in (-1, 1):                                              # the loose ends, hanging down the sides
+    top = lace_at(len(LACING) - 1, side * 0.022)
+    limb(top, top + Vector((0.004, side * 0.014, -0.05)), 0.0021, 'lace', foot, 'stomp')
+
+# An ankle boot, not a wellington: cut the tall shaft down.
+CUT = 0.205
+bm = bmesh.new(); bm.from_mesh(boot.data)
+bmesh.ops.bisect_plane(bm, geom=list(bm.verts) + list(bm.edges) + list(bm.faces), plane_co=(0, 0, CUT), plane_no=(0, 0, 1), clear_outer=True)
+bm.to_mesh(boot.data); bm.free()
+
+# Stick click: two drumsticks crossed, tip to tip.
+STICK = [(0.0005, 0), (0.0062, 0.004), (0.0068, 0.01), (0.0072, 0.15), (0.0078, 0.25), (0.0062, 0.33), (0.0042, 0.375), (0.0058, 0.39), (0.0062, 0.4), (0.005, 0.41), (0.0005, 0.415)]
+g = frame('stickclick', (0.0, -1.0, 0.75), (R(20), 0, R(-20)))
+for phi, dy in ((55, 0.0), (125, -0.03)):
+    holder = frame('stickclick', (0, dy, 0), (0, R(phi), 0), parent=g)
+    stick = revolve('stick', STICK, holder, 'stickclick', 'wood', smooth_levels=1)
+    stick.location = (0, 0, -0.2)    # crossed at the middle of each stick
+
+# Cajon: a maple box with a lighter plywood playing face, screwed on at the
+# sides and bottom and free at the top edge, on rubber feet. The Cobblestone
+# kit's Cajon and Cajon Slap both use this picture.
+M['tapa'] = mat('tapa', (0.85, 0.62, 0.38), rough=0.55)
+g = frame('cajon', (0.0, -0.9, 0.5), (R(8), 0, R(-30)))
+body = box((0.3, 0.3, 0.48), (0, 0, 0.26), m='wood', parent=g, cname='cajon')
+body.modifiers['b'].width = 0.005; body.modifiers['b'].segments = 2
+face = box((0.3, 0.008, 0.46), (0, -0.154, 0.255), m='tapa', parent=g, cname='cajon')
+face.modifiers['b'].width = 0.002
+box((0.296, 0.004, 0.004), (0, -0.159, 0.488), m='black', parent=g, cname='cajon')          # the free top edge
+for k in range(9):
+    for x, z in ((-0.14 + k * 0.035, 0.03), (-0.14, 0.03 + k * 0.05), (0.14, 0.03 + k * 0.05)):
+        cyl(0.0045, 0.003, (x, -0.1595, z), rot=(R(90), 0, 0), m='chrome', parent=g, cname='cajon', verts=12)
+for sx in (-1, 1):
+    for sy in (-1, 1):
+        blob((0.022, 0.022, 0.012), (sx * 0.12, sy * 0.12, 0.012), m='rubber', parent=g, cname='cajon')
+
+# Congas: a small and a large one, lacquered wood staves with a skin head, a
+# single hoop, and six short hooks down to brackets on the upper shell. The body
+# below the brackets is bare.
+M['conga'] = mat('conga', (0.42, 0.15, 0.045), rough=0.32, coat=0.55)
+M['conga_hw'] = mat('conga_hw', (0.012, 0.012, 0.014), metal=0.5, rough=0.35)
+def conga(name, loc, rot, height, top_r, belly_r, foot_r):
+    g = frame(name, loc, rot)
+    def radius_at(s):                                    # s: 0 at the foot, 1 at the head
+        if s <= 0.7:
+            return foot_r + (belly_r - foot_r) * math.sin(math.pi / 2 * s / 0.7)
+        return belly_r - (belly_r - top_r) * ((s - 0.7) / 0.3) ** 1.5
+    profile = [(radius_at(i / 24), height * i / 24) for i in range(25)]
+    WALL = 0.008                                         # lathe faces point inward, so the wall grows outward: the outer surface is radius_at() + WALL
+    revolve(name, profile, g, name, 'conga', thickness=WALL, seg=96)
+    cyl(top_r + 0.004, 0.005, (0, 0, height + 0.002), m='head', parent=g, cname=name, verts=96)
+    torus(top_r + 0.006, 0.008, (0, 0, height), m='conga_hw', parent=g, cname=name)   # the only hoop: it holds the head
+    outer = lambda s: radius_at(s) + WALL
+    for k in range(6):                                   # six tuning points: a hook from the hoop down to a bracket on the shell
+        a = R(30 + 60 * k)
+        c, s = math.cos(a), math.sin(a)
+        # The bracket: a plate shaped to the shell, wide at the top, its edges sunk just under the surface.
+        N = 10
+        verts, faces = [], []
+        for i in range(N + 1):
+            v = 2 * i / N - 1                            # -1 at the bottom of the plate, 1 at the top
+            sv = 0.725 + 0.065 * v
+            half = 0.014 + 0.014 * (v + 1) / 2
+            for j in range(N + 1):
+                u = 2 * j / N - 1
+                ang = a + u * half / outer(sv)
+                rr = outer(sv) - 0.0015 + 0.0075 * (1 - u ** 4) * (1 - v ** 4)
+                verts.append((rr * math.cos(ang), rr * math.sin(ang), height * sv))
+        for i in range(N):
+            for j in range(N):
+                q = i * (N + 1) + j
+                faces.append((q, q + 1, q + N + 2, q + N + 1))
+        mesh_object('lug', verts, faces, name, 'conga_hw').parent = g
+        # The lug body on the plate, and the hook: a straight rod that turns over the hoop.
+        r_top, r_lug = top_r + WALL + 0.008, outer(0.76) + 0.0115
+        cyl(0.0085, 0.03, (r_lug * c, r_lug * s, height * 0.76), m='conga_hw', parent=g, cname=name, verts=24)
+        limb((r_top * c, r_top * s, height - 0.006), (r_lug * c, r_lug * s, height * 0.76 + 0.012), 0.0035, 'chrome', g, name)
+        r_over = top_r + 0.011
+        limb((r_top * c, r_top * s, height - 0.006), (r_over * c, r_over * s, height + 0.008), 0.0035, 'chrome', g, name)
+    for k in range(3):
+        a = R(90 + 120 * k)
+        blob((0.03, 0.03, 0.018), (foot_r * math.cos(a), foot_r * math.sin(a), 0.008), m='rubber', parent=g, cname=name)
+    return g
+conga('conga-small', (0.0, -0.9, 0.5), (R(10), 0, R(-20)), 0.62, 0.11, 0.125, 0.075)
+conga('conga-large', (0.0, -0.9, 0.42), (R(10), 0, R(-20)), 0.78, 0.14, 0.16, 0.095)
+
+EXTRAS = ('cowbell', 'chimes', 'gong', 'tambourine', 'maraca', 'shaker', 'claves', 'belltree', 'bucket', 'stack', 'snap', 'clap', 'stomp', 'stickclick', 'cajon', 'conga-small', 'conga-large')
+FULL_MESH = ('snap', 'clap')    # their pictures use the whole hand-and-arm mesh; the hand-only one is just for the bare render
 if MODE != 'pieces':
     for name in EXTRAS:
         for o in COLL[name].all_objects:
             o.hide_render = True
-    for o in splash_objects:
+    for o in stack_objects + list(COLL['clap_arms'].all_objects) + list(COLL['snap_arms'].all_objects):
         o.hide_render = True
 
 bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))
@@ -665,7 +1068,7 @@ elif MODE == 'pieces':
     # pictures on the Kit tab's slot cards. Same camera and light as the
     # stage, so they look like the kit. (The stage layers can't be used for
     # this: each has holes where the pieces in front of it are.)
-    pieces = ['kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride', 'china', *EXTRAS]
+    pieces = ['kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'splash', 'ride', 'china', *EXTRAS]
     if 'only' in args:
         pieces = [L for L in pieces if L in args['only'].split(',')]
     every = [o for o in scn.objects if o.type in ('MESH',)]
@@ -677,14 +1080,14 @@ elif MODE == 'pieces':
     for L in pieces:
         # A cymbal (or the snare) is also rendered bare, so crop-layers.py knows where the
         # piece ends and can fade its boom arm (or stand) out from there.
-        if L in ('crash', 'crash2', 'ride', 'china', 'splash', 'snare'):
+        if L in ('crash', 'crash2', 'ride', 'china', 'splash', 'stack', 'clap', 'snap', 'snare'):
             show_only(set(COLL[L].all_objects))
             render(os.path.join(OUT, 'pieces', L + '-bare.png'))
-        show_only(set(COLL[L].all_objects) | set(HW.get(L, [])))
+        show_only(set(HW[L]) if L in FULL_MESH else set(COLL[L].all_objects) | set(HW.get(L, [])))
         render(os.path.join(OUT, 'pieces', L + '.png'))
         print('PIECE', L, flush=True)
 else:
-    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride', 'china']
+    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'splash', 'ride', 'china']
     # only=base,crash2 re-renders just those layers (the others keep their renders).
     if 'only' in args:
         layers = [L for L in layers if L in args['only'].split(',')]
@@ -700,7 +1103,7 @@ else:
 
 if MODE == 'final':
     render(os.path.join(OUT, 'full.png'))
-    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride', 'china']
+    layers = ['base', 'kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'splash', 'ride', 'china']
     pal = {}
     for i, L in enumerate(layers):
         c = ((i * 37 % 10) / 9.0, (i * 53 % 10) / 9.0, ((i * 71) % 10) / 9.0)

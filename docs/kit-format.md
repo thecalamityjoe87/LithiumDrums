@@ -116,11 +116,13 @@ The piece controls (Volume, Tune, Decay) work on top of `volumeDb`, `tune` and
 settings the piece plays as the kit sets it up. Presets use these to retune a
 kit without touching its audio.
 
-**Roles and the stage.** The rendered kit stage has nine slots: kick, snare,
-hi-hat, two rack toms, floor tom, crash, ride and china. Pieces are assigned to
-slots by role, in kit order: the first kick to the kick slot, the first two
-`tom`s to the rack tom slots, and so on. A slot with no piece is drawn dimmed;
-a piece with no slot (a second floor tom, a second crash) still plays and still
+**Roles and the stage.** The rendered kit stage has eleven slots: kick, snare,
+hi-hat, two rack toms, floor tom, two crashes, splash, ride and china. Pieces
+are assigned to slots by role, in kit order: the first kick to the kick slot,
+the first two `tom`s to the rack tom slots, and so on. A splash has the `crash`
+role and is told apart by its id or name; the first goes to the splash slot and
+never takes a crash's. A slot with no piece is drawn dimmed; a piece with no
+slot (a second floor tom, a third crash, a second splash) still plays and still
 gets a strip.
 
 **Articulations** are the ways of hitting a piece (snare: center, rim, rest;
@@ -334,14 +336,20 @@ is mapped onto one of this kit's, in this order:
    order. A stereo source on a mono mic plays its left channel; a mono source
    on a stereo mic plays in the middle. With it off, only the close mics are
    used, and the piece sits in this kit's room only through its own channel.
-4. **If nothing would be left to hear** (a kit recorded only as a stereo pair
+4. **If nothing would be left to hear** (a piece from a kit with a mic per
+   piece going to an empty slot, or a kit recorded only as a stereo pair
    meeting one with only close mics), the piece's main mic goes to the swapped
-   piece's own mic, otherwise to the kit's overheads, otherwise to its first mic.
+   piece's own mic. Failing that, a close mic goes to one of this kit's close
+   mics, which carries it to the piece's own channel: the same id, otherwise
+   one with as many channels, then the most central. Anything else goes to the
+   kit's overheads, otherwise to its first mic.
 
-Each of this kit's mics takes at most one of the other kit's. Mics with
+Only the mics that recorded the piece count: in a kit with a mic per piece, a
+foot stomp is on its own mic and no other, so the others are never mapped or
+listed. Each of this kit's mics takes at most one of the other kit's. Mics with
 nowhere to go are left out, and the model picker and the model button's
-tooltip list them ("Not used: Ride R"); nothing is ever routed to a mic it
-doesn't belong on to make it fit. The levels stay as the other kit set them:
+tooltip list them ("Not used: Ride R"); apart from the last resort in step 4,
+nothing is routed to a mic it doesn't belong on to make it fit. The levels stay as the other kit set them:
 each mapped mic plays at its own kit's default level and polarity relative
 to the mic it lands on, so a reversed snare bottom mic stays reversed.
 

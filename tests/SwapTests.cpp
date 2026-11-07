@@ -5,7 +5,9 @@
 #include "engine/KitLoader.h"
 #include "engine/PieceSwap.h"
 #include "engine/StreamCache.h"
+#include "ui/KitArt.h"
 #include "ui/ModelPicker.h"
+#include "ui/SlotGrid.h"
 
 #include <set>
 
@@ -183,6 +185,33 @@ public:
             expectEquals (mappedTo (map, drs, basalt, "snare_top"), juce::String ("snare"));
             expectEquals (mappedTo (map, drs, basalt, "snare_bottom"), juce::String(), "the kit has one snare mic");
             expectEquals (mappedTo (map, drs, basalt, "overheads"), juce::String(), "the kit has no overheads");
+        }
+
+        beginTest ("A piece with only its own mic is heard in a slot with none, whatever other mics match");
+        {
+            // Like the Basalt kits: a mic per piece, and the foot stomp is
+            // only on its own. The cowbell mic's name matches one in the
+            // target, but there's no stomp on it to carry.
+            auto source = parseKit (kitJson ("stomps", { { "cowbell", "close", 1 }, { "stomp", "close", 1 } },
+                                             { { "cowbell", "other" }, { "stomp", "other" } }));
+            const auto stomp = source.findPiece ("stomp");
+            const auto stompMic = [&] { for (size_t m = 0; m < source.mics.size(); ++m) if (source.mics[m].id == "stomp") return (int) m; return -1; }();
+
+            for (auto& a : source.pieces[(size_t) stomp].articulations)
+                for (auto& zone : a.zones)
+                    for (auto& hit : zone.roundRobins)
+                        hit.sources.erase (std::remove_if (hit.sources.begin(), hit.sources.end(),
+                                                           [&] (const MicSource& s) { return s.mic != stompMic; }), hit.sources.end());
+
+            auto target = parseKit (kitJson ("host", { { "kick", "close", 1 }, { "snare", "close", 1 }, { "cowbell", "close", 1 } },
+                                             { { "kick", "kick" }, { "snare", "snare" }, { "cowbell", "other" }, { "shaker", "other" } }));
+            target.mics[0].pan = 0.4f;     // the snare is the central one
+            target.mics[1].pan = 0.0f;
+            target.mics[2].pan = -0.3f;
+
+            const auto map = swaps::mapMics (source, stomp, target, target.findPiece ("shaker"), true);
+            expectEquals (map[(size_t) stompMic], 1);
+            expectEquals (map[(size_t) (1 - stompMic)], -1);
         }
 
         beginTest ("Which roles can stand in for which");
@@ -661,8 +690,78 @@ public:
     }
 };
 
+/** The pictures on the Kit tab's cards. */
+class SlotPictureTests final : public juce::UnitTest
+{
+public:
+    SlotPictureTests() : juce::UnitTest ("Slot pictures", "Lithium") {}
+
+    void runTest() override
+    {
+        struct Case
+        {
+            const char* id;
+            const char* name;
+            PieceRole role;
+            const char* picture;
+        };
+
+        // The pieces as the installed kits name them. Cobblestone plays hand
+        // percussion from drum slots, so a role alone would show a kick for a cajon.
+        const Case cases[] {
+            { "cajon", "Cajon", PieceRole::kick, "slot-cajon.png" },
+            { "cajon_slap", "Cajon Slap", PieceRole::snare, "slot-cajon.png" },
+            { "conga_small", "Small Conga", PieceRole::tom, "slot-conga-small.png" },
+            { "conga_large", "Large Conga", PieceRole::floorTom, "slot-conga-large.png" },
+            { "tambourine", "Tambourine", PieceRole::hihat, "slot-tambourine.png" },
+            { "tambourine", "Tambourine", PieceRole::other, "slot-tambourine.png" },
+            { "bell_tree", "Bell Tree", PieceRole::other, "slot-belltree.png" },
+            { "bellchime", "Bell Chime", PieceRole::other, "slot-chimes.png" },
+            { "bucket", "Bucket", PieceRole::other, "slot-bucket.png" },
+            { "clap", "Hand Clap", PieceRole::other, "slot-clap.png" },
+            { "claps", "Hand Claps", PieceRole::other, "slot-clap.png" },
+            { "claves", "Claves", PieceRole::other, "slot-claves.png" },
+            { "cowbell", "Cowbell", PieceRole::other, "slot-cowbell.png" },
+            { "gong", "Gong", PieceRole::other, "slot-gong.png" },
+            { "maraca", "Maraca", PieceRole::other, "slot-maraca.png" },
+            { "shaker", "Shaker", PieceRole::other, "slot-shaker.png" },
+            { "shakers", "Shakers", PieceRole::other, "slot-shaker.png" },
+            { "snaps", "Finger Snaps", PieceRole::other, "slot-snap.png" },
+            { "stack", "Stack", PieceRole::other, "slot-stack.png" },
+            { "stick", "Stick Click", PieceRole::other, "slot-stickclick.png" },
+            { "stomp", "Foot Stomp", PieceRole::other, "slot-stomp.png" },
+        };
+
+        const auto pictureOf = [] (const char* pieceId, const char* pieceName, PieceRole role)
+        {
+            KitInfo info;
+            auto& piece = info.pieces.emplace_back();
+            piece.id = pieceId;
+            piece.name = pieceName;
+            piece.role = role;
+            return SlotGrid::pictureFor (info, 0);
+        };
+
+        beginTest ("Percussion finds its picture by what it is, whatever slot it plays from");
+
+        for (const auto& c : cases)
+        {
+            const auto expected = kitart::load (c.picture);
+            expect (expected.isValid(), juce::String (c.picture) + " is embedded");
+            expect (pictureOf (c.id, c.name, c.role) == expected, juce::String (c.name) + " shows " + c.picture);
+        }
+
+        beginTest ("Plain drums keep their own pictures, and unknown percussion has none");
+
+        expect (pictureOf ("kick", "Kick", PieceRole::kick) == kitart::load ("slot-kick.png"));
+        expect (pictureOf ("snare", "Snare", PieceRole::snare) == kitart::load ("slot-snare.png"));
+        expect (! pictureOf ("triangle", "Triangle", PieceRole::other).isValid());
+    }
+};
+
 static MicMappingTests micMappingTests;
 static SwapLoadTests swapLoadTests;
 static UserPresetTests userPresetTests;
+static SlotPictureTests slotPictureTests;
 
 } // namespace lithium
