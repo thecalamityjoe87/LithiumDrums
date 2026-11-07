@@ -3,6 +3,11 @@
 #include <algorithm>
 #include <cmath>
 
+#if defined (__SSE2__) || defined (_M_X64)
+ #include <emmintrin.h>
+ #include <xmmintrin.h>
+#endif
+
 namespace lithium
 {
 
@@ -20,6 +25,64 @@ namespace
         const auto c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
         return ((c3 * t + c2) * t + c1) * t + x0;
     }
+
+   #if defined (__SSE2__) || defined (_M_X64)
+    #define LITHIUM_VOICE_SSE2 1
+
+    /** Four outputs of Voice's resampler at once, with SSE2 (always there on
+        64-bit x86). `src` is this chunk's frames, where whole position m
+        reads src[m - 4 .. m - 1] (every m here is at least 4), and
+        pos/inc/step are the 32.32 position, increment and increment step,
+        advanced past the four.
+
+        Each lane's four frames sit next to each other in memory, so
+        one unaligned load per lane fetches them as a row; a 4x4 transpose
+        then turns the four rows into four columns: every lane's x-1, every
+        lane's x0, and so on. (Letting the compiler vectorise a plain loop over
+        four lanes was no faster: it gathered the 16 frames one by one.)
+
+        The arithmetic is the same as hermite(), operation for operation, and
+        SSE's packed float operations round exactly like the scalar ones, so
+        the output is bit-identical to the scalar loop. */
+    inline void hermite4 (const float* src, std::uint64_t& pos, std::int64_t& inc, std::int64_t step,
+                          const float* env, float* out) noexcept
+    {
+        std::array<std::uint64_t, 4> p;
+
+        for (auto& lane : p)
+        {
+            lane = pos;
+            pos += (std::uint64_t) inc;
+            inc += step;
+        }
+
+        auto row = [src] (std::uint64_t lane) noexcept { return _mm_loadu_ps (src + ((std::ptrdiff_t) (lane >> 32) - 4)); };
+        auto xm1 = row (p[0]), x0 = row (p[1]), x1 = row (p[2]), x2 = row (p[3]);
+        _MM_TRANSPOSE4_PS (xm1, x0, x1, x2);
+
+        // The fractions (the low 32 bits) as floats. SSE2 only converts
+        // signed integers, so convert the top and bottom 16 bits separately:
+        // both convert exactly, and hi x 65536 + lo then rounds once, to the
+        // same float as converting the unsigned 32-bit value directly.
+        const auto frac = _mm_set_epi32 ((int) (std::uint32_t) p[3], (int) (std::uint32_t) p[2],
+                                         (int) (std::uint32_t) p[1], (int) (std::uint32_t) p[0]);
+        const auto hi = _mm_cvtepi32_ps (_mm_srli_epi32 (frac, 16));
+        const auto lo = _mm_cvtepi32_ps (_mm_and_si128 (frac, _mm_set1_epi32 (0xffff)));
+        const auto t = _mm_mul_ps (_mm_add_ps (_mm_mul_ps (hi, _mm_set1_ps (65536.0f)), lo), _mm_set1_ps (fractionScale));
+
+        // hermite(), four lanes at a time.
+        const auto half = _mm_set1_ps (0.5f);
+        const auto c1 = _mm_mul_ps (half, _mm_sub_ps (x1, xm1));
+        const auto c2 = _mm_sub_ps (_mm_add_ps (_mm_sub_ps (xm1, _mm_mul_ps (_mm_set1_ps (2.5f), x0)),
+                                                _mm_mul_ps (_mm_set1_ps (2.0f), x1)),
+                                    _mm_mul_ps (half, x2));
+        const auto c3 = _mm_add_ps (_mm_mul_ps (half, _mm_sub_ps (x2, xm1)),
+                                    _mm_mul_ps (_mm_set1_ps (1.5f), _mm_sub_ps (x0, x1)));
+        const auto h = _mm_add_ps (_mm_mul_ps (_mm_add_ps (_mm_mul_ps (_mm_add_ps (_mm_mul_ps (c3, t), c2), t), c1), t), x0);
+
+        _mm_storeu_ps (out, _mm_mul_ps (h, _mm_loadu_ps (env)));
+    }
+   #endif
 
     // Voices end once their envelope falls below -80 dB.
     constexpr float silenceThreshold = 1.0e-4f;
@@ -175,6 +238,12 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
         const auto end = (std::int64_t) fraction + (std::int64_t) n * inc0 + step * (std::int64_t) n * (n - 1) / 2;
         const auto framesNeeded = (int) (end >> 32);
 
+        // Unity pitch, sitting exactly on a source frame: the common case when
+        // the session runs at the kit's sample rate and the drum isn't tuned.
+        // Hermite at t = 0 returns x0 exactly, so every output sample is just a
+        // source frame; skipping the interpolator gives identical output.
+        const auto unity = inc0 == (std::int64_t) one && step == 0 && fraction == 0;
+
         for (int si = 0; si < numStreams; ++si)
         {
             auto& s = streams[(size_t) si];
@@ -189,29 +258,79 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
                 auto* out = ctx.streamOut[(size_t) ch];
                 const auto* src = ctx.scratch[(size_t) ch];
                 auto& w = s.window[(size_t) ch];
-                auto xm1 = w[0], x0 = w[1], x1 = w[2], x2 = w[3];
-                auto pos = (std::uint64_t) fraction;
-                auto inc = inc0;
-                int k = 0;
 
-                for (int i = 0; i < n; ++i)
+                // Think of the window followed by this chunk's frames as one
+                // sequence c = w[0..3], src[0..framesNeeded-1]. Before output i
+                // the position is fraction + (the increments so far); its whole
+                // part m says how many frames the window has moved on, so the
+                // four frames to interpolate are c[m..m+3], and its low 32 bits
+                // are the fraction between c[m+1] and c[m+2].
+                auto frame = [&] (int index) noexcept { return index < 4 ? w[(size_t) index] : src[index - 4]; };
+
+                if (unity)
                 {
-                    out[i] = hermite (xm1, x0, x1, x2, (float) (std::uint32_t) pos * fractionScale) * env[offset + i];
-                    pos += (std::uint64_t) inc;
-                    inc += step;
+                    // m = i and the fraction is 0, where Hermite returns c[m+1]
+                    // exactly: the output is the frames themselves. This loop has
+                    // no branches or loop-carried state, so the compiler can
+                    // vectorise it.
+                    const auto fromWindow = std::min (n, 3);
 
-                    while (pos >= one)
+                    for (int i = 0; i < fromWindow; ++i)
+                        out[i] = w[(size_t) i + 1] * env[offset + i];
+
+                    for (int i = 3; i < n; ++i)
+                        out[i] = src[i - 3] * env[offset + i];
+                }
+                else
+                {
+                    // The position is kept absolute (never wrapped back below 1),
+                    // so each output finds its frames by index instead of
+                    // shifting the window frame by frame in a while loop: that
+                    // loop's branch went either way in an irregular pattern at
+                    // ratios like 44.1/48 kHz, and mispredicted often. Same
+                    // frames and same fraction, so the same output bit for bit.
+                    auto pos = (std::uint64_t) fraction;
+                    auto inc = inc0;
+                    int i = 0;
+
+                    // The first few outputs still reach back into the window (m < 4).
+                    for (; i < n && (pos >> 32) < 4; ++i)
                     {
-                        pos -= one;
-                        xm1 = x0;
-                        x0 = x1;
-                        x1 = x2;
-                        x2 = src[k++];
+                        const auto m = (int) (pos >> 32);
+                        out[i] = hermite (frame (m), frame (m + 1), frame (m + 2), frame (m + 3),
+                                          (float) (std::uint32_t) pos * fractionScale) * env[offset + i];
+                        pos += (std::uint64_t) inc;
+                        inc += step;
                     }
+
+                    // The rest read only this chunk's frames: c[m] is src[m - 4].
+                    // On x86, four outputs at a time (see hermite4).
+                   #if LITHIUM_VOICE_SSE2
+                    for (; i + 4 <= n; i += 4)
+                        hermite4 (src, pos, inc, step, env + offset + i, out + i);
+                   #endif
+
+                    // One at a time: the last few, or all of them without SSE2.
+                    for (; i < n; ++i)
+                    {
+                        const auto* x = src + ((int) (pos >> 32) - 4);
+                        out[i] = hermite (x[0], x[1], x[2], x[3], (float) (std::uint32_t) pos * fractionScale) * env[offset + i];
+                        pos += (std::uint64_t) inc;
+                        inc += step;
+                    }
+
+                    jassert ((int) (pos >> 32) == framesNeeded);
                 }
 
-                jassert (k == framesNeeded);
-                w = { xm1, x0, x1, x2 };
+                // The window moves on by framesNeeded: the new one is
+                // c[framesNeeded..framesNeeded+3]. While framesNeeded < 4 part of it
+                // is still old window frames, so build it in a copy, not in place.
+                std::array<float, 4> next;
+
+                for (int j = 0; j < 4; ++j)
+                    next[(size_t) j] = frame (framesNeeded + j);
+
+                w = next;
 
                 // The piece's tone filters, per stream (each mic of the hit).
                 // Copies of the state, so it stays in registers (see ChannelEq).
@@ -246,8 +365,12 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
             const auto target = targetGains (s, ctx);
             const auto stepL = (target[0] - s.lastGain[0]) / (float) numSamples;
             const auto stepR = (target[1] - s.lastGain[1]) / (float) numSamples;
-            auto gl = s.lastGain[0] + stepL * (float) offset;
-            auto gr = s.lastGain[1] + stepR * (float) offset;
+            // The gain at output i is start + (i + 1) x step, worked out from i
+            // rather than accumulated (g += step). An accumulated ramp makes
+            // every sample wait for the previous sample's add, which stops the
+            // compiler vectorising these loops; the two differ only by float rounding.
+            const auto startL = s.lastGain[0] + stepL * (float) offset;
+            const auto startR = s.lastGain[1] + stepR * (float) offset;
             const auto* left = ctx.streamOut[0];
             const auto* right = ctx.streamOut[(size_t) s.numChannels - 1];
 
@@ -259,10 +382,9 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
 
                 for (int i = 0; i < n; ++i)
                 {
-                    gl += stepL;
-                    gr += stepR;
-                    outL[i] += left[i] * gl;
-                    outR[i] += right[i] * gr;
+                    const auto ramp = (float) (i + 1);
+                    outL[i] += left[i] * (startL + ramp * stepL);
+                    outR[i] += right[i] * (startR + ramp * stepR);
                 }
             }
             else
@@ -271,13 +393,9 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
                 {
                     auto* out = buses.mics.getWritePointer (s.busChannel + ch, startSample + offset);
                     const auto* x = ctx.streamOut[(size_t) ch];
-                    auto g = gl;
 
                     for (int i = 0; i < n; ++i)
-                    {
-                        g += stepL;
-                        out[i] += x[i] * g;
-                    }
+                        out[i] += x[i] * (startL + (float) (i + 1) * stepL);
                 }
             }
         }

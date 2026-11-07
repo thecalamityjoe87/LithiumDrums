@@ -438,6 +438,36 @@ public:
             // Reading past the end gives silence.
             expectEquals (out.getSample (0, 5), 0.0f);
         }
+
+        beginTest ("Mono 24-bit unpacking (the disk streamer's) is exact at every length");
+        {
+            // unpack has a mono 24-bit fast path that loads 4 bytes per sample
+            // and decodes the buffer's last sample byte by byte. Every length
+            // from 1 up exercises that hand-over; the guard values around the
+            // destination catch writes outside [destOffset, destOffset + n).
+            constexpr int full = 8388607;
+            const int values[] { 0, 1, -1, full, -full - 1, 12345, -12345, full / 3 };
+            constexpr int destOffset = 3;
+            constexpr float guard = 99.0f;
+
+            for (int n = 1; n <= 8; ++n)
+            {
+                std::vector<std::byte> bytes ((size_t) n * 3);
+
+                for (int i = 0; i < n; ++i)
+                    SampleLayout::pack (bytes.data() + (size_t) i * 3, 3, values[i]);
+
+                std::vector<float> decoded ((size_t) (destOffset + n + 2), guard);
+                float* dest[] { decoded.data() };
+                SampleLayout::unpack (bytes.data(), 3, 1, dest, destOffset, n);
+
+                for (int i = 0; i < n; ++i)
+                    expectEquals (decoded[(size_t) (destOffset + i)], (float) values[i] / 8388608.0f);
+
+                expectEquals (decoded[(size_t) destOffset - 1], guard);
+                expectEquals (decoded[(size_t) (destOffset + n)], guard);
+            }
+        }
     }
 };
 
@@ -562,6 +592,136 @@ public:
 
             expect (commonGain > 0.0f, "close mic output didn't match either round-robin");
             expect (aligned, "mics are not sample-aligned");
+        }
+
+        beginTest ("Unity pitch plays the recording exactly, at any block size");
+        {
+            // Voice skips the interpolator at unity pitch and carries a 4-frame
+            // window from one block to the next. Blocks shorter than the window
+            // (1, 2, 3) are the cases where that hand-over can go wrong.
+            constexpr int length = 2048;
+            const auto snareTop = shared().mic ("snareTop");
+
+            for (const auto blockSize : { 1, 2, 3, 5, 37, 512 })
+            {
+                EngineRig rig;
+                rig.note (38, 127);
+                juce::AudioBuffer<float> played (1, length);
+
+                for (int done = 0; done < length; done += blockSize)
+                {
+                    const auto n = std::min (blockSize, length - done);
+                    rig.render (n);
+                    played.copyFrom (0, done, rig.bus, rig.kit.mics[(size_t) snareTop].busChannel, 0, n);
+                }
+
+                // Whichever round-robin played, the output is it times one gain.
+                const auto& kit = rig.kit;
+                const auto& art = kit.articulations[(size_t) kit.notes.targets[38].articulation];
+                const auto& zone = kit.zones[(size_t) (art.firstZone + art.numZones - 1)];
+                bool matched = false;
+
+                for (int rr = 0; rr < zone.numHits && ! matched; ++rr)
+                {
+                    juce::AudioBuffer<float> recording (2, length);
+                    SampleCursor cursor;
+                    kit.samples->open (kit.getSample (zone.firstHit + rr, snareTop), cursor);
+                    kit.samples->read (cursor, recording.getArrayOfWritePointers(), length);
+                    kit.samples->close (cursor);
+
+                    const auto* rec = recording.getReadPointer (0);
+                    const auto* out = played.getReadPointer (0);
+                    const auto peak = (int) (std::max_element (rec, rec + length, [] (float a, float b) { return std::abs (a) < std::abs (b); }) - rec);
+                    const auto g = out[peak] / rec[peak];
+                    matched = g > 0.0f;
+
+                    for (int i = 0; i < length && matched; ++i)
+                        matched = std::abs (out[i] - rec[i] * g) < 1.0e-6f;
+                }
+
+                expect (matched, "block size " + juce::String (blockSize) + " doesn't play the recording sample for sample");
+            }
+        }
+
+        beginTest ("Resampled playback matches a reference resampler, at any block size");
+        {
+            // A plain, slow restatement of Voice's resampler: 32.32 fixed-point
+            // positions over the recording with one silent frame in front, and
+            // 4-point Hermite interpolation. Voice must produce the same samples
+            // however the output is split into blocks.
+            constexpr int length = 2048;
+            constexpr double hostRate = 48000.0;
+            const auto snareTop = shared().mic ("snareTop");
+
+            auto hermite = [] (float xm1, float x0, float x1, float x2, float t)
+            {
+                const auto c1 = 0.5f * (x1 - xm1);
+                const auto c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2;
+                const auto c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
+                return ((c3 * t + c2) * t + c1) * t + x0;
+            };
+
+            for (const auto tune : { 0.0f, 3.0f, -5.0f })     // at 48 kHz from a 44.1 kHz kit, even 0 resamples
+            {
+                for (const auto blockSize : { 1, 2, 3, 5, 37, 512 })
+                {
+                    EngineRig rig (hostRate);
+                    rig.piece ("snare").tuneSemitones = tune;
+                    rig.note (38, 127);
+                    juce::AudioBuffer<float> played (1, length);
+
+                    for (int done = 0; done < length; done += blockSize)
+                    {
+                        const auto n = std::min (blockSize, length - done);
+                        rig.render (n);
+                        played.copyFrom (0, done, rig.bus, rig.kit.mics[(size_t) snareTop].busChannel, 0, n);
+                    }
+
+                    const auto& kit = rig.kit;
+                    const auto& target = kit.notes.targets[38];
+                    const auto& art = kit.articulations[(size_t) target.articulation];
+                    const auto& piece = kit.pieces[(size_t) art.piece];
+                    const auto& zone = kit.zones[(size_t) (art.firstZone + art.numZones - 1)];
+                    const auto ratio = std::exp2 ((tune + piece.defaultTune) / 12.0) * piece.sampleRate / hostRate;
+                    const auto increment = (std::uint64_t) std::llround (ratio * 4294967296.0);
+                    bool matched = false;
+
+                    for (int rr = 0; rr < zone.numHits && ! matched; ++rr)
+                    {
+                        // The recording with the silent frame in front: frame f is at index f + 1.
+                        constexpr int sourceFrames = length * 2 + 8;
+                        juce::AudioBuffer<float> recording (2, sourceFrames);
+                        recording.clear();
+                        SampleCursor cursor;
+                        kit.samples->open (kit.getSample (zone.firstHit + rr, snareTop), cursor);
+                        std::array<float*, 2> dest { recording.getWritePointer (0, 1), recording.getWritePointer (1, 1) };
+                        kit.samples->read (cursor, dest.data(), sourceFrames - 1);
+                        kit.samples->close (cursor);
+
+                        std::vector<float> reference ((size_t) length);
+                        const auto* c = recording.getReadPointer (0);
+
+                        for (int i = 0; i < length; ++i)
+                        {
+                            const auto pos = (std::uint64_t) i * increment;
+                            const auto m = (size_t) (pos >> 32);
+                            const auto t = (float) (std::uint32_t) pos * (1.0f / 4294967296.0f);
+                            reference[(size_t) i] = hermite (c[m], c[m + 1], c[m + 2], c[m + 3], t);
+                        }
+
+                        const auto* out = played.getReadPointer (0);
+                        const auto peak = (int) (std::max_element (reference.begin(), reference.end(), [] (float a, float b) { return std::abs (a) < std::abs (b); }) - reference.begin());
+                        const auto g = out[peak] / reference[(size_t) peak];
+                        matched = g > 0.0f;
+
+                        for (int i = 0; i < length && matched; ++i)
+                            matched = std::abs (out[i] - reference[(size_t) i] * g) < 1.0e-6f;
+                    }
+
+                    expect (matched, "tune " + juce::String (tune) + ", block size " + juce::String (blockSize)
+                                         + " doesn't match the reference resampler");
+                }
+            }
         }
 
         beginTest ("Every mic channel is audible for the hits that use it");

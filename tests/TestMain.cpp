@@ -25,11 +25,12 @@
 //                                     resolve every installed groove against every installed kit and preset:
 //                                     hits a kit can't play, how the hi-hat spreads over its openness steps,
 //                                     and that dragged MIDI plays the same hits in each built-in map
-//   LithiumDrumsTests --measure-kit <kit folder> [--map <map id>] [--stream] [--preload <frames>] [--stress <seconds> [--full-mix]] [--cold]
+//   LithiumDrumsTests --measure-kit <kit folder> [--map <map id>] [--stream] [--preload <frames>] [--stress <seconds> [--full-mix] [--rate <Hz>]] [--cold]
 //                                     load a real kit, report its RAM use and play every mapped note.
 //                                     --stream streams it from the stream cache (building the cache if needed),
 //                                     --stress then plays a dense groove in real time and counts dropouts,
 //                                     --full-mix runs it with EQ, compression and a reverb send on every mic,
+//                                     --rate runs the stress at that host rate instead of the kit's (e.g. 48000),
 //                                     --cold first drops the cache file from the OS page cache (Linux),
 //                                     --map plays it through another MIDI map (roland-vdrums, alesis, ...),
 //                                     and then sweeps the hi-hat pedal and snare position
@@ -66,7 +67,23 @@
 #if JUCE_LINUX
  #include <fcntl.h>
  #include <unistd.h>
+ #include <ctime>
 #endif
+
+/** CPU time used so far by the whole process, or by the calling thread. The
+    stress test takes one from the other to report what the background threads
+    (above all the disk streamer) cost, which its wall-clock timing can't see. */
+static double cpuSeconds (bool wholeProcess)
+{
+   #if JUCE_LINUX
+    timespec ts {};
+    clock_gettime (wholeProcess ? CLOCK_PROCESS_CPUTIME_ID : CLOCK_THREAD_CPUTIME_ID, &ts);
+    return (double) ts.tv_sec + (double) ts.tv_nsec * 1.0e-9;
+   #else
+    juce::ignoreUnused (wholeProcess);
+    return 0.0;
+   #endif
+}
 
 //==============================================================================
 // Replacing the global operator new lets the tests count heap allocations made
@@ -1170,7 +1187,8 @@ static long residentKb()
     streaming did. Every hit is at least velocity 90, there's a crash or china
     on every beat and a tom fill every other bar, so dozens of long cymbal
     tails stream at once. */
-static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::StreamStats& stats, double seconds, bool fullMix)
+static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::StreamStats& stats, double seconds, bool fullMix,
+                      double rate)
 {
     using namespace lithium;
 
@@ -1206,7 +1224,7 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
     Mixer mixer;
     EngineParams params;
     params.resetForKit (kit);
-    engine.prepare (kit.sampleRate);
+    engine.prepare (rate);
 
     if (fullMix)
     {
@@ -1242,14 +1260,15 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
     }
 
     constexpr int blockSize = 256;
-    mixer.prepare (kit.sampleRate, blockSize);
+    mixer.prepare (rate, blockSize);
     juce::AudioBuffer<float> out (2, blockSize);
     juce::Random random (1);
 
-    const auto stepFrames = kit.sampleRate * 60.0 / 160.0 / 4.0;   // 16th notes at 160 BPM
-    const auto totalBlocks = (int) (seconds * kit.sampleRate / blockSize);
-    const auto blockDuration = std::chrono::duration<double> (blockSize / kit.sampleRate);
+    const auto stepFrames = rate * 60.0 / 160.0 / 4.0;   // 16th notes at 160 BPM
+    const auto totalBlocks = (int) (seconds * rate / blockSize);
+    const auto blockDuration = std::chrono::duration<double> (blockSize / rate);
     const auto start = std::chrono::steady_clock::now();
+    const auto processCpuBefore = cpuSeconds (true), threadCpuBefore = cpuSeconds (false);
 
     const auto dropoutsBefore = stats.dropouts.load(), framesBefore = stats.dropoutFrames.load();
     const auto bytesBefore = stats.bytesRead.load();
@@ -1315,6 +1334,8 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
             std::this_thread::sleep_until (deadline);
     }
 
+    // Everything but this (the audio) thread: the disk streamer, mostly.
+    const auto backgroundCpu = (cpuSeconds (true) - processCpuBefore) - (cpuSeconds (false) - threadCpuBefore);
     engine.stopAll (kit);
 
     const auto dropouts = stats.dropouts.load() - dropoutsBefore;
@@ -1324,7 +1345,8 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
               << peakStreams << " streams; read " << juce::String (mbRead, 0) << " MB ("
               << juce::String (mbRead / seconds, 1) << " MB/s); engine load "
               << juce::String (100.0 * renderSeconds / seconds, 1) << "% (mixer " << juce::String (100.0 * mixSeconds / seconds, 1)
-              << "%" << (fullMix ? ", full mix" : "") << "); "
+              << "%" << (fullMix ? ", full mix" : "") << "), background threads "
+              << juce::String (100.0 * backgroundCpu / seconds, 1) << "%; "
               << (juce::int64) dropouts << " dropouts (" << (juce::int64) (stats.dropoutFrames.load() - framesBefore)
               << " frames), " << lateBlocks << " late blocks, " << (juce::int64) stats.readErrors.load() << " read errors" << std::endl;
 
@@ -1732,7 +1754,10 @@ static int measureKit (const juce::File& folder, const juce::StringArray& args)
         }
        #endif
 
-        result |= stressKit (*kit, info, *options.streamStats, seconds, args.contains ("--full-mix"));
+        // --rate runs the engine at a host rate other than the kit's, as a DAW
+        // session would, so every hit goes through the resampler.
+        const auto rate = option ("--rate").getDoubleValue() > 0.0 ? option ("--rate").getDoubleValue() : kit->sampleRate;
+        result |= stressKit (*kit, info, *options.streamStats, seconds, args.contains ("--full-mix"), rate);
     }
 
     return result;

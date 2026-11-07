@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(LithiumDrums VERSION 0.8.6 LANGUAGES C CXX)
+project(LithiumDrums VERSION 0.8.7 LANGUAGES C CXX)
 
 if(APPLE)
     # JUCE's macOS sources are Objective-C++.

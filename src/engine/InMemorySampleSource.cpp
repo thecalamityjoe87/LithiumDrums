@@ -3,6 +3,8 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <bit>
+#include <cstring>
 
 namespace lithium
 {
@@ -84,6 +86,33 @@ void SampleLayout::unpack (const std::byte* bytes, int bytesPerSample, int chann
     else
     {
         constexpr float scale = 1.0f / 8388608.0f;
+
+        // Mono (each disk-streaming ring is one channel): the disk streamer
+        // spends most of its time here. One unaligned 4-byte load per sample
+        // instead of three byte loads: on a little-endian CPU the load puts the
+        // sample's bytes in the low 24 bits, so shifting left by 8 gives the
+        // same word as below (the fourth byte, the next sample's, falls off the
+        // top). The load reads one byte past the sample, so the buffer's last
+        // sample is done byte by byte, to stay inside it.
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            if (channels == 1 && numFrames > 0)
+            {
+                auto* d = dest[0] + destOffset;
+                int i = 0;
+
+                for (; i < numFrames - 1; ++i, src += 3)
+                {
+                    std::uint32_t word;
+                    std::memcpy (&word, src, sizeof (word));   // compiles to one load
+                    d[i] = (float) ((std::int32_t) (word << 8) >> 8) * scale;
+                }
+
+                const auto word = (std::uint32_t) src[0] << 8 | (std::uint32_t) src[1] << 16 | (std::uint32_t) src[2] << 24;
+                d[i] = (float) ((std::int32_t) word >> 8) * scale;
+                return;
+            }
+        }
 
         for (int i = destOffset; i < destOffset + numFrames; ++i)
         {
