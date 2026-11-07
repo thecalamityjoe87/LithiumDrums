@@ -44,6 +44,42 @@ public:
         bool operator== (const Part&) const = default;
     };
 
+    //==============================================================================
+    // For the groove controls on the Kit tab's stage. They work this page's
+    // selection rather than keeping one of their own, so the two always agree.
+
+    /** What the stage card shows: the part playing, or else the one Play would play. */
+    struct NowPlaying
+    {
+        juce::String groove, part;            // "Funk 4", "Bars 5-8"; empty with no grooves
+        double lengthBeats = 0.0, beatsPerBar = 4.0;
+        double position = -1.0;               // beats into the part while it plays, else -1
+        float bpm = 0.0f;                     // what it plays at, or would
+        bool playing = false, hostSynced = false;
+        bool hasPrevious = false, hasNext = false;   // another tile to step to
+    };
+
+    /** Reads the groove library, if it hasn't been yet (it's read the first
+        time it's needed). True if it was read now. */
+    bool scanIfNeeded()
+    {
+        if (scanned)
+            return false;
+
+        rescan();
+        return true;
+    }
+    bool hasGrooves() const noexcept          { return library.numGrooves() > 0; }
+
+    NowPlaying nowPlaying() const;
+
+    /** Plays the selected tile, or stops what plays. */
+    void togglePlay();
+
+    /** Selects the previous (-1) or next (+1) tile, in the order the page
+        shows them, and plays it if a groove is playing. */
+    void stepPart (int delta);
+
 private:
     class StyleChips;
     class GrooveList;
@@ -55,6 +91,8 @@ private:
     struct GrooveRef
     {
         int pack, groove;
+
+        bool operator== (const GrooveRef&) const = default;
     };
 
     void timerCallback() override;
@@ -65,13 +103,15 @@ private:
     bool passesFilter (const grooves::Pack&, const grooves::Groove&) const;
     void selectGroove (GrooveRef, bool keepPlaying);
     void selectPart (Part, bool play);
-    void togglePlay();
     void updateTransportButtons();
     void showDetail();
     std::array<std::optional<PieceRole>, 128> roleTable() const;
 
     const grooves::Pack* selectedPack() const;
     const grooves::Groove* selectedGroove() const;
+    const grooves::Groove* grooveAt (GrooveRef) const;
+    std::vector<Part> partsShown() const;
+    float tempoFor (const grooves::Groove*) const;
     std::shared_ptr<const grooves::Clip> makeClip (Part) const;
     juce::File writeMidi (Part) const;
     void saveMidi();

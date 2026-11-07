@@ -188,6 +188,12 @@ namespace
         return s;
     }
 
+    /** A phrase tile's title: "Bars 5-8". */
+    juce::String phraseTitle (juce::Range<int> bars)
+    {
+        return "Bars " + juce::String (bars.getStart() + 1) + "-" + juce::String (bars.getEnd());
+    }
+
     juce::String encode (GroovesPage::Part p)
     {
         switch (p.kind)
@@ -583,7 +589,7 @@ public:
             for (int i = 0; i < grooves::numPhrases (*pack, *groove); ++i)
             {
                 const auto bars = grooves::phraseBars (*pack, *groove, i);
-                section.push_back (tile ({ Part::Kind::phrase, i }, "Bars " + juce::String (bars.getStart() + 1) + "-" + juce::String (bars.getEnd()),
+                section.push_back (tile ({ Part::Kind::phrase, i }, phraseTitle (bars),
                                          page.takeHits, bars.getStart() * beatsPerBar, bars.getLength()));
             }
 
@@ -1395,6 +1401,8 @@ void GroovesPage::visibilityChanged()
         if (! scanned)
             rescan();
 
+        // The stage's groove card may have changed it while this page was hidden.
+        loopButton.setToggleState (processor.getGroovePlayer().loop.load(), juce::dontSendNotification);
         startTimerHz (30);
     }
     else
@@ -1556,9 +1564,16 @@ const grooves::Pack* GroovesPage::selectedPack() const
 
 const grooves::Groove* GroovesPage::selectedGroove() const
 {
-    const auto* pack = selectedPack();
-    return pack != nullptr && juce::isPositiveAndBelow (selected.groove, (int) pack->grooves.size())
-             ? &pack->grooves[(size_t) selected.groove] : nullptr;
+    return grooveAt (selected);
+}
+
+const grooves::Groove* GroovesPage::grooveAt (GrooveRef ref) const
+{
+    if (! juce::isPositiveAndBelow (ref.pack, (int) library.packs.size()))
+        return nullptr;
+
+    const auto& inPack = library.packs[(size_t) ref.pack].grooves;
+    return juce::isPositiveAndBelow (ref.groove, (int) inPack.size()) ? &inPack[(size_t) ref.groove] : nullptr;
 }
 
 void GroovesPage::selectGroove (GrooveRef ref, bool keepPlaying)
@@ -1683,7 +1698,7 @@ void GroovesPage::showDetail()
     }
 
     const auto bars = grooves::phraseBars (*pack, *groove, selectedPart.index);
-    detail->show ("Bars " + juce::String (bars.getStart() + 1) + "-" + juce::String (bars.getEnd()),
+    detail->show (phraseTitle (bars),
                   hitsOf (takeHits, bars.getStart() * perBar, bars.getLength(), perBar), bars.getLength(), perBar, roles);
 }
 
@@ -1797,6 +1812,121 @@ juce::String GroovesPage::describe (Part part) const
     return {};
 }
 
+float GroovesPage::tempoFor (const grooves::Groove* groove) const
+{
+    // What's playing, or what would play.
+    auto& player = processor.getGroovePlayer();
+    const auto& feedback = player.getFeedback();
+
+    if (processor.isGroovePlaying() && feedback.clipId.load() == playingClipId && feedback.bpm.load() > 0.0f)
+        return feedback.bpm.load();
+
+    const auto mode = player.tempoMode.load();
+    auto bpm = mode == GrooveTempo::custom ? player.customBpm.load() : feedback.hostBpm.load();
+
+    if (mode == GrooveTempo::original || (mode == GrooveTempo::host && bpm <= 0.0f))
+        bpm = groove != nullptr ? (float) groove->bpm : 0.0f;
+
+    return bpm * player.speed.load();
+}
+
+std::vector<GroovesPage::Part> GroovesPage::partsShown() const
+{
+    // In the tiles' order (see TileGrid::rebuild): the whole take and the
+    // phrases under Beats, then the fills.
+    std::vector<Part> parts;
+    const auto* pack = selectedPack();
+    const auto* groove = selectedGroove();
+
+    if (pack == nullptr || groove == nullptr)
+        return parts;
+
+    if (beatsButton.getToggleState())
+    {
+        parts.push_back ({ Part::Kind::whole, 0 });
+
+        for (int i = 0; i < grooves::numPhrases (*pack, *groove); ++i)
+            parts.push_back ({ Part::Kind::phrase, i });
+    }
+
+    if (fillsButton.getToggleState())
+        for (int i = 0; i < (int) std::min (groove->fills.size(), fillHits.size()); ++i)
+            parts.push_back ({ Part::Kind::fill, i });
+
+    return parts;
+}
+
+void GroovesPage::stepPart (int delta)
+{
+    // From the selected tile; one the filters hide steps to the first.
+    const auto parts = partsShown();
+    const auto at = std::find (parts.begin(), parts.end(), selectedPart);
+    const auto i = at == parts.end() ? 0 : (int) (at - parts.begin()) + delta;
+
+    if (juce::isPositiveAndBelow (i, (int) parts.size()))
+        selectPart (parts[(size_t) i], processor.isGroovePlaying());
+}
+
+GroovesPage::NowPlaying GroovesPage::nowPlaying() const
+{
+    NowPlaying now;
+    const auto& feedback = processor.getGroovePlayer().getFeedback();
+    now.playing = processor.isGroovePlaying();
+
+    // The part playing, if this page started it and the library still has
+    // it (a rescan may have renumbered the grooves); else the selected one.
+    const auto* playingIt = now.playing && feedback.clipId.load() == playingClipId ? grooveAt (playingGroove) : nullptr;
+    const auto ref = playingIt != nullptr ? playingGroove : selected;
+    const auto part = playingIt != nullptr ? playingPart : selectedPart;
+    const auto* groove = grooveAt (ref);
+
+    if (groove == nullptr)
+        return now;
+
+    now.groove = groove->name;
+    now.beatsPerBar = groove->beatsPerBar();
+    auto bars = groove->bars;
+
+    switch (part.kind)
+    {
+        case Part::Kind::whole:
+            now.part = "Whole take";
+            break;
+
+        case Part::Kind::fill:
+            if (juce::isPositiveAndBelow (part.index, (int) groove->fills.size()))
+            {
+                now.part = groove->fills[(size_t) part.index].name;
+                bars = groove->fills[(size_t) part.index].bars;
+            }
+            break;
+
+        case Part::Kind::phrase:
+        {
+            const auto range = grooves::phraseBars (library.packs[(size_t) ref.pack], *groove, part.index);
+            now.part = phraseTitle (range);
+            bars = range.getLength();
+            break;
+        }
+    }
+
+    now.lengthBeats = bars * now.beatsPerBar;
+    now.bpm = tempoFor (groove);
+
+    if (playingIt != nullptr)
+    {
+        now.position = feedback.position.load();
+        now.hostSynced = feedback.hostSynced.load();
+    }
+
+    // Stepping goes from the selected tile (see stepPart).
+    const auto parts = partsShown();
+    const auto at = std::find (parts.begin(), parts.end(), selectedPart);
+    now.hasPrevious = at != parts.end() && at != parts.begin();
+    now.hasNext = at == parts.end() ? ! parts.empty() : at + 1 != parts.end();
+    return now;
+}
+
 void GroovesPage::updateTransportButtons()
 {
     const auto playing = processor.isGroovePlaying();
@@ -1837,20 +1967,7 @@ void GroovesPage::timerCallback()
                               && playingGroove.pack == selected.pack && playingGroove.groove == selected.groove;
     detail->setPlayhead (showsPlaying ? feedback.position.load() : -1.0);
 
-    // The tempo shown: what's playing, or what would play.
-    const auto mode = player.tempoMode.load();
-    const auto* groove = selectedGroove();
-    auto bpm = mode == GrooveTempo::custom ? player.customBpm.load() : feedback.hostBpm.load();
-
-    if (mode == GrooveTempo::original || (mode == GrooveTempo::host && bpm <= 0.0f))
-        bpm = groove != nullptr ? (float) groove->bpm : 0.0f;
-
-    bpm *= player.speed.load();
-
-    if (playing && feedback.clipId.load() == playingClipId && feedback.bpm.load() > 0.0f)
-        bpm = feedback.bpm.load();
-
-    tempoField->setShown (bpm, mode == GrooveTempo::custom);
+    tempoField->setShown (tempoFor (selectedGroove()), player.tempoMode.load() == GrooveTempo::custom);
 
     // The status line.
     juce::String text;
@@ -1859,10 +1976,8 @@ void GroovesPage::timerCallback()
     {
         text = "Playing " + describe (playingPart);
 
-        if ((playingGroove.pack != selected.pack || playingGroove.groove != selected.groove)
-            && juce::isPositiveAndBelow (playingGroove.pack, (int) library.packs.size())
-            && juce::isPositiveAndBelow (playingGroove.groove, (int) library.packs[(size_t) playingGroove.pack].grooves.size()))
-            text = "Playing " + library.packs[(size_t) playingGroove.pack].grooves[(size_t) playingGroove.groove].name;
+        if (const auto* other = grooveAt (playingGroove); other != nullptr && playingGroove != selected)
+            text = "Playing " + other->name;
 
         if (feedback.hostSynced.load())
             text << ", in time with the host";

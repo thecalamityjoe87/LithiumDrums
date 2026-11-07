@@ -1,15 +1,36 @@
 #include "KitPage.h"
 
+#include "GroovesPage.h"
 #include "Theme.h"
 
 namespace lithium
 {
 
+namespace
+{
+    /** The rows of the two cards over the stage (the selected piece and the
+        groove), shared so they line up: a title, a name, a full-width control,
+        a readout over a bar, and a row of buttons. Compact, so the cards hide
+        as little of the kit as they can; the buttons keep the usual size. */
+    namespace stagecard
+    {
+        using namespace theme;
+
+        constexpr int width = 248;
+        constexpr int padX = space::md, padY = space::sm;
+        constexpr int title = 12, titleGap = space::xxs, name = 22, nameGap = space::xs;
+        constexpr float titleFont = type::caption, nameFont = 17.0f;
+        constexpr int readoutGap = space::sm, readout = 14, bar = 18, buttonsGap = space::sm;
+        constexpr int sideButton = 88;   // Edit piece, Loop: the bottom row's right-hand button
+        constexpr int height = 2 * padY + title + titleGap + name + nameGap + size::button
+                             + readoutGap + readout + bar + buttonsGap + size::button;
+
+        /** The area inside the card's padding. */
+        inline juce::Rectangle<int> content (const juce::Component& c)   { return c.getLocalBounds().reduced (padX, padY); }
+    }
+}
+
 //==============================================================================
-/** The selected piece, over the stage's bottom left corner: its name, the
-    model it plays (click to swap it), its volume, mute, solo and play, and
-    a way to the Edit tab. With no kit, it says why and what to do. The
-    controls are re-attached to whichever piece is selected. */
 /** Beside the hi-hat on the stage: how open the e-kit's pedal has the
     hats, and lights that flash as notes and pedal messages come in, for
     setting up an e-kit. KitPage shows it once MIDI has arrived. */
@@ -126,6 +147,10 @@ private:
     bool wasLit = false;
 };
 
+/** The selected piece, over the stage's bottom left corner: its name, the
+    model it plays (click to swap it), its volume, mute, solo and play, and
+    a way to the Edit tab. With no kit, it says why and what to do. The
+    controls are re-attached to whichever piece is selected. */
 class KitPage::PieceCard final : public juce::Component, private SelectionModel::Listener
 {
 public:
@@ -177,8 +202,8 @@ public:
         g.setColour (colours::borderStrong);
         g.drawRoundedRectangle (bounds, cornerRadius + 2.0f, 1.0f);
 
-        auto area = getLocalBounds().reduced (space::lg, space::md).toFloat();
-        auto top = area.removeFromTop (14.0f);
+        auto area = stagecard::content (*this).toFloat();
+        auto top = area.removeFromTop ((float) stagecard::title);
         const auto* p = piece();
 
         if (p != nullptr)
@@ -189,15 +214,15 @@ public:
         }
 
         g.setColour (colours::textMuted);
-        drawTrackedText (g, "SELECTED PIECE", label (12.0f), 0.1f, top, juce::Justification::centredLeft);
-        area.removeFromTop (4.0f);
+        drawTrackedText (g, "SELECTED PIECE", label (stagecard::titleFont), 0.1f, top, juce::Justification::centredLeft);
+        area.removeFromTop ((float) stagecard::titleGap);
 
         g.setColour (colours::text);
-        g.setFont (body (20.0f, Weight::semibold));
+        g.setFont (body (stagecard::nameFont, Weight::semibold));
 
         if (p != nullptr)
         {
-            g.drawText (p->name, area.removeFromTop (26.0f), juce::Justification::centredLeft, true);
+            g.drawText (p->name, area.removeFromTop ((float) stagecard::name), juce::Justification::centredLeft, true);
 
             g.setColour (colours::textMuted);
             drawTrackedText (g, "VOLUME", label (type::caption), 0.1f, readoutArea.toFloat(), juce::Justification::centredLeft);
@@ -214,7 +239,7 @@ public:
         const auto loading = processor.isKitLoading();
         const auto error = processor.getKitError();
         g.drawText (loading ? "Loading kit..." : error.isNotEmpty() ? "The kit couldn't be loaded" : "No kit loaded",
-                    area.removeFromTop (26.0f), juce::Justification::centredLeft, true);
+                    area.removeFromTop ((float) stagecard::name), juce::Justification::centredLeft, true);
 
         if (! loading)
         {
@@ -229,17 +254,16 @@ public:
     void resized() override
     {
         using namespace theme;
-        auto area = getLocalBounds().reduced (space::lg, space::md);
-        area.removeFromTop (14 + 4 + 26 + space::sm);
+        auto area = stagecard::content (*this);
+        area.removeFromTop (stagecard::title + stagecard::titleGap + stagecard::name + stagecard::nameGap);
         model.setBounds (area.removeFromTop (size::button));
-        area.removeFromTop (space::md);
-        readoutArea = area.removeFromTop (16);
-        area.removeFromTop (space::xxs);
-        volume.setBounds (area.removeFromTop (20).expanded (2, 0));
+        area.removeFromTop (stagecard::readoutGap);
+        readoutArea = area.removeFromTop (stagecard::readout);
+        volume.setBounds (area.removeFromTop (stagecard::bar).expanded (2, 0));
 
-        area.removeFromTop (space::md);
+        area.removeFromTop (stagecard::buttonsGap);
         auto buttons = area.removeFromTop (size::button);
-        editButton.setBounds (buttons.removeFromRight (96));
+        editButton.setBounds (buttons.removeFromRight (stagecard::sideButton));
         buttons.removeFromRight (space::sm);
         const auto w = (buttons.getWidth() - 2 * space::xs) / 3;
         mute.setBounds (buttons.removeFromLeft (w));
@@ -249,7 +273,7 @@ public:
         play.setBounds (buttons);
     }
 
-    static constexpr int width = 280, height = 194;
+    static constexpr int width = stagecard::width, height = stagecard::height;
 
 private:
     class PlayButton final : public juce::Button
@@ -319,13 +343,223 @@ private:
 };
 
 //==============================================================================
+/** The groove preview's transport, over the stage's bottom right corner (the
+    selected piece card's twin): the part playing, or else the one Play would
+    play, with its progress and tempo; Play/Stop, the previous and next tile,
+    Loop, and a way to the Grooves tab. It has no selection of its own: it
+    works the Grooves page's, so the two always agree. */
+class KitPage::GrooveCard final : public juce::Component, private juce::Timer
+{
+public:
+    static constexpr int width = stagecard::width, height = stagecard::height;
+
+    explicit GrooveCard (LithiumDrumsProcessor& p) : processor (p)
+    {
+        playButton.setTooltip ("Play the groove picked on the Grooves tab, or stop it");
+        playButton.onClick = [this] { withGrooves ([] (GroovesPage& page) { page.togglePlay(); }); };
+        previous.onClick = [this] { withGrooves ([] (GroovesPage& page) { page.stepPart (-1); }); };
+        next.onClick = [this] { withGrooves ([] (GroovesPage& page) { page.stepPart (1); }); };
+
+        loopButton.setClickingTogglesState (true);
+        loopButton.setTooltip ("Loop the groove, or play it once");
+        loopButton.onClick = [this] { processor.getGroovePlayer().loop = loopButton.getToggleState(); };
+
+        openButton.setTooltip ("Pick grooves, tempo and feel on the Grooves tab");
+        openButton.onClick = [this] { if (onOpenGrooves) onOpenGrooves(); };
+
+        for (auto* c : std::initializer_list<juce::Component*> { &previous, &playButton, &next, &loopButton, &openButton })
+            addAndMakeVisible (c);
+
+        update();
+        startTimerHz (30);
+    }
+
+    std::function<void()> onOpenGrooves;
+
+    void setGroovesPage (GroovesPage& page)
+    {
+        grooves = &page;
+        update();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+        const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+
+        g.setColour (colours::panel.withAlpha (0.9f));
+        g.fillRoundedRectangle (bounds, cornerRadius + 2.0f);
+        g.setColour (colours::borderStrong);
+        g.drawRoundedRectangle (bounds, cornerRadius + 2.0f, 1.0f);
+
+        auto area = stagecard::content (*this).toFloat();
+        auto top = area.removeFromTop ((float) stagecard::title);
+
+        g.setColour (now.playing ? colours::accent : colours::textMuted);
+        g.fillEllipse (top.removeFromLeft (8.0f).withSizeKeepingCentre (8.0f, 8.0f));
+        top.removeFromLeft (8.0f);
+
+        // The tempo, at the right; "HOST" while it's locked to the host's beat.
+        if (now.bpm > 0.0f)
+        {
+            const auto bpmText = juce::String (now.bpm, juce::exactlyEqual (now.bpm, std::round (now.bpm)) ? 0 : 1) + " BPM";
+            g.setColour (colours::text);
+            g.setFont (mono (type::caption));
+            g.drawText (bpmText, top, juce::Justification::centredRight, false);
+
+            if (now.hostSynced)
+            {
+                const auto bpmWidth = getTrackedTextWidth (bpmText, mono (type::caption), 0.0f);
+                g.setColour (colours::accent);
+                drawTrackedText (g, "HOST", label (type::caption), 0.1f, top.withTrimmedRight (bpmWidth + (float) space::sm),
+                                 juce::Justification::centredRight);
+            }
+        }
+
+        g.setColour (colours::textMuted);
+        drawTrackedText (g, "GROOVE", label (stagecard::titleFont), 0.1f, top, juce::Justification::centredLeft);
+        area.removeFromTop ((float) stagecard::titleGap);
+
+        const auto noGrooves = now.groove.isEmpty();
+        g.setColour (noGrooves ? colours::textMuted : colours::text);
+        g.setFont (body (stagecard::nameFont, Weight::semibold));
+        g.drawText (noGrooves ? "No grooves installed" : now.groove, area.removeFromTop ((float) stagecard::name), juce::Justification::centredLeft, true);
+
+        // Below the tile switcher (laid out in resized()): the part and its
+        // bar, then the progress, as the piece card has its volume.
+        if (noGrooves)
+        {
+            g.setColour (colours::textMuted);
+            g.setFont (body (type::small));
+            g.drawText ("Download them on the Grooves tab.", readoutArea, juce::Justification::centredLeft, true);
+            return;
+        }
+
+        // Bar 2/4 while it plays, else how long it is.
+        const auto bars = std::max (1, juce::roundToInt (now.lengthBeats / now.beatsPerBar));
+        const auto bar = now.position >= 0.0 ? juce::jlimit (1, bars, (int) (now.position / now.beatsPerBar) + 1) : 0;
+        const auto barText = bar > 0 ? "Bar " + juce::String (bar) + "/" + juce::String (bars)
+                                     : juce::String (bars) + (bars == 1 ? " bar" : " bars");
+        g.setColour (colours::textMuted);
+        drawTrackedText (g, now.part.toUpperCase(), label (type::caption), 0.1f, readoutArea.toFloat().withTrimmedRight (72.0f),
+                         juce::Justification::centredLeft);
+        g.setColour (colours::text);
+        g.setFont (mono (type::caption));
+        g.drawText (barText, readoutArea, juce::Justification::centredRight, false);
+
+        const auto track = progressArea.toFloat().withSizeKeepingCentre ((float) progressArea.getWidth(), 4.0f);
+        g.setColour (colours::background);
+        g.fillRoundedRectangle (track, 2.0f);
+
+        if (now.position >= 0.0 && now.lengthBeats > 0.0)
+        {
+            const auto done = (float) juce::jlimit (0.0, 1.0, now.position / now.lengthBeats);
+            g.setColour (colours::accent);
+            g.fillRoundedRectangle (track.withWidth (std::max (4.0f, track.getWidth() * done)), 2.0f);
+        }
+    }
+
+    void resized() override
+    {
+        using namespace theme;
+
+        // The piece card's rows, so the two cards line up: title and name,
+        // a full-width control (here the tile switcher: < Open Grooves >),
+        // a readout over a bar, and the buttons along the bottom.
+        auto area = stagecard::content (*this);
+        area.removeFromTop (stagecard::title + stagecard::titleGap + stagecard::name + stagecard::nameGap);
+
+        auto switcher = area.removeFromTop (size::button);
+        previous.setBounds (switcher.removeFromLeft (30));
+        next.setBounds (switcher.removeFromRight (30));
+        openButton.setBounds (switcher.reduced (space::xs, 0));
+
+        area.removeFromTop (stagecard::readoutGap);
+        readoutArea = area.removeFromTop (stagecard::readout);
+        progressArea = area.removeFromTop (stagecard::bar);
+
+        area.removeFromTop (stagecard::buttonsGap);
+        auto buttons = area.removeFromTop (size::button);
+        loopButton.setBounds (buttons.removeFromRight (stagecard::sideButton));
+        buttons.removeFromRight (space::sm);
+        playButton.setBounds (buttons);
+    }
+
+private:
+    void timerCallback() override
+    {
+        if (grooves == nullptr)
+            return;
+
+        // The library is read the first time it's needed: here (the editor
+        // opens on this tab), or on the Grooves tab. Nothing changes while
+        // the card can't be seen.
+        if (grooves->scanIfNeeded() || isShowing())
+            update();
+    }
+
+    template <typename Action>
+    void withGrooves (Action&& action)
+    {
+        if (grooves != nullptr)
+        {
+            grooves->scanIfNeeded();   // in case the click came before the timer's first tick
+            action (*grooves);
+        }
+
+        update();
+    }
+
+    void update()
+    {
+        auto latest = grooves != nullptr ? grooves->nowPlaying() : GroovesPage::NowPlaying {};
+        const auto loop = processor.getGroovePlayer().loop.load();
+        const auto changed = latest.groove != now.groove || latest.part != now.part || latest.playing != now.playing
+                          || latest.hostSynced != now.hostSynced || ! juce::exactlyEqual (latest.bpm, now.bpm)
+                          || latest.hasPrevious != now.hasPrevious || latest.hasNext != now.hasNext
+                          || loop != loopButton.getToggleState();
+        const auto moving = latest.position >= 0.0 || now.position >= 0.0;
+        now = std::move (latest);
+
+        if (changed)
+        {
+            const auto any = now.groove.isNotEmpty();
+            playButton.setButtonText (now.playing ? "Stop" : "Play");
+            playButton.setToggleState (now.playing, juce::dontSendNotification);
+            playButton.setEnabled (any || now.playing);
+            previous.setEnabled (any && now.hasPrevious);
+            next.setEnabled (any && now.hasNext);
+            loopButton.setEnabled (any);
+            loopButton.setToggleState (loop, juce::dontSendNotification);
+        }
+
+        if (changed || moving)
+            repaint();
+    }
+
+    LithiumDrumsProcessor& processor;
+
+    // A SafePointer, as the Grooves page is another tab's (MainView owns both).
+    juce::Component::SafePointer<GroovesPage> grooves;
+    GroovesPage::NowPlaying now;
+    juce::Rectangle<int> readoutArea, progressArea;
+
+    ChevronButton previous { "Previous tile", ChevronButton::Direction::left };
+    ChevronButton next { "Next tile", ChevronButton::Direction::right };
+    juce::TextButton playButton { "Play" }, loopButton { "Loop" }, openButton { "Open Grooves" };
+};
+
+//==============================================================================
 KitPage::KitPage (LithiumDrumsProcessor& p)
-    : processor (p), stage (p), card (std::make_unique<PieceCard> (p)), slots (p)
+    : processor (p), stage (p), card (std::make_unique<PieceCard> (p)), grooveCard (std::make_unique<GrooveCard> (p)), slots (p)
 {
     addAndMakeVisible (stage);
 
     card->onEdit = [this] { if (onEditPiece) onEditPiece(); };
     addAndMakeVisible (*card);
+
+    grooveCard->onOpenGrooves = [this] { if (onOpenGrooves) onOpenGrooves(); };
+    addAndMakeVisible (*grooveCard);
 
     hihat = std::make_unique<HihatIndicator> (p);
     hihat->onFirstActivity = [this] { resized(); };
@@ -362,6 +596,11 @@ KitPage::~KitPage()
     processor.removeChangeListener (this);
 }
 
+void KitPage::setGroovesPage (GroovesPage& page)
+{
+    grooveCard->setGroovesPage (page);
+}
+
 void KitPage::showSlots (bool s)
 {
     // Kept in the processor, so the view survives closing the window.
@@ -369,6 +608,7 @@ void KitPage::showSlots (bool s)
     (s ? slotsButton : stageButton).setToggleState (true, juce::dontSendNotification);
     stage.setVisible (! s);
     card->setVisible (! s);
+    grooveCard->setVisible (! s);
     hihat->setVisible (false);   // resized() shows it where it belongs
     slotView.setVisible (s);
     resized();
@@ -430,6 +670,8 @@ void KitPage::resized()
     stage.setBounds (getLocalBounds());
     // Bottom left: only floor and stand feet there, which can't be clicked anyway.
     card->setBounds (space::page, getHeight() - space::page - PieceCard::height, PieceCard::width, PieceCard::height);
+    grooveCard->setBounds (getWidth() - space::page - GrooveCard::width, getHeight() - space::page - GrooveCard::height,
+                           GrooveCard::width, GrooveCard::height);
 
     // The hi-hat indicator, just right of the hats' rod (the middle of the
     // hi-hat layer, which is the cymbals and the top of the rod), a little

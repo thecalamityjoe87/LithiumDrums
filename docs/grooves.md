@@ -91,6 +91,12 @@ Tempo:
 
 ½× and 2× play it at half or double time. Loop off plays the clip once.
 
+The Kit tab's stage has a small groove card at the bottom right, so a groove
+can be stopped (or started) without coming back here. It has no selection of
+its own: Play plays the tile selected on this page, the arrows step through
+the tiles in the order the page shows them, and Loop is the same setting as
+here. The groove library is read when the editor opens, for that card.
+
 ## Threads
 
 The page builds a clip and the processor resolves it against the kit on the

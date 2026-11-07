@@ -174,8 +174,83 @@ private:
 };
 
 //==============================================================================
+/** The drum's picture in the piece card, in a well edged in its group's
+    colour. Like a piece on the stage or a slot card, clicking it plays it
+    (the articulation shown), and it lights up briefly when the drum is hit. */
+class EditPage::PiecePicture final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
+{
+public:
+    std::function<void()> onClick;
+
+    void setPiece (juce::Image picture, juce::Colour groupColour, const juce::String& name)
+    {
+        image = std::move (picture);
+        colour = groupColour;
+        setTitle (name);   // for screen readers
+        setTooltip (name + ": click to play");
+        repaint();
+    }
+
+    void flash()
+    {
+        flashUntil = juce::Time::getMillisecondCounterHiRes() + theme::motion::hitFlashMs;
+        startTimerHz (60);
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto bounds = getLocalBounds().toFloat();
+        g.setColour (theme::colours::background);
+        g.fillRoundedRectangle (bounds, 6.0f);
+
+        // The hit flash: the group colour, fading out (as on a slot card).
+        if (const auto left = (float) ((flashUntil - juce::Time::getMillisecondCounterHiRes()) / theme::motion::hitFlashMs); left > 0.0f)
+        {
+            g.setColour (colour.withAlpha (0.16f * std::min (1.0f, left)));
+            g.fillRoundedRectangle (bounds, 6.0f);
+        }
+
+        g.setColour (colour.withAlpha (isMouseOver() ? 0.9f : 0.55f));
+        g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);
+
+        // drawImage is modulated by the current colour's alpha, so go back to opaque.
+        g.setColour (juce::Colours::black);
+
+        if (image.isValid())
+            g.drawImage (image, getLocalBounds().reduced (8).toFloat(), juce::RectanglePlacement::centred);
+    }
+
+    void mouseDown (const juce::MouseEvent&) override
+    {
+        if (onClick)
+            onClick();
+
+        flash();   // at once, before the audio thread reports the hit
+    }
+
+    void mouseEnter (const juce::MouseEvent&) override   { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override    { repaint(); }
+
+private:
+    void timerCallback() override
+    {
+        repaint();
+
+        // One more repaint after the flash is over, to clear it.
+        if (juce::Time::getMillisecondCounterHiRes() > flashUntil + 20.0)
+            stopTimer();
+    }
+
+    juce::Image image;
+    juce::Colour colour;
+    double flashUntil = 0.0;
+};
+
+//==============================================================================
 EditPage::EditPage (LithiumDrumsProcessor& p)
     : processor (p),
+      picture (std::make_unique<PiecePicture>()),
       model (p),
       envelope (std::make_unique<EnvelopeGraph> (p.getParameters())),
       eq (p.getParameters()),
@@ -202,17 +277,22 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
             processor.getSelection().select (id - 1);
     };
 
-    play.setTooltip ("Play this articulation at velocity " + juce::String (LithiumDrumsProcessor::auditionVelocity));
-    play.onClick = [this]
+    // The picture and Play do the same: play the articulation shown.
+    auto playShown = [this]
     {
         if (piece >= 0)
             processor.audition (piece, LithiumDrumsProcessor::auditionVelocity, articulation);
     };
 
+    play.setTooltip ("Play this articulation at velocity " + juce::String (LithiumDrumsProcessor::auditionVelocity));
+    play.onClick = playShown;
+    picture->onClick = playShown;
+    picture->setMouseCursor (juce::MouseCursor::PointingHandCursor);
+
     crossfade.attach (processor.getParameters(), params::velocityCrossfade);
     mute.setColour (juce::TextButton::buttonOnColourId, theme::colours::textMuted);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &previous, &next, &pieceBox, &model, &play, &crossfade, &mute, &solo })
+    for (auto* c : std::initializer_list<juce::Component*> { picture.get(), &previous, &next, &pieceBox, &model, &play, &crossfade, &mute, &solo })
         addAndMakeVisible (c);
 
     addChildComponent (articulationBox);
@@ -342,7 +422,7 @@ void EditPage::showPiece (int p)
     }
 
     pieceBox.setSelectedId (p + 1, juce::dontSendNotification);
-    pieceImage = SlotGrid::pictureFor (*shownKit, p);
+    picture->setPiece (SlotGrid::pictureFor (*shownKit, p), theme::groupColour (lithium::info (info->role).group), info->name);
     model.setPiece (shownKit, p);
 
     auto& state = processor.getParameters();
@@ -450,6 +530,7 @@ void EditPage::timerCallback()
         return;
 
     seenHits = hits;
+    picture->flash();
     const auto hit = LastHit::unpack (feedback.lastHit[(size_t) piece].load (std::memory_order_relaxed));
 
     if (! hit.has_value())
@@ -481,24 +562,13 @@ void EditPage::paint (juce::Graphics& g)
     g.setColour (colours::border);
     g.fillRect (0, topHeight, getWidth(), 1);
 
-    if (const auto* info = currentPiece())
+    if (currentPiece() != nullptr)
     {
-        // The piece card: the drum's picture in a well, the group's colour along its edge.
+        // The piece card (the picture is a child: PiecePicture).
         g.setColour (colours::raised);
         g.fillRoundedRectangle (pieceCardArea.toFloat(), 8.0f);
         g.setColour (colours::border);
         g.drawRoundedRectangle (pieceCardArea.toFloat().reduced (0.5f), 8.0f, 1.0f);
-
-        g.setColour (colours::background);
-        g.fillRoundedRectangle (pieceImageArea.toFloat(), 6.0f);
-        g.setColour (groupColour (lithium::info (info->role).group).withAlpha (0.55f));
-        g.drawRoundedRectangle (pieceImageArea.toFloat().reduced (0.5f), 6.0f, 1.0f);
-
-        // drawImage is modulated by the current colour's alpha, so go back to opaque.
-        g.setColour (juce::Colours::black);
-
-        if (pieceImage.isValid())
-            g.drawImage (pieceImage, pieceImageArea.reduced (8).toFloat(), juce::RectanglePlacement::centred);
     }
     else
     {
@@ -556,7 +626,7 @@ void EditPage::resized()
     //                        [Play] [M] [S]
     pieceCardArea = juce::Rectangle<int> (margin, 9, cardPadding * 2 + (cardHeight - 2 * cardPadding) + 12 + cardControlsWidth, cardHeight);
     auto card = pieceCardArea.reduced (cardPadding);
-    pieceImageArea = card.removeFromLeft (card.getHeight());
+    picture->setBounds (card.removeFromLeft (card.getHeight()));
     card.removeFromLeft (12);
 
     constexpr int controlHeight = 28, controlGap = 6;

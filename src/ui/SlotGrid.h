@@ -7,9 +7,9 @@ namespace lithium
 
 /** The Kit tab's Slots view: the same 6 x 4 grid of slots for every kit
     (see engine/KitSlots.h). A slot with a piece shows a picture of it, the
-    model it plays (click to swap it), its level, mute, solo and a play
-    button; clicking the card plays its piece (and selects it), as on the
-    stage, and the card lights up briefly when its piece is hit. An empty
+    model it plays (click to swap it), its level, mute and solo; clicking
+    the card plays its piece (and selects it), as on the stage, and the
+    card lights up briefly when its piece is hit. An empty
     slot shows "Add": clicking it opens the model picker to fill it. The
     selected piece is shared with the stage and the Edit tab. */
 class SlotGrid final : public juce::Component, private juce::Timer, private SelectionModel::Listener

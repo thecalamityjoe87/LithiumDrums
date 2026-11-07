@@ -25,6 +25,8 @@ MainView::MainView (LithiumDrumsProcessor& p)
     header.onPrompt = [this] (PromptPanel::Request r) { showPrompt (std::move (r)); };
     prompt.onFinished = [this] { prompt.setVisible (false); };
     kitPage.onEditPiece = [this] { header.setTab (Tab::edit); };
+    kitPage.onOpenGrooves = [this] { header.setTab (Tab::grooves); };
+    kitPage.setGroovesPage (groovesPage);
     mixerPage.onOpenReturn = [this] (params::FxReturn r) { openReturn (r); };
     editPage.onOpenReturn = [this] (params::FxReturn r) { openReturn (r); };
 

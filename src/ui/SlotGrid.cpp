@@ -145,10 +145,8 @@ public:
         mute.setColour (juce::TextButton::buttonOnColourId, colours::textMuted);
         solo.setClickingTogglesState (true);
         solo.setTooltip ("Solo " + name);
-        play.setTooltip ("Play " + name);
-        play.onClick = [this] { processor.audition (piece, LithiumDrumsProcessor::auditionVelocity); };
 
-        for (auto* b : std::initializer_list<juce::Button*> { &mute, &solo, &play })
+        for (auto* b : std::initializer_list<juce::Button*> { &mute, &solo })
             addAndMakeVisible (b);
 
         auto& state = p.getParameters();
@@ -285,18 +283,16 @@ public:
         }
         else
         {
-            model.setBounds (buttons.removeFromLeft (buttons.getWidth() - 3 * buttonRow - 3 * space::xs));
+            model.setBounds (buttons.removeFromLeft (buttons.getWidth() - 2 * buttonRow - 2 * space::xs));
             buttons.removeFromLeft (space::xs);
         }
 
         volume.setBounds (area.removeFromRight (faderWidth));
 
-        const auto w = (buttons.getWidth() - 2 * space::xs) / 3;
+        const auto w = (buttons.getWidth() - space::xs) / 2;
         mute.setBounds (buttons.removeFromLeft (w));
         buttons.removeFromLeft (space::xs);
-        solo.setBounds (buttons.removeFromLeft (w));
-        buttons.removeFromLeft (space::xs);
-        play.setBounds (buttons);
+        solo.setBounds (buttons);
     }
 
 private:
@@ -336,22 +332,6 @@ private:
                     juce::Justification::centred, false);
     }
 
-    class PlayButton final : public juce::Button
-    {
-    public:
-        PlayButton() : juce::Button ("Play") {}
-
-        void paintButton (juce::Graphics& g, bool isMouseOver, bool isDown) override
-        {
-            getLookAndFeel().drawButtonBackground (g, *this, {}, isMouseOver, isDown);
-            const auto c = getLocalBounds().toFloat().getCentre();
-            juce::Path triangle;
-            triangle.addTriangle (c.x - 3.5f, c.y - 5.0f, c.x - 3.5f, c.y + 5.0f, c.x + 5.5f, c.y);
-            g.setColour (isMouseOver ? theme::colours::accent : theme::colours::textMuted);
-            g.fillPath (triangle);
-        }
-    };
-
     LithiumDrumsProcessor& processor;
     const int slot;
     int piece = -1;
@@ -365,7 +345,6 @@ private:
     ModelButton model;
     ControlSlider volume;
     juce::TextButton mute { "M" }, solo { "S" };
-    PlayButton play;
 
     // After the controls they're attached to (destroyed first). Only a slot
     // with a piece in it has them.
