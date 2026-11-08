@@ -14,7 +14,7 @@
 namespace lithium
 {
 
-/** What a piece plays: "MuldjordKit · Snare" for a swapped piece, or just the kit's name for its own. */
+/** What a piece plays: its kit and piece, e.g. "MuldjordKit · Snare" (the source kit's, for a swapped piece). */
 juce::String modelText (const KitInfo&, const KitPieceInfo&);
 
 /** A drop-down-like button with a piece's model. Clicking it opens the

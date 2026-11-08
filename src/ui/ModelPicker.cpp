@@ -17,8 +17,9 @@ juce::String modelText (const KitInfo& kit, const KitPieceInfo& piece)
     if (piece.swappedFrom.isNotEmpty())
         return piece.swappedFrom + dot + piece.swappedPiece;
 
-    // The kit's own: its name is enough (the piece's name is shown beside it).
-    return kit.credits.name;
+    // The kit's own: named the same way, so each piece shows the recording it
+    // plays (and matches the picker's "This kit" row), not just the kit.
+    return kit.credits.name + dot + piece.name;
 }
 
 juce::Component* findOverlayParent (juce::Component& c)
