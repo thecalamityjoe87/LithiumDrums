@@ -12,6 +12,7 @@ namespace
 {
     constexpr int margin = 16, gap = 12;
     constexpr int cardHeight = 152, cardPadding = 10, cardControlsWidth = 300, topHeight = cardHeight + 18, rowOneHeight = 236, rowTwoHeight = 300;
+    constexpr int micTopExtra = 40;   // a mic channel's top band (its card, transient and saturation) is this much taller
 
     juce::Rectangle<int> contentOf (const juce::Component& module)
     {
@@ -408,7 +409,6 @@ void EditPage::showPiece (int p)
 {
     piece = p;
     micChannel = -1;
-    tabs.clear();
     const auto* info = currentPiece();
 
     for (auto* c : getChildren())
@@ -469,12 +469,6 @@ void EditPage::showPiece (int p)
     for (size_t a = 0; a < info->articulations.size(); ++a)
     {
         articulationBox.addItem (info->articulations[a].name, (int) a + 1);
-        auto tab = std::make_unique<juce::TextButton> (info->articulations[a].name);
-        tab->setRadioGroupId (1);
-        tab->setTooltip ("Show " + info->articulations[a].name);
-        tab->onClick = [this, a] { showArticulation ((int) a); };
-        addAndMakeVisible (*tab);
-        tabs.push_back (std::move (tab));
     }
 
     seenHits = processor.getFeedback().pieceHits[(size_t) p].load();
@@ -492,7 +486,6 @@ void EditPage::showMic (int m)
     const auto& mic = shownKit->mics[(size_t) m];
     piece = -1;
     micChannel = m;
-    tabs.clear();
     zoneMap.setArticulation (nullptr, {});
     lastHitText = {};
 
@@ -513,7 +506,23 @@ void EditPage::showMic (int m)
     auto image = kitart::load (mic.role == MicRole::room ? "mics-room.png" : mic.role == MicRole::overheads ? "mics-overheads.png" : "mics-close.png");
 
     if (mic.role == MicRole::overheads && image.isValid())
+    {
         image = image.getClippedImage (image.getBounds().withTrimmedTop (juce::roundToInt (image.getHeight() * 0.72f)));
+
+        // The two mics hang at the render's edges, wide apart; in this small
+        // picture they're drawn closer together (each mic's strip, with a
+        // smaller gap between), so they come out bigger.
+        const auto strip = juce::roundToInt (image.getWidth() * 0.16f), gapWidth = juce::roundToInt (image.getWidth() * 0.18f);
+        juce::Image closer (juce::Image::ARGB, 2 * strip + gapWidth, image.getHeight(), true);
+
+        {
+            juce::Graphics g (closer);   // gone before `closer` is used
+            g.drawImage (image, 0, 0, strip, image.getHeight(), 0, 0, strip, image.getHeight());
+            g.drawImage (image, strip + gapWidth, 0, strip, image.getHeight(), image.getWidth() - strip, 0, strip, image.getHeight());
+        }
+
+        image = closer;
+    }
 
     picture->setPiece (image, theme::colours::textMuted, mic.name);
     picture->setMouseCursor (juce::MouseCursor::NormalCursor);   // nothing to play
@@ -544,9 +553,6 @@ void EditPage::showArticulation (int a)
         return;
 
     articulation = a;
-
-    for (size_t i = 0; i < tabs.size(); ++i)
-        tabs[i]->setToggleState ((int) i == a, juce::dontSendNotification);
 
     articulationBox.setSelectedId (a + 1, juce::dontSendNotification);
 
@@ -617,9 +623,10 @@ void EditPage::paint (juce::Graphics& g)
 
     g.fillAll (colours::background);
     g.setColour (colours::panel);
-    g.fillRect (getLocalBounds().removeFromTop (topHeight));
+    const auto bandHeight = topHeight + (micChannel >= 0 ? micTopExtra : 0);
+    g.fillRect (getLocalBounds().removeFromTop (bandHeight));
     g.setColour (colours::border);
-    g.fillRect (0, topHeight, getWidth(), 1);
+    g.fillRect (0, bandHeight, getWidth(), 1);
 
     if (currentPiece() != nullptr || micChannel >= 0)
     {
@@ -694,9 +701,11 @@ void EditPage::resized()
 {
     // Piece card: [picture]  < [piece] >
     //                        [model]
-    //                        [articulations...]
+    //                        [articulation v] CHOKE [note v]
     //                        [Strike] [M] [S]
-    pieceCardArea = juce::Rectangle<int> (margin, 9, cardPadding * 2 + (cardHeight - 2 * cardPadding) + 12 + cardControlsWidth, cardHeight);
+    const auto topExtra = micChannel >= 0 ? micTopExtra : 0;
+    const auto thisCardHeight = cardHeight + topExtra;
+    pieceCardArea = juce::Rectangle<int> (margin, 9, cardPadding * 2 + (thisCardHeight - 2 * cardPadding) + 12 + cardControlsWidth, thisCardHeight);
     auto card = pieceCardArea.reduced (cardPadding);
     picture->setBounds (card.removeFromLeft (card.getHeight()));
     card.removeFromLeft (12);
@@ -720,36 +729,20 @@ void EditPage::resized()
 
     model.setBounds (nextRow());
 
-    // One tab per articulation, or a menu if there are too many to fit.
+    // The articulation menu (always a menu, however many there are), then
+    // the choke note's menu at the end of the row.
     auto articulations = nextRow();
-    std::vector<int> widths;
-    int total = -6;
-
-    for (auto& tab : tabs)
-    {
-        widths.push_back ((int) theme::getTrackedTextWidth (tab->getButtonText().toUpperCase(), theme::label (14.0f), 0.06f) + 20);
-        total += widths.back() + 6;
-    }
-
-    const auto useMenu = total > articulations.getWidth();
-    articulationBox.setVisible (useMenu && currentPiece() != nullptr);
+    choke.setBounds (articulations.removeFromRight (78));
+    articulations.removeFromRight (4);
+    chokeLabel.setBounds (articulations.removeFromRight (44));
+    articulations.removeFromRight (8);
+    articulationBox.setVisible (currentPiece() != nullptr);
     articulationBox.setBounds (articulations);
-
-    for (size_t i = 0; i < tabs.size(); ++i)
-    {
-        tabs[i]->setVisible (! useMenu);
-        tabs[i]->setBounds (articulations.removeFromLeft (widths[i]));
-        articulations.removeFromLeft (6);
-    }
 
     auto actions = card.removeFromTop (controlHeight);
     solo.setBounds (actions.removeFromRight (40));
     actions.removeFromRight (4);
     mute.setBounds (actions.removeFromRight (40));
-    actions.removeFromRight (8);
-    choke.setBounds (actions.removeFromRight (78));
-    actions.removeFromRight (4);
-    chokeLabel.setBounds (actions.removeFromRight (44));
     actions.removeFromRight (8);
     strike.setBounds (actions);
 
@@ -758,12 +751,12 @@ void EditPage::resized()
         // A mic channel: its transient shaper and saturation where the zones
         // are; below, the whole-kit mics card beside its compressor, both
         // the height of the two rows.
-        auto top = juce::Rectangle<int> (pieceCardArea.getRight() + gap, pieceCardArea.getY(), getWidth() - pieceCardArea.getRight() - gap - margin, cardHeight);
+        auto top = juce::Rectangle<int> (pieceCardArea.getRight() + gap, pieceCardArea.getY(), getWidth() - pieceCardArea.getRight() - gap - margin, thisCardHeight);
         transient.setBounds (top.removeFromLeft ((top.getWidth() - gap) / 2));
         top.removeFromLeft (gap);
         saturation.setBounds (top);
 
-        auto rows = juce::Rectangle<int> (margin, topHeight + gap, getWidth() - 2 * margin, rowOneHeight + gap + rowTwoHeight);
+        auto rows = juce::Rectangle<int> (margin, topHeight + topExtra + gap, getWidth() - 2 * margin, rowOneHeight + gap + rowTwoHeight - topExtra);
         comp.setBounds (rows.removeFromRight (500));
         rows.removeFromRight (gap);
         mics.setBounds (rows);

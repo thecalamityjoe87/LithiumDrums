@@ -80,6 +80,7 @@ private:
         juce::Image image, scaled;             // as loaded, and shrunk to `area`
         juce::Rectangle<float> area;
         std::vector<juce::Point<float>> tips;
+        float splitOffset = 0.0f;              // a pair drawn with each half moved out this far, or in if negative (see drawMics())
     };
 
     /** Which of a render's points placeMics() puts where it's asked: the
@@ -89,6 +90,9 @@ private:
     /** A render ("mics-close", ...) at `scale` card pixels per render pixel,
         with its anchor point at `at`. */
     static PlacedMics placeMics (const juce::String& name, float scale, Anchor, juce::Point<float> at);
+
+    /** Draws placed mics, a split pair as its two halves moved apart. */
+    static void drawMics (juce::Graphics&, const PlacedMics&);
 
     enum class View { none, drum, mic };
 

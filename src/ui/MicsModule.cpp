@@ -568,6 +568,30 @@ MicsModule::PlacedMics MicsModule::placeMics (const juce::String& name, float sc
     return placed;
 }
 
+void MicsModule::drawMics (juce::Graphics& g, const PlacedMics& placed)
+{
+    if (! placed.scaled.isValid())
+        return;
+
+    if (juce::approximatelyEqual (placed.splitOffset, 0.0f))
+    {
+        g.drawImage (placed.scaled, placed.area);
+        return;
+    }
+
+    // Each half of the pair (one mic each), moved out by splitOffset (in, if
+    // it's negative). This
+    // drawImage overload takes whole pixels for both rectangles.
+    const auto& image = placed.scaled;
+    const auto sourceHalf = image.getWidth() / 2;
+    const auto dest = placed.area.toNearestInt();
+    const auto destHalf = dest.getWidth() / 2;
+    const auto offset = juce::roundToInt (placed.splitOffset);
+    g.drawImage (image, dest.getX() - offset, dest.getY(), destHalf, dest.getHeight(), 0, 0, sourceHalf, image.getHeight());
+    g.drawImage (image, dest.getX() + destHalf + offset, dest.getY(), dest.getWidth() - destHalf, dest.getHeight(),
+                 sourceHalf, 0, image.getWidth() - sourceHalf, image.getHeight());
+}
+
 void MicsModule::resized()
 {
     layoutHeaderButtons (nullptr, &reset);
@@ -654,10 +678,21 @@ void MicsModule::resized()
             // down) just overlap over it; their cables run up off the card.
             const auto& art = micArt ("mics-overheads");
             const auto spread = art.tips.size() == 2 ? (art.tips[1].x - art.tips[0].x) * art.size.x : art.size.x;
-            constexpr float overheadSize = 1.05f;   // the pair drawn a little bigger than half the drum's width apart
-            const auto scale = juce::jlimit (60.0f, 150.0f, drum.getWidth() * 0.5f) / spread * overheadSize;
+            // The mics are drawn bigger than that spacing alone would make
+            // them, with each half of the pair moved back in so the gap stays
+            // the same (see drawMics()).
+            const auto apart = juce::jlimit (60.0f, 150.0f, drum.getWidth() * 0.5f) * 1.05f;
+            constexpr float micScale = 1.7f;
             const auto tipsY = std::min (c.getY() + 72.0f, drum.getY() - 24.0f);
-            drumMics[roleIndex (MicRole::overheads)] = placeMics ("mics-overheads", scale, Anchor::tips, { drumPicture.aim.x, tipsY });
+            auto& pair = drumMics[roleIndex (MicRole::overheads)];
+            pair = placeMics ("mics-overheads", apart * micScale / spread, Anchor::tips, { drumPicture.aim.x, tipsY });
+            pair.splitOffset = 0.5f * apart * (1.0f - micScale);   // negative: in
+
+            if (pair.tips.size() == 2)
+            {
+                pair.tips[0].x -= pair.splitOffset;
+                pair.tips[1].x += pair.splitOffset;
+            }
         }
 
         {
@@ -669,17 +704,28 @@ void MicsModule::resized()
 
         // Each knob beside its mics: left of the close mic (above the kick's
         // and a cymbal's, clear of their stands),
-        // right of the overheads, left of the room pair.
+        // right of the overheads, top right of the room pair.
         const auto& oh = drumMics[roleIndex (MicRole::overheads)];
         const auto& room = drumMics[roleIndex (MicRole::room)];
         const auto closeTip = closeMic.tips.empty() ? drumPicture.aim : closeMic.tips.front();
         const auto closeKnob = role == PieceRole::kick ? juce::Point<float> (std::max (c.getX() + half, closeTip.x - 70.0f), closeTip.y - 74.0f)
                              : plate                ? juce::Point<float> (std::max (c.getX() + half, closeTip.x - 95.0f), closeTip.y - 50.0f)   // above its boom
                                                     : juce::Point<float> (std::max (c.getX() + half, closeMic.area.getX() - half - 6.0f), closeMic.area.getCentreY() - 6.0f);
+        // The room knob at the top right of the room mics: beside the
+        // right-hand mic's head, kept inside the card.
+        auto roomKnob = juce::Point<float> (room.area.getX() - half + 10.0f, c.getY() + c.getHeight() * 0.45f);
+
+        if (! room.tips.empty())
+        {
+            const auto rightMost = *std::max_element (room.tips.begin(), room.tips.end(), [] (auto a, auto b) { return a.x < b.x; });
+            roomKnob = { std::min (c.getRight() - half, rightMost.x + half + 14.0f),
+                         std::max (c.getY() + knobHeight * 0.5f, rightMost.y - 6.0f) };
+        }
+
         const std::array<juce::Point<float>, numMicRoles> knobCentres {
             closeKnob,
-            juce::Point<float> (oh.area.getRight() + half - 6.0f, std::max (c.getY() + knobHeight * 0.5f, middleOf (oh.tips).y - 30.0f)),
-            juce::Point<float> (room.area.getX() - half + 10.0f, c.getY() + c.getHeight() * 0.45f) };
+            juce::Point<float> (oh.area.getRight() + oh.splitOffset + half + 8.0f, std::max (c.getY() + knobHeight * 0.5f, middleOf (oh.tips).y - 30.0f)),
+            roomKnob };
 
         for (size_t r = 0; r < entries.size(); ++r)
             entries[r].knob->setBounds (juce::Rectangle<float> ((float) knobWidth, (float) knobHeight).withCentre (knobCentres[r]).toNearestInt());
@@ -711,7 +757,7 @@ void MicsModule::resized()
         // The overheads hang above the kit, so they get a strip of the card
         // over it for themselves and their cables.
         const auto room = micRole == MicRole::room;
-        const auto top = c.getY() + (room ? 4.0f : 66.0f);
+        const auto top = c.getY() + (room ? 4.0f : 78.0f);
         const auto space = juce::Rectangle<float> (c.getX(), top, c.getWidth(), knobsTop - 8.0f - top);
         const auto& roomArt = micArt ("mics-room");
         const auto roomScale = space.getHeight() / roomArt.size.y;
@@ -738,11 +784,21 @@ void MicsModule::resized()
         {
             const auto& art = micArt ("mics-overheads");
             const auto spread = art.tips.size() == 2 ? (art.tips[1].x - art.tips[0].x) * art.size.x : art.size.x;
-            // Small, hanging above the cymbals in the strip over the kit: a
-            // fixed size and place, whatever the kit's size.
-            constexpr float pairWidth = 81.0f, frontsDown = 54.0f;   // between the two mics' fronts; from the content's top
-            kitMics = placeMics ("mics-overheads", pairWidth / spread, Anchor::tips,
+            // Small, hanging above the cymbals in the strip over the kit, with
+            // some of their cables showing: a fixed size and place, whatever
+            // the kit's size. The render's pair is drawn small, then each half
+            // moved out so the mics are pairWidth apart (see drawMics()).
+            constexpr float pairWidth = 190.0f, frontsDown = 66.0f;   // between the two mics' fronts; from the content's top
+            constexpr float micScale = 0.42f;                         // of the size that would make the render pairWidth wide
+            kitMics = placeMics ("mics-overheads", pairWidth * micScale / spread, Anchor::tips,
                                  { kitPicture.area.getCentreX(), c.getY() + frontsDown });
+            kitMics.splitOffset = 0.5f * pairWidth * (1.0f - micScale);
+
+            if (kitMics.tips.size() == 2)
+            {
+                kitMics.tips[0].x -= kitMics.splitOffset;
+                kitMics.tips[1].x += kitMics.splitOffset;
+            }
         }
     }
 }
@@ -807,11 +863,29 @@ void MicsModule::paintDrumView (juce::Graphics& g)
     drawPicture (g, drumPicture.scaled, drumPicture.area, true);
 
     if (closeEntry.available && ! closeMic.tips.empty())
-        drawPickup (g, closeMic.tips.front(), head, spread * 0.5f, colour, levelOf (closeEntry));
+    {
+        // The kick's mic points straight ahead along its own axis (level,
+        // tilted up 4 degrees in its render: assets/blender-mics.py), so its
+        // light follows that line to the drum's middle, rather than angling
+        // off to the head's centre.
+        const auto tip = closeMic.tips.front();
+        auto to = head;
+
+        if (kit->pieces[(size_t) drumPicture.piece].role == PieceRole::kick)
+        {
+            constexpr float kickMicTilt = 4.0f * juce::MathConstants<float>::pi / 180.0f;
+            const auto reach = std::max (20.0f, head.x - tip.x);
+            to = tip + juce::Point<float> (reach, -reach * std::tan (kickMicTilt));
+        }
+
+        drawPickup (g, tip, to, spread * 0.5f, colour, levelOf (closeEntry));
+    }
 
     drawPicture (g, room.scaled, room.area, roomEntry.available);
     drawPicture (g, closeMic.scaled, closeMic.area, closeEntry.available);
-    drawPicture (g, overheads.scaled, overheads.area, overheadEntry.available);
+    g.setOpacity (overheadEntry.available ? 1.0f : 0.35f);
+    drawMics (g, overheads);
+    g.setOpacity (1.0f);
     g.restoreState();
 
     // Top left, clear of the mics: how the drum's sound divides between its three mics.
@@ -886,14 +960,18 @@ void MicsModule::paintMicView (juce::Graphics& g)
 
         if (e.available && ! kitPicture.pieceRects[(size_t) e.piece].isEmpty() && kitPicture.full.isValid())
         {
-            // A cone about as wide as the drum, from the mics to it.
+            // A cone from each mic of the pair to the drum, about as wide as
+            // the drum where it lands.
             const auto colour = groupColour (info (kit->pieces[(size_t) e.piece].role).group);
             const auto drumWidth = kitPicture.pieceRects[(size_t) e.piece].getWidth() * kitPicture.area.getWidth() / (float) kitPicture.full.getWidth();
-            drawPickup (g, middleOf (kitMics.tips), aimOnKit (e.piece), drumWidth * 0.45f, colour, std::max (0.35f, levelOf (e)));
+            const auto drum = aimOnKit (e.piece);
+
+            for (const auto& tip : kitMics.tips)
+                drawPickup (g, tip, drum, drumWidth * 0.45f, colour, std::max (0.35f, levelOf (e)));
         }
     }
 
-    drawPicture (g, kitMics.scaled, kitMics.area, true);
+    drawMics (g, kitMics);
     g.restoreState();
 
     // Each drum's name where the knob would put its own (see Knob::getNameArea),

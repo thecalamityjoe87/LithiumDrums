@@ -75,7 +75,6 @@ private:
     std::unique_ptr<PiecePicture> picture;
     juce::Rectangle<int> pieceCardArea;
     ModelButton model;
-    std::vector<std::unique_ptr<juce::TextButton>> tabs;
     StrikeButton strike;
     ParamToggle crossfade { "Crossfade", "Crossfade between neighbouring velocity zones, so there's no step between them" };
     ParamToggle mute { "M", "Mute this drum" }, solo { "S", "Solo this drum" };
