@@ -1,4 +1,4 @@
-# <img src="assets/icon/icon-128.png" alt="" width="56" align="center"> Lithium Drums
+# <img src="assets/icon/icon-128.png" alt="" width="56"> Lithium Drums
 
 **A free, open-source acoustic drum sampler.** Real multi-mic recordings of real kits, a mixer and effects to shape them, and 1,150 grooves played by human drummers, in your DAW or on its own.
 
