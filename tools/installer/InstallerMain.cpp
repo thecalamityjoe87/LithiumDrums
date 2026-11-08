@@ -427,20 +427,63 @@ namespace
     };
 
     //==========================================================================
+    /** The window's own title bar: just the minimise and close buttons, on
+        the installer header's colour so the two read as one block. No title
+        or icon; the header right under it says what this is. */
+    struct TitleBarLookAndFeel final : public juce::LookAndFeel_V4
+    {
+        TitleBarLookAndFeel()
+        {
+            // The window buttons fill themselves with this colour.
+            getCurrentColourScheme().setUIColour (ColourScheme::widgetBackground, theme::colours::panel);
+        }
+
+        void drawDocumentWindowTitleBar (juce::DocumentWindow&, juce::Graphics& g, int, int, int, int,
+                                         const juce::Image*, bool) override
+        {
+            g.fillAll (theme::colours::panel);
+        }
+    };
+
     class MainWindow final : public juce::DocumentWindow
     {
     public:
-        MainWindow() : juce::DocumentWindow ("Install Lithium Drums", theme::colours::background, closeButton)
+        MainWindow() : juce::DocumentWindow ("Install Lithium Drums", theme::colours::background, minimiseButton | closeButton)
         {
-            setUsingNativeTitleBar (true);
-            setContentOwned (new InstallerView(), true);
+            // The title bar's LookAndFeel goes on before anything has a size
+            // (changing it later makes the window lay its content out again).
+            // Set on the window, it would also reach the content, so the
+            // content asks for the app's default (Lithium) look explicitly.
+            setLookAndFeel (&titleBarLookAndFeel);
+            setUsingNativeTitleBar (false);
+            setTitleBarButtonsRequired (minimiseButton | closeButton, false);   // false: buttons on the right
+
+            auto view = std::make_unique<InstallerView>();
+            view->setLookAndFeel (&juce::LookAndFeel::getDefaultLookAndFeel());
+            setContentOwned (view.release(), true);
             setResizable (false, false);
-            setIcon (logo::renderIcon (256));
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
+
+            // The icon for the taskbar and window switcher. It goes to the
+            // window system directly: DocumentWindow::setIcon would draw it
+            // in the title bar instead.
+            if (auto* peer = getPeer())
+                peer->setIcon (logo::renderIcon (256));
+        }
+
+        ~MainWindow() override
+        {
+            // The LookAndFeel member is destroyed before the DocumentWindow
+            // base, so nothing may still point at it by then.
+            clearContentComponent();
+            setLookAndFeel (nullptr);
         }
 
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
+
+    private:
+        TitleBarLookAndFeel titleBarLookAndFeel;
     };
 
     //==========================================================================
