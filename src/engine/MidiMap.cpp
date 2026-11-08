@@ -269,7 +269,9 @@ juce::Result MidiMap::parse (const juce::String& json, MidiMap& result)
 
         if (const auto follow = n["follow"].toString(); follow.isNotEmpty())
         {
-            const auto* f = std::find_if (followKeys.begin(), followKeys.end(), [&] (const auto& k) { return follow == k.second; });
+            // An iterator, not a pointer: std::array's iterator is only a raw
+            // pointer in some standard libraries (GCC's), not in MSVC's.
+            const auto f = std::find_if (followKeys.begin(), followKeys.end(), [&] (const auto& k) { return follow == k.second; });
 
             if (f == followKeys.end())
                 return juce::Result::fail ("\"follow\" must be \"pedal\", \"position\" or \"none\"");

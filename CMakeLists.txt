@@ -258,7 +258,9 @@ target_compile_definitions(LithiumDrums
         JUCE_USE_MP3AUDIOFORMAT=0
         JUCE_USE_LAME_AUDIO_FORMAT=0
         JUCE_USE_WINDOWS_MEDIA_FORMAT=0
-        JUCE_JACK=1
+        # JACK only on Linux: macOS and Windows have no JACK headers on a
+        # normal system (and use Core Audio / WASAPI and ASIO instead).
+        $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
         LITHIUM_VERSION_STRING="${PROJECT_VERSION}"
         LITHIUM_AUTHOR_STRING="${LITHIUM_AUTHOR}"
         LITHIUM_COMPANY_STRING="${LITHIUM_COMPANY_NAME}"
@@ -377,6 +379,7 @@ if(UNIX AND NOT APPLE)
     juce_add_gui_app(LithiumDrumsInstaller
         PRODUCT_NAME "Install Lithium Drums"
         COMPANY_NAME "${LITHIUM_COMPANY_NAME}"
+        BUNDLE_ID    "${LITHIUM_BUNDLE_ID}.installer"
         VERSION      "${PROJECT_VERSION}")
     target_sources(LithiumDrumsInstaller PRIVATE
         tools/installer/InstallerMain.cpp
