@@ -38,6 +38,10 @@ public:
         room's room is chosen, and every drum's level in them set). */
     std::function<void (int micSlot)> onOpenMic;
 
+    /** A click on a drum in the picture (the drum view's drum, or one on the
+        mic view's kit): the Edit page plays it, as Strike does. */
+    std::function<void (int piece)> onStrike;
+
     /** Shows a drum's or an overhead/room mic's channel of this kit. The
         module keeps the KitInfo alive (it's shared, and the Mixer may swap
         in a new kit while we still point into the old one). */
@@ -48,8 +52,13 @@ public:
     void mouseEnter (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
 
 private:
+    /** The drum drawn at a point (in this component), or -1 for none. */
+    int drumAt (juce::Point<float>) const;
+
     /** One knob and what it draws: a mic role in the drum view, or a drum in
         the mic view. */
     struct Entry
@@ -82,6 +91,17 @@ private:
         juce::Image full, scaled;
         juce::Rectangle<float> area;
         std::vector<juce::Rectangle<float>> pieceRects;    // per drum, in `full`'s pixels; empty if it has no place on the stage
+
+        /** A drum slot's layer, for finding what a click lands on: by its
+            pixels' alpha, front to back, as on the Kit tab's stage. */
+        struct HitLayer
+        {
+            int piece = -1;                    // -1: a slot with no drum (it still hides what's behind it)
+            juce::Rectangle<int> rect;         // in `full`'s pixels
+            juce::Image image;                 // shared with the image cache, not a copy
+        };
+
+        std::vector<HitLayer> hitLayers;       // back to front
     };
 
     /** A mic render (assets/mic-renders) placed on the card, and where its

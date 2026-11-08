@@ -253,6 +253,15 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     strike.setTooltip ("Strike this articulation at velocity " + juce::String (LithiumDrumsProcessor::auditionVelocity));
     strike.onClick = playShown;
     picture->onClick = playShown;
+    // The Mics card: its drum is the one shown, so it plays as Strike does;
+    // another drum on the kit (overheads and room views) plays as on the stage.
+    mics.onStrike = [this, playShown] (int p)
+    {
+        if (p == piece)
+            playShown();
+        else
+            processor.audition (p, LithiumDrumsProcessor::auditionVelocity);
+    };
     picture->setMouseCursor (juce::MouseCursor::PointingHandCursor);
 
     crossfade.attach (processor.getParameters(), params::velocityCrossfade);

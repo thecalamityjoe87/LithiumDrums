@@ -664,6 +664,9 @@ void MicsModule::buildKitPicture()
 
             if (juce::isPositiveAndBelow (piece, (int) kit->pieces.size()))
                 kitPicture.pieceRects[(size_t) piece] = rect.translated (-crop.getX(), -crop.getY()).toFloat();
+
+            if (slot.has_value())
+                kitPicture.hitLayers.push_back ({ piece, rect.translated (-crop.getX(), -crop.getY()), layer });
         }
     }
 
@@ -1342,6 +1345,51 @@ void MicsModule::mouseExit (const juce::MouseEvent& e)
     // Turning a knob keeps its line even when the drag leaves the knob.
     if (! e.mods.isAnyMouseButtonDown() && entryFor (e.eventComponent) == hovered)
         setHovered (-1);
+}
+
+int MicsModule::drumAt (juce::Point<float> p) const
+{
+    if (overlay.isNotEmpty() || kit == nullptr)
+        return -1;
+
+    if (view == View::drum)
+        return drumPicture.area.contains (p) ? drumPicture.piece : -1;
+
+    if (view != View::mic || ! kitPicture.full.isValid() || ! kitPicture.area.contains (p))
+        return -1;
+
+    // From the card to the picture's pixels, then the frontmost layer that's
+    // solid there (soft shadows and antialiased edges don't count).
+    constexpr int hitAlphaThreshold = 48;
+    const auto scale = kitPicture.area.getWidth() / (float) kitPicture.full.getWidth();
+    const auto pixel = ((p - kitPicture.area.getPosition()) / scale).toInt();
+
+    for (auto it = kitPicture.hitLayers.rbegin(); it != kitPicture.hitLayers.rend(); ++it)
+    {
+        const auto local = pixel - it->rect.getPosition();
+
+        if (it->image.getBounds().contains (local) && it->image.getPixelAt (local.x, local.y).getAlpha() >= hitAlphaThreshold)
+            return juce::isPositiveAndBelow (it->piece, (int) kit->pieces.size()) ? it->piece : -1;
+    }
+
+    return -1;
+}
+
+void MicsModule::mouseDown (const juce::MouseEvent& e)
+{
+    // The knobs send us their mouse events too (for the hover line): only a
+    // click on the card itself, over a drum, strikes it.
+    if (e.eventComponent != this || ! onStrike)
+        return;
+
+    if (const auto piece = drumAt (e.position); piece >= 0)
+        onStrike (piece);
+}
+
+void MicsModule::mouseMove (const juce::MouseEvent& e)
+{
+    if (e.eventComponent == this)
+        setMouseCursor (drumAt (e.position) >= 0 ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
 }
 
 void MicsModule::mouseUp (const juce::MouseEvent&)
