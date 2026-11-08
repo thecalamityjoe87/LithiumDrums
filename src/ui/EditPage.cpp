@@ -1,5 +1,7 @@
 #include "EditPage.h"
 
+#include "KitArt.h"
+
 #include "SlotGrid.h"
 #include "Theme.h"
 
@@ -23,46 +25,6 @@ namespace
 }
 
 //==============================================================================
-/** One of the piece's mic sends: a name, a slider and its value. */
-class EditPage::SendRow final : public juce::Component
-{
-public:
-    SendRow (juce::String n, juce::String tip) : name (std::move (n))
-    {
-        slider.setSliderStyle (juce::Slider::LinearHorizontal);
-        slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        slider.setTooltip (tip);
-        slider.onValueChange = [this] { repaint(); };
-        addAndMakeVisible (slider);
-    }
-
-    void attach (juce::AudioProcessorValueTreeState& state, const juce::String& id)
-    {
-        attachment.reset();
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (state, id, slider);
-        slider.setDoubleClickReturnValue (true, 100.0);
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        using namespace theme;
-
-        auto area = getLocalBounds().toFloat();
-        g.setColour (colours::text);
-        g.setFont (body (13.5f, Weight::medium));
-        g.drawText (name, area.removeFromLeft (78.0f), juce::Justification::centredLeft, false);
-        g.setFont (mono (11.5f));
-        g.drawText (slider.getTextFromValue (slider.getValue()), area.removeFromRight (42.0f), juce::Justification::centredRight, false);
-    }
-
-    void resized() override   { slider.setBounds (getLocalBounds().withTrimmedLeft (78).withTrimmedRight (48)); }
-
-private:
-    const juce::String name;
-    ControlSlider slider;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
-};
-
 //==============================================================================
 /** The shape of each hit's volume: the attack's ramp, the hold, then the
     decay (or the recording's own fade, at Natural). Reads the parameters
@@ -253,14 +215,11 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
       picture (std::make_unique<PiecePicture>()),
       model (p),
       envelope (std::make_unique<EnvelopeGraph> (p.getParameters())),
-      eq (p.getParameters()),
-      comp (p.getParameters()),
       transient (p.getParameters(), TwoKnobModule::Kind::transient),
       saturation (p.getParameters(), TwoKnobModule::Kind::saturation),
-      routing (p.getParameters(), true)
+      mics (p.getParameters()),
+      comp (p.getParameters())
 {
-    routing.onOpenReturn = [this] (params::FxReturn r) { if (onOpenReturn) onOpenReturn (r); };
-
     // Piece bar
     previous.onClick = [this] { stepPiece (-1); };
     next.onClick = [this] { stepPiece (1); };
@@ -273,7 +232,13 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     };
     pieceBox.onChange = [this]
     {
-        if (const auto id = pieceBox.getSelectedId(); id > 0)
+        const auto id = pieceBox.getSelectedId();
+
+        if (id > micMenuId)
+            showMic (id - micMenuId - 1);
+        else if (id > 0 && id - 1 == processor.getSelection().getSelected())
+            showPiece (id - 1);   // back from a mic channel to the drum that's still selected
+        else if (id > 0)
             processor.getSelection().select (id - 1);
     };
 
@@ -291,8 +256,14 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
 
     crossfade.attach (processor.getParameters(), params::velocityCrossfade);
     mute.setColour (juce::TextButton::buttonOnColourId, theme::colours::textMuted);
+    choke.setTooltip ("Choke note: a note that chokes (grabs) this drum, e.g. from an e-kit's cymbal pad");
+    chokeLabel.setFont (theme::label (11.0f));
+    chokeLabel.setColour (juce::Label::textColourId, theme::colours::textMuted);
+    chokeLabel.setJustificationType (juce::Justification::centredRight);
+    chokeLabel.setBorderSize ({});
 
-    for (auto* c : std::initializer_list<juce::Component*> { picture.get(), &previous, &next, &pieceBox, &model, &strike, &crossfade, &mute, &solo })
+    for (auto* c : std::initializer_list<juce::Component*> { picture.get(), &previous, &next, &pieceBox, &model, &strike, &crossfade, &mute, &solo,
+                                                             &chokeLabel, &choke })
         addAndMakeVisible (c);
 
     addChildComponent (articulationBox);
@@ -301,13 +272,6 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     tune.setBipolar (true);
     pitchEnv.setBipolar (true);
     dynamics.setBipolar (true);
-    sends[0] = std::make_unique<SendRow> ("Close", "How loud the drum is in its close mics");
-    sends[1] = std::make_unique<SendRow> ("Overheads", "How loud the drum is in the overhead mics");
-    sends[2] = std::make_unique<SendRow> ("Room", "How loud the drum is in the room mics");
-    choke.setTooltip ("A note that chokes (grabs) this drum, e.g. from an e-kit's cymbal pad");
-    chokeLabel.setFont (theme::label (11.0f));
-    chokeLabel.setColour (juce::Label::textColourId, theme::colours::textMuted);
-    chokeLabel.setBorderSize ({});
 
     velocityModule.addAndMakeVisible (volume);
     velocityModule.addAndMakeVisible (dynamics);
@@ -321,12 +285,6 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     for (auto* k : { &attack, &hold, &decay })
         envelopeModule.addAndMakeVisible (k);
 
-    for (auto& s : sends)
-        micsModule.addAndMakeVisible (*s);
-
-    micsModule.addAndMakeVisible (chokeLabel);
-    micsModule.addAndMakeVisible (choke);
-
     // Zones
     zoneMap.setCompact (true);
     zoneMap.onAudition = [this] (int velocity)
@@ -337,7 +295,7 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     zonesModule.addAndMakeVisible (zoneMap);
 
     for (auto* c : std::initializer_list<juce::Component*> { &velocityModule, &pitchModule, &toneModule, &envelopeModule,
-                                                             &micsModule, &eq, &comp, &transient, &saturation, &routing,
+                                                             &mics, &comp, &transient, &saturation,
                                                              &zonesModule })
         addAndMakeVisible (c);
 
@@ -376,13 +334,43 @@ void EditPage::selectedPieceChanged (int p)
     showPiece (p);
 }
 
+std::vector<int> EditPage::micChannels() const
+{
+    // The mics with channels of their own: the overheads and room (a close
+    // mic only feeds the drums' channels).
+    std::vector<int> result;
+
+    if (shownKit != nullptr)
+        for (size_t m = 0; m < shownKit->mics.size(); ++m)
+            if (! shownKit->mics[m].direct)
+                result.push_back ((int) m);
+
+    return result;
+}
+
 void EditPage::stepPiece (int delta)
 {
+    // Through the drums, then the mic channels, and round.
     if (shownKit == nullptr || shownKit->pieces.empty())
         return;
 
-    const auto n = (int) shownKit->pieces.size();
-    processor.getSelection().select (((piece < 0 ? 0 : piece) + delta + n) % n);
+    const auto drums = (int) shownKit->pieces.size();
+    const auto channels = micChannels();
+    const auto n = drums + (int) channels.size();
+    auto at = piece >= 0 ? piece : 0;
+
+    if (micChannel >= 0)
+        if (const auto it = std::find (channels.begin(), channels.end(), micChannel); it != channels.end())
+            at = drums + (int) (it - channels.begin());
+
+    const auto to = (at + delta + n) % n;
+
+    if (to >= drums)
+        showMic (channels[(size_t) (to - drums)]);
+    else if (to == processor.getSelection().getSelected())
+        showPiece (to);
+    else
+        processor.getSelection().select (to);
 }
 
 void EditPage::updateKitInfo()
@@ -398,21 +386,35 @@ void EditPage::updateKitInfo()
     pieceBox.clear (juce::dontSendNotification);
 
     if (info != nullptr)
+    {
         for (size_t i = 0; i < info->pieces.size(); ++i)
             pieceBox.addItem (info->pieces[i].name, (int) i + 1);
 
+        if (const auto channels = micChannels(); ! channels.empty())
+        {
+            pieceBox.addSectionHeading ("Mic channels");
+
+            for (const auto m : channels)
+                pieceBox.addItem (info->mics[(size_t) m].name, micMenuId + m + 1);
+        }
+    }
+
     piece = -1;
+    micChannel = -1;
     showPiece (processor.getSelection().getSelected());
 }
 
 void EditPage::showPiece (int p)
 {
     piece = p;
+    micChannel = -1;
     tabs.clear();
     const auto* info = currentPiece();
 
     for (auto* c : getChildren())
         c->setVisible (info != nullptr);
+
+    picture->setMouseCursor (juce::MouseCursor::PointingHandCursor);
 
     if (info == nullptr)
     {
@@ -437,12 +439,11 @@ void EditPage::showPiece (int p)
     attachKnob (attack, params::attack);
     attachKnob (hold, params::hold);
     attachKnob (decay, "decay");
-    sends[0]->attach (state, params::pieceParamId (p, "send_close"));
-    sends[1]->attach (state, params::pieceParamId (p, "send_overheads"));
-    sends[2]->attach (state, params::pieceParamId (p, "send_room"));
-    choke.attach (state, params::pieceParamId (p, "choke_note"));
     mute.attach (state, params::pieceParamId (p, "mute"));
     solo.attach (state, params::pieceParamId (p, "solo"));
+    choke.attach (state, params::pieceParamId (p, "choke_note"));
+    mute.setTooltip ("Mute this drum");
+    solo.setTooltip ("Solo this drum");
 
     const auto colour = theme::groupColour (lithium::info (info->role).group);
 
@@ -453,16 +454,14 @@ void EditPage::showPiece (int p)
 
     // The drum's channel: the same parameters as its strip in the Mixer.
     const params::ChannelId channel { true, p };
-    eq.setSampleRate (processor.getSampleRate());
-    eq.attach (channel);
+    mics.show (shownKit, channel);
     comp.attach (channel);
     transient.attach (channel);
     saturation.attach (channel);
-    routing.attach (channel);
 
     // A drum with nothing on the close mics has a silent channel; say so
     // (see paintOverChildren) rather than offer controls that do nothing.
-    for (auto* c : std::initializer_list<juce::Component*> { &eq, &comp, &transient, &saturation, &routing })
+    for (auto* c : std::initializer_list<juce::Component*> { &comp, &transient, &saturation })
         c->setEnabled (info->hasDirectSignal);
 
     articulationBox.clear (juce::dontSendNotification);
@@ -481,6 +480,58 @@ void EditPage::showPiece (int p)
     seenHits = processor.getFeedback().pieceHits[(size_t) p].load();
     lastHitText = {};
     showArticulation (0);
+    resized();
+    repaint();
+}
+
+void EditPage::showMic (int m)
+{
+    if (shownKit == nullptr || ! juce::isPositiveAndBelow (m, (int) shownKit->mics.size()) || shownKit->mics[(size_t) m].direct)
+        return;
+
+    const auto& mic = shownKit->mics[(size_t) m];
+    piece = -1;
+    micChannel = m;
+    tabs.clear();
+    zoneMap.setArticulation (nullptr, {});
+    lastHitText = {};
+
+    // What a drum has and a mic channel doesn't (the articulations, zones,
+    // the per-hit shaping, Strike and choke) is hidden; the rest is the
+    // channel's.
+    for (auto* c : getChildren())
+        c->setVisible (false);
+
+    for (auto* c : std::initializer_list<juce::Component*> { picture.get(), &previous, &next, &pieceBox, &mute, &solo,
+                                                             &transient, &saturation, &mics, &comp })
+        c->setVisible (true);
+
+    pieceBox.setSelectedId (micMenuId + m + 1, juce::dontSendNotification);
+
+    // The mics' render: the overheads hanging (just their lower part, the
+    // mics and plugs, not the long cables), the room pair on their stands.
+    auto image = kitart::load (mic.role == MicRole::room ? "mics-room.png" : mic.role == MicRole::overheads ? "mics-overheads.png" : "mics-close.png");
+
+    if (mic.role == MicRole::overheads && image.isValid())
+        image = image.getClippedImage (image.getBounds().withTrimmedTop (juce::roundToInt (image.getHeight() * 0.72f)));
+
+    picture->setPiece (image, theme::colours::textMuted, mic.name);
+    picture->setMouseCursor (juce::MouseCursor::NormalCursor);   // nothing to play
+
+    const params::ChannelId channel { false, m };
+    auto& state = processor.getParameters();
+    mute.attach (state, channel.param ("mute"));
+    solo.attach (state, channel.param ("solo"));
+    mute.setTooltip ("Mute " + mic.name);
+    solo.setTooltip ("Solo " + mic.name);
+    mics.show (shownKit, channel);
+    comp.attach (channel);
+    transient.attach (channel);
+    saturation.attach (channel);
+
+    for (auto* c : std::initializer_list<juce::Component*> { &comp, &transient, &saturation })
+        c->setEnabled (true);
+
     resized();
     repaint();
 }
@@ -517,10 +568,18 @@ void EditPage::showArticulation (int a)
 
 void EditPage::timerCallback()
 {
+    if (micChannel >= 0)
+    {
+        comp.pushReduction (MixerFeedback::take (processor.getMixerFeedback().micReductionDb[(size_t) micChannel]));
+        return;
+    }
+
     const auto* info = currentPiece();
 
     if (info == nullptr)
         return;
+
+    comp.pushReduction (MixerFeedback::take (processor.getMixerFeedback().pieceReductionDb[(size_t) piece]));
 
     // The engine bumps the piece's counter on every hit, after storing what played.
     const auto& feedback = processor.getFeedback();
@@ -562,7 +621,7 @@ void EditPage::paint (juce::Graphics& g)
     g.setColour (colours::border);
     g.fillRect (0, topHeight, getWidth(), 1);
 
-    if (currentPiece() != nullptr)
+    if (currentPiece() != nullptr || micChannel >= 0)
     {
         // The piece card (the picture is a child: PiecePicture).
         g.setColour (colours::raised);
@@ -581,6 +640,20 @@ void EditPage::paint (juce::Graphics& g)
 void EditPage::paintOverChildren (juce::Graphics& g)
 {
     using namespace theme;
+
+    if (micChannel >= 0 && shownKit != nullptr)
+    {
+        // The dot in front of the menu, and what these mics are, where a drum
+        // has its model and articulations.
+        g.setColour (colours::textMuted);
+        g.fillEllipse (pieceBox.getBounds().toFloat().withWidth (26.0f).withSizeKeepingCentre (8.0f, 8.0f).translated (4.0f, 0.0f));
+        const auto role = shownKit->mics[(size_t) micChannel].role;
+        g.setFont (body (13.5f));
+        g.drawText (role == MicRole::room ? "Room mics: the kit from across the room" : "Overhead mics: the whole kit from above",
+                    juce::Rectangle<int> (pieceBox.getX(), pieceBox.getBottom() + 6, pieceBox.getRight() - pieceBox.getX() + 30, 28),
+                    juce::Justification::centredLeft, true);
+        return;
+    }
 
     const auto* info = currentPiece();
 
@@ -602,7 +675,7 @@ void EditPage::paintOverChildren (juce::Graphics& g)
 
     if (! info->hasDirectSignal)
     {
-        const auto row = eq.getBounds().getUnion (routing.getBounds()).toFloat();
+        const auto row = comp.getBounds().toFloat();
         g.setColour (colours::background.withAlpha (0.72f));
         g.fillRoundedRectangle (row, 8.0f);
         g.setColour (colours::text);
@@ -611,9 +684,8 @@ void EditPage::paintOverChildren (juce::Graphics& g)
                     juce::Justification::centred, false);
         g.setColour (colours::textMuted);
         g.setFont (body (13.5f));
-        g.drawText ("This kit only recorded it in the overheads and room, so its channel has nothing to process. "
-                    "Shape it with the controls above, and the overhead and room channels in the Mixer.",
-                    row.withTrimmedTop (row.getHeight() * 0.5f + 2.0f).withHeight (20.0f).reduced (40.0f, 0.0f),
+        g.drawText ("This kit only recorded it in the overheads and room, so its channel has nothing to process.",
+                    row.withTrimmedTop (row.getHeight() * 0.5f + 2.0f).withHeight (40.0f).reduced (40.0f, 0.0f),
                     juce::Justification::centred, true);
     }
 }
@@ -675,13 +747,40 @@ void EditPage::resized()
     actions.removeFromRight (4);
     mute.setBounds (actions.removeFromRight (40));
     actions.removeFromRight (8);
+    choke.setBounds (actions.removeFromRight (78));
+    actions.removeFromRight (4);
+    chokeLabel.setBounds (actions.removeFromRight (44));
+    actions.removeFromRight (8);
     strike.setBounds (actions);
+
+    if (micChannel >= 0)
+    {
+        // A mic channel: its transient shaper and saturation where the zones
+        // are; below, the whole-kit mics card beside its compressor, both
+        // the height of the two rows.
+        auto top = juce::Rectangle<int> (pieceCardArea.getRight() + gap, pieceCardArea.getY(), getWidth() - pieceCardArea.getRight() - gap - margin, cardHeight);
+        transient.setBounds (top.removeFromLeft ((top.getWidth() - gap) / 2));
+        top.removeFromLeft (gap);
+        saturation.setBounds (top);
+
+        auto rows = juce::Rectangle<int> (margin, topHeight + gap, getWidth() - 2 * margin, rowOneHeight + gap + rowTwoHeight);
+        comp.setBounds (rows.removeFromRight (500));
+        rows.removeFromRight (gap);
+        mics.setBounds (rows);
+        return;
+    }
 
     // Row one: shaping each hit.
     auto row = juce::Rectangle<int> (margin, topHeight + gap, getWidth() - 2 * margin, rowOneHeight);
 
-    for (auto [module, width] : { std::pair { &velocityModule, 150 }, { &pitchModule, 222 }, { &toneModule, 150 },
-                                  { &envelopeModule, 420 }, { &micsModule, 0 } })
+    // (How loud the drum is in each mic is set in the Mixer's Mics card.)
+    auto column = row.removeFromRight (156);
+    transient.setBounds (column.removeFromTop ((column.getHeight() - gap) / 2));
+    column.removeFromTop (gap);
+    saturation.setBounds (column);
+    row.removeFromRight (gap);
+
+    for (auto [module, width] : { std::pair { &velocityModule, 150 }, { &pitchModule, 222 }, { &toneModule, 150 }, { &envelopeModule, 0 } })
     {
         module->setBounds (width > 0 ? row.removeFromLeft (width) : row);
         row.removeFromLeft (gap);
@@ -718,34 +817,11 @@ void EditPage::resized()
             k->setBounds (knobs.removeFromLeft (w).reduced (8, 0));
     }
 
-    {
-        auto area = contentOf (micsModule);
-        area.removeFromTop (4);
-
-        for (auto& s : sends)
-        {
-            s->setBounds (area.removeFromTop (28));
-            area.removeFromTop (8);
-        }
-
-        auto bottom = area.removeFromBottom (26);
-        choke.setBounds (bottom);
-        area.removeFromBottom (4);
-        chokeLabel.setBounds (area.removeFromBottom (16));
-    }
-
     // Row two: the drum's channel.
     row = juce::Rectangle<int> (margin, topHeight + gap + rowOneHeight + gap, getWidth() - 2 * margin, rowTwoHeight);
-    eq.setBounds (row.removeFromLeft (470));
-    row.removeFromLeft (gap);
-    comp.setBounds (row.removeFromLeft (300));
-    row.removeFromLeft (gap);
-    auto column = row.removeFromLeft (156);
-    transient.setBounds (column.removeFromTop ((column.getHeight() - gap) / 2));
-    column.removeFromTop (gap);
-    saturation.setBounds (column);
-    row.removeFromLeft (gap);
-    routing.setBounds (row);
+    comp.setBounds (row.removeFromRight (500));
+    row.removeFromRight (gap);
+    mics.setBounds (row);
 
     // The zones sit beside the piece card.
     zonesModule.setBounds (pieceCardArea.getRight() + gap, pieceCardArea.getY(), getWidth() - pieceCardArea.getRight() - gap - margin, cardHeight);

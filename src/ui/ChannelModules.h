@@ -35,6 +35,8 @@ public:
 
     void attach (params::ChannelId);
     void setSampleRate (double rate)         { graph.setSampleRate (rate); }
+    void setSpectrum (SpectrumTap* tap)      { graph.setSpectrum (tap); }   // see EqGraph::setSpectrum()
+
     void resized() override;
     void paint (juce::Graphics&) override;
 
@@ -91,13 +93,13 @@ private:
     Knob first, second;
 };
 
-/** Where the channel goes: its sends to the three FX returns (before or
-    after the fader) and its output, and optionally (on the Edit page) its
-    fader and pan. A send's name opens its effect on the FX page. */
+/** The channel's place in the mix: its pan and stereo width, its sends to the three
+    FX returns (before or after the fader) and its output. A send's name opens
+    its effect on the FX page. */
 class RoutingModule final : public Module
 {
 public:
-    RoutingModule (juce::AudioProcessorValueTreeState&, bool withFaderAndPan);
+    explicit RoutingModule (juce::AudioProcessorValueTreeState&);
 
     /** Called with a params::FxReturn when a send's name is clicked. */
     std::function<void (params::FxReturn)> onOpenReturn;
@@ -108,8 +110,7 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState& state;
-    const bool withFader;
-    Knob fader { "Channel", Knob::Style::labelled, Knob::Size::large }, pan { "Pan", Knob::Style::labelled, Knob::Size::large };
+    Knob pan { "Pan", Knob::Style::labelled, Knob::Size::large }, width { "Width", Knob::Style::labelled, Knob::Size::large };
     std::array<Knob, params::numFxReturns> sends { Knob { "Room" }, Knob { "Plate" }, Knob { "Delay" } };
     ParamToggle pre { "Pre", "Sends before the fader: they don't follow it" };
     ParamCombo output;

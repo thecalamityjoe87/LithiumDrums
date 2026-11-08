@@ -100,6 +100,7 @@ inline constexpr std::string_view attack = "attack", hold = "hold";
 // whole drum); a mic's is its "volume".
 inline constexpr std::string_view output = "output", reverbSend = "reverb_send", roomSend = "room_send", delaySend = "delay_send";
 inline constexpr std::string_view sendPre = "send_pre";
+inline constexpr std::string_view channelWidth = "width";
 inline constexpr std::string_view eqOn = "eq_on", eqHighPass = "eq_hpf";
 inline constexpr std::string_view eqLowFreq = "eq_low_freq", eqLowGain = "eq_low_gain";
 inline constexpr std::string_view eqMid1Freq = "eq_mid1_freq", eqMid1Gain = "eq_mid1_gain", eqMid1Q = "eq_mid1_q";
@@ -221,7 +222,7 @@ private:
         Ref output, reverbSend, roomSend, delaySend, sendPre;
         Ref eqOn, hpf, lowFreq, lowGain, mid1Freq, mid1Gain, mid1Q, mid2Freq, mid2Gain, mid2Q, highFreq, highGain;
         Ref compOn, threshold, ratio, attack, release, makeup, mix;
-        Ref satOn, satDrive, satMix, transientOn, transientAttack, transientSustain;
+        Ref satOn, satDrive, satMix, transientOn, transientAttack, transientSustain, width;
     };
 
     struct PieceRefs

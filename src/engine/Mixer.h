@@ -1,5 +1,6 @@
 #pragma once
 
+#include "SpectrumTap.h"
 #include "EngineParams.h"
 #include "Voice.h"
 #include "dsp/ChannelChain.h"
@@ -33,6 +34,7 @@ struct MixerFeedback
     std::array<std::atomic<float>, 2> chainInPeak {}, chainOutPeak {};   // the master chain's input and output
     std::atomic<float> glueReductionDb { 0.0f }, crushReductionDb { 0.0f }, limiterReductionDb { 0.0f };
     std::array<std::atomic<float>, 2> masterPeak {};                // the main out
+    SpectrumTap channelSpectrum;                                    // the Mixer EQ's selected channel, before and after its EQ
 
     static void raise (std::atomic<float>& a, float value) noexcept
     {
@@ -111,7 +113,7 @@ private:
 
     /** Runs one channel: its chain, fader and pan (as left and right gains),
         then into its output and the three sends. Returns its peak level. */
-    float processChannel (Strip&, std::array<float*, 2> in, int numChannels, int numSamples, const ChannelParams&,
+    float processChannel (Strip&, int spectrumKey, std::array<float*, 2> in, int numChannels, int numSamples, const ChannelParams&,
                           float gainLeft, float gainRight, const std::array<float, numReturns>& sendGains,
                           const AuxOutputs&) noexcept;
 

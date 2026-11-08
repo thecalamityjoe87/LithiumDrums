@@ -3,6 +3,8 @@
 #include "Parameters.h"
 #include "Theme.h"
 
+#include <numeric>
+
 namespace lithium
 {
 
@@ -32,6 +34,118 @@ namespace
 EqGraph::EqGraph (juce::AudioProcessorValueTreeState& s) : state (s)
 {
     startTimerHz (30);
+}
+
+EqGraph::~EqGraph()
+{
+    if (spectrum != nullptr)
+        spectrum->setWanted (false);
+}
+
+void EqGraph::setSpectrum (SpectrumTap* tap)
+{
+    spectrum = tap;
+    window.resize ((size_t) fftSize);
+    fftBuffer.assign ((size_t) fftSize * 2, 0.0f);   // the FFT works in place and needs twice the room
+    juce::dsp::WindowingFunction<float>::fillWindowingTables (window.data(), (size_t) fftSize,
+                                                              juce::dsp::WindowingFunction<float>::hann, false);
+}
+
+void EqGraph::updateSpectrum()
+{
+    // Only while it's on screen, for a drum's or mic's channel: the audio
+    // thread copies nothing otherwise.
+    const auto wanted = isShowing() && channel.isValid() && ! channel.isMaster;
+    spectrum->setTarget (SpectrumTap::keyFor (channel.isPiece, channel.slot));
+    spectrum->setWanted (wanted);
+
+    if (! wanted)
+    {
+        for (auto& l : levelsDb)
+            l.clear();
+
+        return;
+    }
+
+    // A Hann window's sum turns an FFT magnitude back into the sine's amplitude.
+    const auto windowSum = std::accumulate (window.begin(), window.end(), 0.0f);
+    constexpr float floorDb = -100.0f, fallDbPerFrame = 1.5f;   // peaks jump up, then sink back slowly
+
+    for (size_t p = 0; p < (size_t) SpectrumTap::numPoints; ++p)
+    {
+        const auto point = (SpectrumTap::Point) p;
+        auto& levels = levelsDb[p];
+        levels.resize ((size_t) fftSize / 2, floorDb);
+        const auto written = spectrum->getWrittenCount (point);
+        const auto fresh = written != lastWritten[p] && spectrum->read (point, fftBuffer.data(), fftSize);
+        lastWritten[p] = written;
+
+        // Nothing new (a silent channel isn't processed): just let it sink.
+        if (! fresh)
+        {
+            for (auto& l : levels)
+                l = std::max (floorDb, l - fallDbPerFrame);
+
+            continue;
+        }
+
+        for (size_t i = 0; i < (size_t) fftSize; ++i)
+            fftBuffer[i] *= window[i];
+
+        std::fill (fftBuffer.begin() + fftSize, fftBuffer.end(), 0.0f);
+        fft.performFrequencyOnlyForwardTransform (fftBuffer.data());
+
+        for (size_t bin = 0; bin < levels.size(); ++bin)
+        {
+            const auto db = juce::Decibels::gainToDecibels (fftBuffer[bin] * 2.0f / windowSum, floorDb);
+            levels[bin] = std::max (db, levels[bin] - fallDbPerFrame);
+        }
+    }
+}
+
+void EqGraph::paintSpectrum (juce::Graphics& g, juce::Rectangle<float> plot) const
+{
+    using namespace theme;
+
+    if (spectrum == nullptr || levelsDb[0].empty())
+        return;
+
+    // Its own scale (0 dB at the top, -78 dB at the bottom), tilted up 3 dB
+    // an octave around 1 kHz so that a mix reads about level across the
+    // range, as analysers usually show it.
+    constexpr float topDb = 0.0f, bottomDb = -78.0f, tiltDbPerOctave = 3.0f;
+    const auto binHz = (float) sampleRate / (float) fftSize;
+
+    auto pathOf = [&] (const std::vector<float>& levels)
+    {
+        juce::Path p;
+        p.startNewSubPath (plot.getX(), plot.getBottom());
+
+        for (auto x = plot.getX(); x <= plot.getRight(); x += 2.0f)
+        {
+            const auto hz = hzForX (x);
+            const auto at = juce::jlimit (1.0f, (float) levels.size() - 2.0f, hz / binHz);
+            const auto i = (size_t) at;
+            const auto db = juce::jmap (at - (float) i, levels[i], levels[i + 1]) + tiltDbPerOctave * std::log2 (hz / 1000.0f);
+            const auto y = juce::jmap (juce::jlimit (bottomDb, topDb, db), bottomDb, topDb, plot.getBottom(), plot.getY());
+            p.lineTo (x, y);
+        }
+
+        p.lineTo (plot.getRight(), plot.getBottom());
+        p.closeSubPath();
+        return p;
+    };
+
+    juce::Graphics::ScopedSaveState clip (g);
+    g.reduceClipRegion (plot.toNearestInt());
+    g.setColour (colours::textMuted.withAlpha (0.16f));
+    g.fillPath (pathOf (levelsDb[SpectrumTap::beforeEq]));
+
+    const auto after = pathOf (levelsDb[SpectrumTap::afterEq]);
+    g.setColour (colours::accent.withAlpha (0.10f));
+    g.fillPath (after);
+    g.setColour (colours::accent.withAlpha (0.35f));
+    g.strokePath (after, juce::PathStrokeType (1.0f));
 }
 
 void EqGraph::setChannel (params::ChannelId newChannel)
@@ -75,6 +189,14 @@ EqSettings EqGraph::readSettings() const
 
 void EqGraph::timerCallback()
 {
+    if (spectrum != nullptr)
+    {
+        updateSpectrum();
+
+        if (! levelsDb[0].empty())
+            repaint();
+    }
+
     const auto now = readSettings();
     const auto a = asArray (now), b = asArray (shown);
 
@@ -197,6 +319,8 @@ void EqGraph::paint (juce::Graphics& g)
 
     if (! channel.isValid())
         return;
+
+    paintSpectrum (g, plot);
 
     // The curve. Switched off, it shows the settings faintly, over a flat line.
     auto curveOf = [&] (const EqSettings& s)

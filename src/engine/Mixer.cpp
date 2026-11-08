@@ -85,7 +85,7 @@ std::array<float*, 2> Mixer::route (int output, const AuxOutputs& auxOuts) noexc
     return master;
 }
 
-float Mixer::processChannel (Strip& strip, std::array<float*, 2> in, int numChannels, int numSamples,
+float Mixer::processChannel (Strip& strip, int spectrumKey, std::array<float*, 2> in, int numChannels, int numSamples,
                              const ChannelParams& params, float gainLeft, float gainRight,
                              const std::array<float, numReturns>& sendGains, const AuxOutputs& auxOuts) noexcept
 {
@@ -103,7 +103,9 @@ float Mixer::processChannel (Strip& strip, std::array<float*, 2> in, int numChan
     if (silentAndSettled (strip.gainLeft) && silentAndSettled (strip.gainRight) && ! anySend)
         return 0.0f;
 
-    strip.chain.process (in.data(), numChannels, numSamples, params.chain);
+    // The channel the Mixer's EQ shows also feeds its spectrum display.
+    auto* tap = meters != nullptr ? meters->channelSpectrum.ifTapping (spectrumKey) : nullptr;
+    strip.chain.process (in.data(), numChannels, numSamples, params.chain, tap);
 
     // Routed to an aux out, a channel skips the master fader and chain, like
     // a direct out on a desk.
@@ -288,7 +290,7 @@ void Mixer::process (const Kit& kit, int numSamples, const EngineParams& params,
         std::array<float*, 2> in { pieceBus.getWritePointer (p * 2), pieceBus.getWritePointer (p * 2 + 1) };
         auto& strip = pieceStrips[(size_t) p];
 
-        const auto peak = processChannel (strip, in, 2, numSamples, pp.channel, pp.faderGain * l, pp.faderGain * r,
+        const auto peak = processChannel (strip, SpectrumTap::keyFor (true, p), in, 2, numSamples, pp.channel, pp.faderGain * l, pp.faderGain * r,
                                           sendGains (pp.channel, pp.faderGain), auxOuts);
 
         if (meters != nullptr)
@@ -324,7 +326,7 @@ void Mixer::process (const Kit& kit, int numSamples, const EngineParams& params,
         if (! audible)
             gains = {};
 
-        const auto peak = processChannel (strip, in, mic.numChannels, numSamples, mp.channel, level * l, level * r, gains, auxOuts);
+        const auto peak = processChannel (strip, SpectrumTap::keyFor (false, m), in, mic.numChannels, numSamples, mp.channel, level * l, level * r, gains, auxOuts);
 
         if (meters != nullptr)
         {

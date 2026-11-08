@@ -117,20 +117,56 @@ void TransientShaper::process (float* const* channels, int numChannels, int numS
 }
 
 //==============================================================================
+void StereoWidth::prepare (double sampleRate)
+{
+    amount.reset (sampleRate, switchSeconds);
+    amount.setCurrentAndTargetValue (1.0f);
+}
+
+void StereoWidth::process (float* const* channels, int numChannels, int numSamples, float width) noexcept
+{
+    amount.setTargetValue (juce::jlimit (0.0f, 2.0f, width));
+
+    if (numChannels < 2 || (! amount.isSmoothing() && juce::exactlyEqual (amount.getTargetValue(), 1.0f)))
+    {
+        amount.skip (numSamples);
+        return;
+    }
+
+    for (int n = 0; n < numSamples; ++n)
+    {
+        const auto w = amount.getNextValue();
+        const auto middle = 0.5f * (channels[0][n] + channels[1][n]);
+        const auto side = 0.5f * (channels[0][n] - channels[1][n]) * w;
+        channels[0][n] = middle + side;
+        channels[1][n] = middle - side;
+    }
+}
+
 void ChannelChain::prepare (double sampleRate)
 {
     eq.prepare (sampleRate);
     transient.prepare (sampleRate);
     compressor.prepare (sampleRate);
     saturator.prepare (sampleRate);
+    stereoWidth.prepare (sampleRate);
 }
 
-void ChannelChain::process (float* const* channels, int numChannels, int numSamples, const ChannelSettings& s) noexcept
+void ChannelChain::process (float* const* channels, int numChannels, int numSamples, const ChannelSettings& s, SpectrumTap* tap) noexcept
 {
+    // (A mono channel's one channel is both sides of the tap's average.)
+    if (tap != nullptr)
+        tap->push (SpectrumTap::beforeEq, channels[0], channels[numChannels - 1], numSamples);
+
     eq.process (channels, numChannels, numSamples, s.eq);
+
+    if (tap != nullptr)
+        tap->push (SpectrumTap::afterEq, channels[0], channels[numChannels - 1], numSamples);
+
     transient.process (channels, numChannels, numSamples, s.transient);
     compressor.process (channels, numChannels, numSamples, s.comp);
     saturator.process (channels, numChannels, numSamples, s.saturation);
+    stereoWidth.process (channels, numChannels, numSamples, s.width);
 }
 
 } // namespace lithium

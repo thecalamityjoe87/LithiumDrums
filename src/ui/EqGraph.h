@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Parameters.h"
+#include "engine/SpectrumTap.h"
 #include "engine/dsp/ChannelEq.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_dsp/juce_dsp.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
@@ -25,6 +27,12 @@ class EqGraph final : public juce::Component, private juce::Timer
 {
 public:
     explicit EqGraph (juce::AudioProcessorValueTreeState&);
+    ~EqGraph() override;
+
+    /** Draws a live spectrum of the shown channel behind the curve: its sound
+        before the EQ (a faint fill) and after it (in the accent colour). The
+        tap is the engine's (MixerFeedback); it must outlive this graph. */
+    void setSpectrum (SpectrumTap*);
 
     /** Shows (and edits) one channel's EQ. An invalid id shows nothing. */
     void setChannel (params::ChannelId);
@@ -53,6 +61,8 @@ private:
     };
 
     void timerCallback() override;
+    void updateSpectrum();
+    void paintSpectrum (juce::Graphics&, juce::Rectangle<float> plot) const;
     EqSettings readSettings() const;
     juce::Rectangle<float> getPlotArea() const;
     float xForHz (float hz) const;
@@ -70,6 +80,14 @@ private:
     std::array<BandParams, numBands> bands;
     EqSettings shown;
     int hoverBand = -1, dragBand = -1;
+
+    // The spectrum: a 2048-point FFT of the latest samples, 30 times a second.
+    static constexpr int fftOrder = 11, fftSize = 1 << fftOrder;
+    SpectrumTap* spectrum = nullptr;
+    juce::dsp::FFT fft { fftOrder };
+    std::vector<float> window, fftBuffer;
+    std::array<std::vector<float>, SpectrumTap::numPoints> levelsDb;   // per bin, smoothed; empty until there's data
+    std::array<std::uint64_t, SpectrumTap::numPoints> lastWritten {};
 };
 
 } // namespace lithium

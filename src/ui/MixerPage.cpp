@@ -29,18 +29,18 @@ namespace
     constexpr int stripHeaderHeight = 16;                          // the colour dot and name, on one line
     constexpr int insertRow = 14, insertGap = theme::space::xxs;
     constexpr int knobRow = theme::size::knobCompact + 10;    // the dial and its caption
-    constexpr int faderHeight = theme::size::faderTravel + theme::size::faderCap;
+    constexpr int panRow = knobRow + theme::space::xxs;
+    constexpr int faderTravel = theme::size::faderTravel + panRow     // the room a pan knob used to take, given to the fader,
+                                + theme::size::buttonCompact + theme::space::xs;   // and the output menu's row (returns' outputs are on the FX page)
+    constexpr int faderHeight = faderTravel + theme::size::faderCap;
     constexpr int readoutHeight = 12;
     constexpr int scaleWidth = 18, faderWidth = 26;
 
     constexpr int insertsTop = stripPadding + stripHeaderHeight + theme::space::xs + 2;
-    constexpr int sendsTop = insertsTop + 2 * insertRow + insertGap + theme::space::xs + 2;
-    constexpr int knobsTop = sendsTop + knobRow + theme::space::xxs;   // Pre and pan
-    constexpr int faderTop = knobsTop + knobRow + theme::space::xxs;
+    constexpr int faderTop = insertsTop + 2 * insertRow + insertGap + theme::space::xs + 2;
     constexpr int readoutTop = faderTop + faderHeight + theme::space::xxs;
     constexpr int buttonsTop = readoutTop + readoutHeight + theme::space::xs;
-    constexpr int outputTop = buttonsTop + theme::size::buttonCompact + theme::space::xs;
-    constexpr int stripHeight = outputTop + theme::size::buttonCompact + stripPadding;
+    constexpr int stripHeight = buttonsTop + theme::size::buttonCompact + stripPadding;
 }
 
 int MixerStrip::getContentHeight()
@@ -69,25 +69,12 @@ MixerStrip::MixerStrip (LithiumDrumsProcessor& p, Kind k, int s, const KitInfo* 
     auto addChannelControls = [&] (params::ChannelId channel)
     {
         attachFader (channel.fader());
-        const std::array<std::string_view, params::numFxReturns> sendIds { params::roomSend, params::reverbSend, params::delaySend };
-
-        for (size_t i = 0; i < sends.size(); ++i)
-        {
-            sends[i].attach (state, channel.param (sendIds[i]));
-            sends[i].setArcColour (theme::fxColour ((int) i));
-            addAndMakeVisible (sends[i]);
-        }
-
-        pre.attach (state, channel.param (params::sendPre));
-        pan.attach (state, channel.param ("pan"));
-        pan.setBipolar (true);
         eq.attach (state, channel.param (params::eqOn));
         comp.attach (state, channel.param (params::compOn));
         transient.attach (state, channel.param (params::transientOn));
         saturation.attach (state, channel.param (params::satOn));
-        output.attach (state, channel.param (params::output));
 
-        for (auto* c : std::initializer_list<juce::Component*> { &pre, &pan, &eq, &comp, &transient, &saturation, &mute, &solo, &output })
+        for (auto* c : std::initializer_list<juce::Component*> { &eq, &comp, &transient, &saturation, &mute, &solo })
             addAndMakeVisible (c);
     };
 
@@ -142,10 +129,11 @@ MixerStrip::MixerStrip (LithiumDrumsProcessor& p, Kind k, int s, const KitInfo* 
         case Kind::fxReturn:
         {
             using namespace params;
-            struct Ids { const char *level, *mute, *pan, *output; };
-            constexpr std::array<Ids, numFxReturns> ids {{ { roomReturn, roomMute, roomPan, roomOutput },
-                                                          { reverbReturn, reverbMute, reverbPan, reverbOutput },
-                                                          { delayReturn, delayMute, delayPan, delayOutput } }};
+            // (A return's output menu is on its card on the FX page.)
+            struct Ids { const char *level, *mute, *pan; };
+            constexpr std::array<Ids, numFxReturns> ids {{ { roomReturn, roomMute, roomPan },
+                                                          { reverbReturn, reverbMute, reverbPan },
+                                                          { delayReturn, delayMute, delayPan } }};
             const auto& r = ids[(size_t) slot];
             name = theme::fxName (slot);
             tag = "Return";
@@ -154,10 +142,9 @@ MixerStrip::MixerStrip (LithiumDrumsProcessor& p, Kind k, int s, const KitInfo* 
             mute.attach (state, r.mute);
             pan.attach (state, r.pan);
             pan.setBipolar (true);
-            output.attach (state, r.output);
             fader.setColour (juce::Slider::trackColourId, dot);
 
-            for (auto* c : std::initializer_list<juce::Component*> { &pan, &mute, &output })
+            for (auto* c : std::initializer_list<juce::Component*> { &pan, &mute })
                 addAndMakeVisible (c);
 
             break;
@@ -176,17 +163,10 @@ MixerStrip::MixerStrip (LithiumDrumsProcessor& p, Kind k, int s, const KitInfo* 
 
     fader.setTooltip (kind == Kind::trim ? name + ": how loud this close mic is in the drum channels"
                                          : name + " level (double-click for 0 dB, Shift-drag for fine steps)");
-    for (size_t i = 0; i < sends.size(); ++i)
-        sends[i].setTooltip (name + ": " + theme::fxName ((int) i) + " send. Click its name below to open the "
-                             + theme::fxName ((int) i) + " on the FX page.");
-
-    pre.setTooltip (name + ": sends before the fader, so they don't follow it (off: after the fader)");
-    pre.setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
     pan.setTooltip (name + ": pan");
     mute.setTooltip ("Mute " + name);
     solo.setTooltip ("Solo " + name);
     mute.setColour (juce::TextButton::buttonOnColourId, textMuted);
-    output.setTooltip ("Output: the main mix, or an aux out for mixing in the host");
 
     for (auto* b : { &eq, &comp, &transient, &saturation })
         b->setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
@@ -211,54 +191,10 @@ void MixerStrip::pushLevels (float left, float right)
     meter.push (left, right);
 }
 
-juce::Rectangle<int> MixerStrip::getSendCaption (int index) const
+void MixerStrip::mouseDown (const juce::MouseEvent&)
 {
-    // The knob's share of the row, which is a little wider than the knob.
-    const auto cell = (getWidth() - 2 * stripPadding) / params::numFxReturns;
-    return { stripPadding + index * cell, sends[(size_t) index].getBottom(), cell, 10 };
-}
-
-void MixerStrip::mouseDown (const juce::MouseEvent& e)
-{
-    // A send's name opens its effect on the FX page.
-    for (int i = 0; i < params::numFxReturns; ++i)
-    {
-        if (sends[(size_t) i].isVisible() && getSendCaption (i).contains (e.getPosition()))
-        {
-            if (onOpenReturn)
-                onOpenReturn ((params::FxReturn) i);
-
-            return;
-        }
-    }
-
     if (onSelect)
         onSelect();
-}
-
-void MixerStrip::mouseMove (const juce::MouseEvent& e)
-{
-    auto hovered = -1;
-
-    for (int i = 0; i < params::numFxReturns; ++i)
-        if (sends[(size_t) i].isVisible() && getSendCaption (i).contains (e.getPosition()))
-            hovered = i;
-
-    if (hovered != hoveredCaption)
-    {
-        hoveredCaption = hovered;
-        setMouseCursor (hovered >= 0 ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
-        repaint();
-    }
-}
-
-void MixerStrip::mouseExit (const juce::MouseEvent&)
-{
-    if (hoveredCaption >= 0)
-    {
-        hoveredCaption = -1;
-        repaint();
-    }
 }
 
 juce::Rectangle<int> MixerStrip::getReadoutArea() const
@@ -295,26 +231,6 @@ void MixerStrip::paint (juce::Graphics& g)
     g.setColour (silent ? colours::textMuted : colours::text);
     g.setFont (nameFont);
     g.drawText (nameText, line, juce::Justification::centredLeft, true);
-
-    // Captions under the knobs. The sends' are links to their effects,
-    // underlined while the mouse is over them.
-    for (int i = 0; i < params::numFxReturns; ++i)
-    {
-        if (! sends[(size_t) i].isVisible())
-            continue;
-
-        const auto caption = getSendCaption (i).toFloat();
-        const auto text = theme::fxName (i).toUpperCase();
-        const auto font = label (9.0f, Weight::medium);
-        g.setColour (hoveredCaption == i ? fxColour (i) : colours::textMuted);
-        drawTrackedText (g, text, font, 0.0f, caption, juce::Justification::centred);
-
-        if (hoveredCaption == i)
-        {
-            const auto w = getTrackedTextWidth (text, font, 0.0f);
-            g.fillRect (juce::Rectangle<float> (caption.getCentreX() - w * 0.5f, caption.getBottom() - 0.5f, w, 1.0f));
-        }
-    }
 
     if (pan.isVisible())
     {
@@ -371,20 +287,8 @@ void MixerStrip::resized()
         saturation.setBounds (bottom.withTrimmedLeft (insertGap));
     }
 
-    // The three sends in a row, then Pre and pan (a trim's or a return's pan
-    // sits where the pan is on the others).
-    {
-        auto row = inner.withY (sendsTop).withHeight (size::knobCompact);
-        const auto w = row.getWidth() / params::numFxReturns;
-
-        for (auto& k : sends)
-            k.setBounds (row.removeFromLeft (w).withSizeKeepingCentre (size::knobCompact, size::knobCompact));
-
-        auto lower = inner.withY (knobsTop).withHeight (size::knobCompact);
-        const auto half = inner.getWidth() / 2;
-        pre.setBounds (lower.removeFromLeft (half).withSizeKeepingCentre (half - insertGap, insertRow + 2));
-        pan.setBounds (lower.withSizeKeepingCentre (size::knobCompact, size::knobCompact));
-    }
+    // A trim's or a return's pan (the others' is in the inspector's Channel card) sits where the inserts are on the other strips.
+    pan.setBounds (inner.withY (insertsTop).withHeight (size::knobCompact).withSizeKeepingCentre (size::knobCompact, size::knobCompact));
 
     // The fader and its meter, centred as a group with the scale to the fader's left.
     {
@@ -392,11 +296,12 @@ void MixerStrip::resized()
         const auto groupWidth = scaleWidth + 3 + faderWidth + space::xs + meterWidth;
         const auto x = (getWidth() - groupWidth) / 2 + scaleWidth + 3;
         fader.setBounds (x, faderTop, faderWidth, faderHeight);
-        meter.setBounds (fader.getRight() + space::xs, faderTop + size::faderCap / 2, meterWidth, size::faderTravel);
+        meter.setBounds (fader.getRight() + space::xs, faderTop + size::faderCap / 2, meterWidth, faderTravel);
     }
 
     auto buttons = inner.withY (buttonsTop).withHeight (size::buttonCompact);
 
+    // Mute and solo at the bottom of the strip (a return has only mute).
     if (kind == Kind::fxReturn)
     {
         mute.setBounds (buttons);
@@ -406,38 +311,32 @@ void MixerStrip::resized()
         mute.setBounds (buttons.removeFromLeft ((buttons.getWidth() - insertGap) / 2));
         solo.setBounds (buttons.withTrimmedLeft (insertGap));
     }
-
-    output.setBounds (inner.withY (outputTop).withHeight (size::buttonCompact));
 }
 
 //==============================================================================
 MixerInspector::MixerInspector (LithiumDrumsProcessor& p)
     : processor (p),
       eq (p.getParameters()),
-      comp (p.getParameters()),
-      transient (p.getParameters(), TwoKnobModule::Kind::transient),
-      saturation (p.getParameters(), TwoKnobModule::Kind::saturation),
-      routing (p.getParameters(), false)
+      routing (p.getParameters())
 {
     routing.onOpenReturn = [this] (params::FxReturn r) { if (onOpenReturn) onOpenReturn (r); };
 
-    // The EQ here is the whole kit's, whichever channel is selected.
-    eq.setSampleRate (processor.getSampleRate());
-    eq.attach (params::ChannelId::master());
-    eq.setTitle ("Master EQ");
+    // A live spectrum of the selected channel behind its EQ curve.
+    eq.setSpectrum (&p.getMixerFeedback().channelSpectrum);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &eq, &comp, &transient, &saturation, &routing })
+    for (auto* c : std::initializer_list<juce::Component*> { &eq, &routing })
         addChildComponent (c);
 }
 
 MixerInspector::~MixerInspector() = default;
 
-void MixerInspector::showChannel (params::ChannelId channel)
+void MixerInspector::showChannel (params::ChannelId channel, const juce::String& name)
 {
+    const auto dot = juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 "));
+    eq.setTitle ("EQ" + dot + name);
+    routing.setTitle ("Channel" + dot + name);
     eq.setSampleRate (processor.getSampleRate());
-    comp.attach (channel);
-    transient.attach (channel);
-    saturation.attach (channel);
+    eq.attach (channel);
     routing.attach (channel);
     setMode (Mode::channel);
 }
@@ -451,7 +350,7 @@ void MixerInspector::setMode (Mode m)
 {
     mode = m;
 
-    for (auto* c : std::initializer_list<juce::Component*> { &eq, &comp, &transient, &saturation, &routing })
+    for (auto* c : std::initializer_list<juce::Component*> { &eq, &routing })
         c->setVisible (mode == Mode::channel);
 
     resized();
@@ -476,19 +375,11 @@ void MixerInspector::paint (juce::Graphics& g)
 
 void MixerInspector::resized()
 {
-    // Master EQ | compressor | transient over saturation | send and output
+    // EQ | channel (fader, pan, sends, output)
     auto row = getLocalBounds().withTrimmedTop (12).withTrimmedBottom (12).reduced (16, 0);
-    eq.setBounds (row.removeFromLeft (595));
-    row.removeFromLeft (12);
-    comp.setBounds (row.removeFromLeft (290));
-    row.removeFromLeft (12);
-    auto column = row.removeFromLeft (150);
-    transient.setBounds (column.removeFromTop ((column.getHeight() - 8) / 2));
-    column.removeFromTop (8);
-    saturation.setBounds (column);
-    row.removeFromLeft (12);
-    routing.setBounds (row);
-
+    routing.setBounds (row.removeFromRight (260));
+    row.removeFromRight (12);
+    eq.setBounds (row);
 }
 
 //==============================================================================
@@ -567,8 +458,6 @@ void MixerPage::rebuildStrips()
             if (kind == MixerStrip::Kind::piece || kind == MixerStrip::Kind::mic)
                 strip->onSelect = [this, kind, slot] { select ({ kind == MixerStrip::Kind::piece, slot }); };
 
-            strip->onOpenReturn = [this] (params::FxReturn r) { openReturn (r); };
-
             stripRow.addAndMakeVisible (*strip);
             strips.push_back (std::move (strip));
         };
@@ -627,7 +516,8 @@ void MixerPage::updateSelection()
     if (channel.isPiece && shownKit->pieces.empty())
         inspector.showNothing();
     else
-        inspector.showChannel (channel);
+        inspector.showChannel (channel, channel.isPiece ? shownKit->pieces[(size_t) channel.slot].name
+                                                        : shownKit->mics[(size_t) channel.slot].name);
 }
 
 void MixerPage::timerCallback()
@@ -635,29 +525,22 @@ void MixerPage::timerCallback()
     // Read and clear the peaks even while hidden, so the meters don't show a
     // stale burst when the page comes back.
     auto& fb = processor.getMixerFeedback();
-    std::array<float, maxPieces> piecePeaks {}, pieceReduction {};
-    std::array<float, maxMics> micPeaks {}, micReduction {};
+    std::array<float, maxPieces> piecePeaks {};
+    std::array<float, maxMics> micPeaks {};
 
     for (size_t i = 0; i < (size_t) maxPieces; ++i)
     {
         piecePeaks[i] = MixerFeedback::take (fb.piecePeak[i]);
-        pieceReduction[i] = MixerFeedback::take (fb.pieceReductionDb[i]);
     }
 
     for (size_t i = 0; i < (size_t) maxMics; ++i)
     {
         micPeaks[i] = MixerFeedback::take (fb.micPeak[i]);
-        micReduction[i] = MixerFeedback::take (fb.micReductionDb[i]);
     }
 
     for (auto& s : strips)
         if (s->kind == MixerStrip::Kind::piece || s->kind == MixerStrip::Kind::mic)
             s->pushLevels ((s->kind == MixerStrip::Kind::piece ? piecePeaks : micPeaks)[(size_t) s->slot], 0.0f);
-
-    const auto selected = processor.selectedMixerChannel;
-
-    if (selected.isValid())
-        inspector.pushReduction ((selected.isPiece ? pieceReduction : micReduction)[(size_t) selected.slot]);
 
     for (size_t r = 0; r < returnStrips.size(); ++r)
         returnStrips[r]->pushLevels (MixerFeedback::take (fb.returnPeak[r]), 0.0f);

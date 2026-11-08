@@ -336,6 +336,7 @@ namespace
         add.addFloat (satMix, "Saturation Mix", { 0.0f, 100.0f, 0.1f }, sat.mix * 100.0f, percentAttributes());
 
         addTransientParameters (add, defaults.transient);
+        add.addFloat (channelWidth, "Stereo Width", { 0.0f, 200.0f, 1.0f }, 100.0f, percentAttributes());
     }
 
     /** A plain (not per-slot) parameter group, for the returns and the master chain. */
@@ -713,7 +714,7 @@ Snapshot::ChannelRefs Snapshot::findChannel (juce::AudioProcessorValueTreeState&
              get (eqOn), get (eqHighPass), get (eqLowFreq), get (eqLowGain), get (eqMid1Freq), get (eqMid1Gain), get (eqMid1Q),
              get (eqMid2Freq), get (eqMid2Gain), get (eqMid2Q), get (eqHighFreq), get (eqHighGain),
              get (compOn), get (compThreshold), get (compRatio), get (compAttack), get (compRelease), get (compMakeup), get (compMix),
-             get (satOn), get (satDrive), get (satMix), get (transientOn), get (transientAttack), get (transientSustain) };
+             get (satOn), get (satDrive), get (satMix), get (transientOn), get (transientAttack), get (transientSustain), get (channelWidth) };
 }
 
 Snapshot::ReturnRefs Snapshot::findReturn (juce::AudioProcessorValueTreeState& state, const char* levelId, const char* muteId,
@@ -832,6 +833,8 @@ void Snapshot::readChannel (const ChannelRefs& r, ChannelParams& c) noexcept
     transient.enabled = loadBool (r.transientOn);
     transient.attack = load (r.transientAttack) / 100.0f;
     transient.sustain = load (r.transientSustain) / 100.0f;
+
+    c.chain.width = load (r.width) / 100.0f;
 }
 
 void Snapshot::readReturn (const ReturnRefs& r, ReturnParams& out) noexcept

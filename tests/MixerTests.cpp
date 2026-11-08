@@ -267,6 +267,56 @@ public:
             juce::ignoreUnused (sharpTail, _);
         }
 
+        beginTest ("Stereo width narrows to mono, widens, and leaves a mono or unit-width channel alone");
+        {
+            constexpr int length = 4800, tail = 2000;
+            std::vector<float> left ((size_t) length), right ((size_t) length);
+
+            for (int i = 0; i < length; ++i)
+            {
+                left[(size_t) i] = 0.8f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * i / rate);
+                right[(size_t) i] = 0.3f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 330.0 * i / rate);
+            }
+
+            // The width applied to a copy of the signal, then the tail's largest differences from what went in.
+            auto run = [&] (float width, int channels, float& sideError, float& middleError, float& sideGain)
+            {
+                StereoWidth stereoWidth;
+                stereoWidth.prepare (rate);
+                auto l = left, r = right;
+                float* both[2] = { l.data(), r.data() };
+                stereoWidth.process (both, channels, length, width);
+                sideError = middleError = 0.0f;
+                float inSide = 0.0f, outSide = 0.0f;
+
+                for (int i = length - tail; i < length; ++i)
+                {
+                    const auto in = (size_t) i;
+                    sideError = std::max (sideError, std::abs ((l[in] - r[in]) - (left[in] - right[in])));
+                    middleError = std::max (middleError, std::abs ((l[in] + r[in]) - (left[in] + right[in])));
+                    inSide = std::max (inSide, std::abs (left[in] - right[in]));
+                    outSide = std::max (outSide, std::abs (l[in] - r[in]));
+                }
+
+                sideGain = outSide / inSide;
+            };
+
+            float sideError = 0.0f, middleError = 0.0f, gain = 0.0f;
+            run (1.0f, 2, sideError, middleError, gain);
+            expect (sideError < 1.0e-7f && middleError < 1.0e-7f, "unit width changes the signal");
+
+            run (0.0f, 2, sideError, middleError, gain);
+            expect (gain < 1.0e-4f, "mono still has a side of " + juce::String (gain));
+            expect (middleError < 1.0e-4f, "mono changed the middle");
+
+            run (2.0f, 2, sideError, middleError, gain);
+            expect (std::abs (gain - 2.0f) < 1.0e-3f, "double width has a side of " + juce::String (gain));
+            expect (middleError < 1.0e-4f, "widening changed the middle");
+
+            run (0.0f, 1, sideError, middleError, gain);
+            expect (sideError < 1.0e-7f && middleError < 1.0e-7f, "a mono channel was changed");
+        }
+
         beginTest ("The reverb decays in its decay time, and goes quiet afterwards");
         {
             for (const auto decay : { 0.8f, 2.5f })

@@ -187,6 +187,13 @@ public:
         using namespace params;
         auto& state = p.getParameters();
 
+        // Where the return goes: the main mix or an aux out (its strip in the
+        // Mixer has no room for this menu).
+        constexpr std::array<const char*, numFxReturns> outputs { roomOutput, reverbOutput, delayOutput };
+        output.attach (state, outputs[(size_t) which]);
+        output.setTooltip ("Output: the main mix, or an aux out for mixing in the host");
+        addAndMakeVisible (output);
+
         auto add = [&] (const char* name, const char* id)
         {
             auto& k = knobs.emplace_back (std::make_unique<Knob> (name));
@@ -333,8 +340,11 @@ public:
         using namespace theme;
         auto header = getHeaderArea();
         presets.setBounds (header.removeFromRight (140).withSizeKeepingCentre (140, size::button - 6));
+        header.removeFromRight (space::sm);
+        output.setBounds (header.removeFromRight (96).withSizeKeepingCentre (96, size::button - 6));
         header.removeFromRight (space::md);
-        meterArea = header.removeFromRight (72).withSizeKeepingCentre (72, 4);
+        const auto meterWidth = juce::jlimit (24, 72, header.getWidth() - 90);   // what's left after the title's room
+        meterArea = header.removeFromRight (meterWidth).withSizeKeepingCentre (meterWidth, 4);
 
         auto area = getLocalBounds().reduced (space::md).withTrimmedTop (cardHeaderHeight + space::xs);
         subtitleArea = area.removeFromTop (18);
@@ -405,6 +415,7 @@ private:
     const FxModule module;
     const ModuleInfo info;
     PresetButton presets;
+    ParamCombo output;
     std::vector<std::unique_ptr<Knob>> knobs;
     ParamCombo irBox, note;
     juce::TextButton load { "Load..." };
@@ -625,7 +636,7 @@ public:
         loadIr.onClick = [this] { chooseFile(); };
         room.addAndMakeVisible (loadIr);
 
-        for (auto* c : std::initializer_list<juce::Component*> { &eq, &glue, &crush, &tape, &transient, &limiter, &room, &plate, &delay })
+        for (auto* c : std::initializer_list<juce::Component*> { &eq, &glue, &glueAbout, &crush, &tape, &transient, &transientAbout, &limiter, &room, &plate, &delay })
             addChildComponent (c);
 
         startTimerHz (15);
@@ -639,6 +650,8 @@ public:
         for (size_t i = 0; i < cards.size(); ++i)
             cards[i]->setVisible ((int) i == (int) m);
 
+        glueAbout.setVisible (m == FxModule::glue);
+        transientAbout.setVisible (m == FxModule::transient);
         eq.setSampleRate (processor.getSampleRate());
         repaint();
     }
@@ -671,8 +684,21 @@ public:
         using namespace theme;
         const auto area = getLocalBounds().withTrimmedTop (cardHeaderHeight + space::xs);
 
-        for (auto* c : std::initializer_list<juce::Component*> { &eq, &glue, &crush, &tape, &transient, &limiter, &room, &plate, &delay })
+        for (auto* c : std::initializer_list<juce::Component*> { &eq, &crush, &tape, &limiter, &room, &plate, &delay })
             c->setBounds (area);
+
+        // The glue compressor and the transient shaper are cards of their own, with what they do in a card beside them.
+        {
+            auto glueArea = area;
+            glue.setBounds (glueArea.removeFromLeft (660));
+            glueArea.removeFromLeft (space::lg);
+            glueAbout.setBounds (glueArea);
+
+            auto transientArea = area;
+            transient.setBounds (transientArea.removeFromLeft (300));
+            transientArea.removeFromLeft (space::lg);
+            transientAbout.setBounds (transientArea);
+        }
 
         // The knob cards: a graph (or the meter) on the left, the knobs right.
         auto layoutKnobs = [] (std::vector<std::unique_ptr<Knob>>& knobs, juce::Rectangle<int> row)
@@ -696,8 +722,10 @@ public:
             onButton (crush, crushOn);
             crushMeter.setBounds (c.removeFromRight (10).withTrimmedBottom (14));
             c.removeFromRight (space::lg);
-            textArea[(size_t) FxModule::crush] = c.removeFromLeft (c.getWidth() / 2);
-            layoutKnobs (crushKnobs, c);
+            controlsBox[(size_t) FxModule::crush] = c.removeFromLeft (std::min (420, c.getWidth() / 2));
+            layoutKnobs (crushKnobs, controlsBox[(size_t) FxModule::crush].reduced (space::md));
+            c.removeFromLeft (space::lg);
+            textArea[(size_t) FxModule::crush] = c;
         }
 
         {
@@ -705,8 +733,10 @@ public:
             onButton (tape, tapeOn);
             graphArea[(size_t) FxModule::tape] = c.removeFromLeft (std::min (c.getHeight() + 80, c.getWidth() / 3));
             c.removeFromLeft (space::xl);
-            textArea[(size_t) FxModule::tape] = c.removeFromRight (c.getWidth() / 2);
-            layoutKnobs (tapeKnobs, c);
+            controlsBox[(size_t) FxModule::tape] = c.removeFromLeft (3 * 90 + 2 * space::md);
+            layoutKnobs (tapeKnobs, controlsBox[(size_t) FxModule::tape].reduced (space::md));
+            c.removeFromLeft (space::xl);
+            textArea[(size_t) FxModule::tape] = c;
         }
 
         {
@@ -714,10 +744,13 @@ public:
             onButton (limiter, limiterOn);
             limiterMeter.setBounds (c.removeFromRight (10).withTrimmedBottom (14));
             c.removeFromRight (space::lg);
-            textArea[(size_t) FxModule::limiter] = c.removeFromLeft (c.getWidth() / 2);
-            auto knobs = c.removeFromLeft (c.getWidth() * 2 / 3);
-            layoutKnobs (limiterKnobs, knobs);
-            lookahead.setBounds (c.withSizeKeepingCentre (std::min (c.getWidth(), 110), size::button));
+            controlsBox[(size_t) FxModule::limiter] = c.removeFromLeft (std::min (300, c.getWidth() / 2));
+            auto inner = controlsBox[(size_t) FxModule::limiter].reduced (space::md);
+            lookahead.setBounds (inner.removeFromBottom (size::button).withSizeKeepingCentre (std::min (inner.getWidth(), 130), size::button));
+            inner.removeFromBottom (space::md);
+            layoutKnobs (limiterKnobs, inner);
+            c.removeFromLeft (space::lg);
+            textArea[(size_t) FxModule::limiter] = c;
         }
 
         {
@@ -808,6 +841,21 @@ private:
         g.setColour (theme::colours::textMuted);
         g.setFont (theme::body (theme::type::small));
         g.drawFittedText (text, area, juce::Justification::topLeft, 12, 1.0f);
+    }
+
+    /** The panel a card's controls sit in, apart from its graph and text. */
+    static void drawControlsBox (juce::Graphics& g, juce::Rectangle<int> area)
+    {
+        g.setColour (theme::colours::background);
+        g.fillRoundedRectangle (area.toFloat(), 6.0f);
+        g.setColour (theme::colours::border);
+        g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 6.0f, 1.0f);
+    }
+
+    /** A card of words: what a module does and how to use it. */
+    void drawAbout (juce::Graphics& g, juce::Component& card, const juce::String& text)
+    {
+        drawText (g, card.getLocalBounds().reduced (theme::space::md).withTrimmedTop (cardHeaderHeight), text);
     }
 
     // Each graph's background and grid.
@@ -997,6 +1045,7 @@ private:
     void drawTape (juce::Graphics& g)
     {
         using namespace theme;
+        drawControlsBox (g, controlsBox[(size_t) FxModule::tape]);
         const auto area = graphBackground (g, graphArea[(size_t) FxModule::tape]).withTrimmedBottom (-12.0f);
         const auto drive = juce::Decibels::decibelsToGain (valueOf (state, params::tapeDrive));
         const auto on = valueOf (state, params::tapeOn) >= 0.5f;
@@ -1031,6 +1080,7 @@ private:
 
     void drawLimiter (juce::Graphics& g)
     {
+        drawControlsBox (g, controlsBox[(size_t) FxModule::limiter]);
         const auto latency = processor.getLatencySamples();
         const auto rate = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
         drawText (g, textArea[(size_t) FxModule::limiter],
@@ -1045,6 +1095,7 @@ private:
 
     void drawCrush (juce::Graphics& g)
     {
+        drawControlsBox (g, controlsBox[(size_t) FxModule::crush]);
         drawText (g, textArea[(size_t) FxModule::crush],
                   "A copy of the mix through a fast, 20:1 compressor, pushed down by Drive, with most of its level made up, "
                   "then blended in under the mix. The quiet parts (room, ghost notes, cymbal wash) come up while the hits "
@@ -1067,6 +1118,28 @@ private:
     EqModule eq;
     CompModule glue;
     TwoKnobModule transient;
+    GraphCard glueAbout { "What it does", [this] (juce::Graphics& g)
+    {
+        drawAbout (g, glueAbout,
+                   "A bus compressor across the whole mix. Whenever the kit rises above Threshold it's turned down by Ratio: at 2:1, "
+                   "every 2 dB over the threshold comes out as 1 dB. It senses peaks, with a gentle 6 dB soft knee, and turns both "
+                   "channels down together so the stereo image doesn't shift.\n\n"
+                   "Attack is how long it waits before clamping down, so a slower attack lets the crack of each hit through. "
+                   "Release is how quickly it lets go, so the kit swells back between hits. Makeup brings the level back up after "
+                   "compression, and Mix blends the compressed sound with the original (parallel compression). The GR meter shows "
+                   "how much it's turning the kit down.\n\n"
+                   "Gentle settings work best: 2:1, and a dB or three of gain reduction, hold the kit together without flattening it.");
+    } };
+    GraphCard transientAbout { "What it does", [this] (juce::Graphics& g)
+    {
+        drawAbout (g, transientAbout,
+                   "Makes the hits of the whole kit punchier or softer, and works the same at any volume: there's no threshold to "
+                   "set. It compares a fast follower of the signal with a slow one. When the fast one jumps ahead, that's the attack "
+                   "of a hit; when the slow one lingers above, that's the ring after it.\n\n"
+                   "Attack turns the start of every hit up or down, by up to 12 dB. Sustain does the same for the ring. Positive "
+                   "values add, negative values take away.\n\n"
+                   "More Attack brings out the stick. Less Sustain tightens a roomy kit; more Sustain lets the drums and the room ring.");
+    } };
     GraphCard crush { "Parallel crush", [this] (juce::Graphics& g) { drawCrush (g); drawLimiterAndCrushLabels (g, crushMeter); } };
     GraphCard tape { "Tape", [this] (juce::Graphics& g) { drawTape (g); } };
     GraphCard limiter { "Limiter", [this] (juce::Graphics& g) { drawLimiter (g); drawLimiterAndCrushLabels (g, limiterMeter); } };
@@ -1079,7 +1152,7 @@ private:
     ParamToggle lookahead { "Lookahead", "Look 2 ms ahead, for limiting without distortion (adds latency)" };
     ReductionMeter crushMeter, limiterMeter;
     juce::TextButton loadIr { "Load IR file..." };
-    std::array<juce::Rectangle<int>, fxpresets::numModules> graphArea, textArea;
+    std::array<juce::Rectangle<int>, fxpresets::numModules> graphArea, textArea, controlsBox;
     std::unique_ptr<juce::FileChooser> chooser;
 };
 

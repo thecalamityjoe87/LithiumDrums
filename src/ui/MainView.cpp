@@ -28,7 +28,6 @@ MainView::MainView (LithiumDrumsProcessor& p)
     kitPage.onOpenGrooves = [this] { header.setTab (Tab::grooves); };
     kitPage.setGroovesPage (groovesPage);
     mixerPage.onOpenReturn = [this] (params::FxReturn r) { openReturn (r); };
-    editPage.onOpenReturn = [this] (params::FxReturn r) { openReturn (r); };
 
     aboutPanel.onClose = [this] { showPanel (nullptr); };
     settingsPanel.onClose = [this] { showPanel (nullptr); };

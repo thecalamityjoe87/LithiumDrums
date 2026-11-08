@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(LithiumDrums VERSION 0.8.9 LANGUAGES C CXX)
+project(LithiumDrums VERSION 0.9.0 LANGUAGES C CXX)
 
 if(APPLE)
     # JUCE's macOS sources are Objective-C++.
@@ -120,6 +120,7 @@ target_sources(LithiumDrums PRIVATE
     src/ui/Controls.cpp
     src/ui/EqGraph.cpp
     src/ui/ChannelModules.cpp
+    src/ui/MicsModule.cpp
     src/ui/ZoneMap.cpp
     src/ui/EditPage.cpp
     src/ui/MixerPage.cpp
@@ -192,6 +193,12 @@ juce_add_binary_data(LithiumAssets
         assets/kit-renders/slot-cajon.png
         assets/kit-renders/slot-conga-small.png
         assets/kit-renders/slot-conga-large.png
+        assets/mic-renders/mics.json
+        assets/mic-renders/mics-close.png
+        assets/mic-renders/mics-kick.png
+        assets/mic-renders/mics-cymbal.png
+        assets/mic-renders/mics-overheads.png
+        assets/mic-renders/mics-room.png
         assets/kit-finishes.json
         ${lithium_finish_images}
         assets/midi-maps/lithium-standard.json

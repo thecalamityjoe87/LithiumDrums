@@ -2,8 +2,8 @@
 
 Every mixer channel has three sends: **Room**, **Plate** and **Delay**. They
 come back on three return strips next to the master on the Mixer page (each
-with its fader, mute, pan and output), and the effects themselves are on the
-FX tab. A channel's sends are after its fader unless its **Pre** switch is on.
+with its fader, mute and pan), and the effects themselves, with each return's
+output, are on the FX tab. A channel's sends are after its fader unless its **Pre** switch is on.
 A send's name, on a strip or in the inspector, opens its effect on the FX page;
 so does clicking a return strip.
 

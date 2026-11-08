@@ -251,31 +251,16 @@ void CompModule::resized()
     meter.setBounds (area.removeFromRight (10).withTrimmedBottom (14));
     area.removeFromRight (8);
 
-    // The curve beside the knobs when the module is wide, above them when it's tall.
-    const auto wide = area.getWidth() > area.getHeight() + 40;
+    // The curve fills the top, the six knobs in a row under it.
+    const auto knobHeight = std::min (70, area.getHeight() / 3);
+    auto knobs = area.removeFromBottom (knobHeight);
+    area.removeFromBottom (8);
+    graph->setBounds (area);
 
-    if (wide)
-    {
-        const auto size = std::min ({ 110, area.getHeight(), area.getWidth() - 3 * 56 - 8 });
-        graph->setBounds (area.removeFromLeft (size).withSizeKeepingCentre (size, size));
-        area.removeFromLeft (8);
-    }
-    else
-    {
-        graph->setBounds (area.removeFromTop (std::max (60, area.getHeight() - 2 * 66 - 8)));
-        area.removeFromTop (8);
-    }
+    const auto w = knobs.getWidth() / 6;
 
-    const auto w = area.getWidth() / 3, h = std::min (70, (area.getHeight() - 8) / 2);
-    auto rowA = area.removeFromTop (h);
-    area.removeFromTop (8);
-    auto rowB = area.removeFromTop (h);
-
-    for (auto* k : { &threshold, &ratio, &attack })
-        k->setBounds (rowA.removeFromLeft (w));
-
-    for (auto* k : { &release, &makeup, &mix })
-        k->setBounds (rowB.removeFromLeft (w));
+    for (auto* k : { &threshold, &ratio, &attack, &release, &makeup, &mix })
+        k->setBounds (knobs.removeFromLeft (w));
 }
 
 void CompModule::paint (juce::Graphics& g)
@@ -323,8 +308,8 @@ void TwoKnobModule::resized()
 }
 
 //==============================================================================
-RoutingModule::RoutingModule (juce::AudioProcessorValueTreeState& s, bool withFaderAndPan)
-    : Module (withFaderAndPan ? "Channel" : "Sends & output"), state (s), withFader (withFaderAndPan)
+RoutingModule::RoutingModule (juce::AudioProcessorValueTreeState& s)
+    : Module ("Channel"), state (s)
 {
     pan.setBipolar (true);
     output.setTooltip ("The main mix, or an aux out for mixing in the host");
@@ -336,14 +321,8 @@ RoutingModule::RoutingModule (juce::AudioProcessorValueTreeState& s, bool withFa
         addAndMakeVisible (sends[i]);
     }
 
-    for (auto* c : std::initializer_list<juce::Component*> { &pre, &output })
+    for (auto* c : std::initializer_list<juce::Component*> { &pan, &width, &pre, &output })
         addAndMakeVisible (c);
-
-    if (withFader)
-    {
-        addAndMakeVisible (fader);
-        addAndMakeVisible (pan);
-    }
 }
 
 void RoutingModule::attach (params::ChannelId c)
@@ -358,12 +337,9 @@ void RoutingModule::attach (params::ChannelId c)
 
     pre.attach (state, c.param (params::sendPre));
     output.attach (state, c.param (params::output));
-
-    if (withFader)
-    {
-        fader.attach (state, c.fader());
-        pan.attach (state, c.param ("pan"));
-    }
+    pan.attach (state, c.param ("pan"));
+    width.attach (state, c.param (params::channelWidth));
+    width.setTooltip ("Stereo width: 0% is mono, 100% leaves the image as it is, up to 200% for twice as wide");
 }
 
 void RoutingModule::resized()
@@ -374,12 +350,9 @@ void RoutingModule::resized()
     output.setBounds (area.removeFromBottom (size::button - 2));
     area.removeFromBottom (20);   // the "OUTPUT" label
 
-    if (withFader)
-    {
-        auto top = area.removeFromTop (area.getHeight() / 2);
-        fader.setBounds (top.removeFromLeft (top.getWidth() / 2));
-        pan.setBounds (top);
-    }
+    auto top = area.removeFromTop (area.getHeight() / 2);
+    pan.setBounds (top.removeFromLeft (top.getWidth() / 2));
+    width.setBounds (top);
 
     // The sends side by side when there's room, else one above the other;
     // the Pre switch under them.

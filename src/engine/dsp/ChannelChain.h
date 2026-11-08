@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/SpectrumTap.h"
 #include "ChannelEq.h"
 #include "Compressor.h"
 
@@ -30,6 +31,7 @@ struct ChannelSettings
     CompSettings comp;
     SaturationSettings saturation;
     TransientSettings transient;
+    float width = 1.0f;   // 0..2: 1 leaves the stereo image alone, 0 is mono, 2 is twice as wide
 };
 
 /** Soft clipping through a smooth curve that leaves quiet signals alone and
@@ -73,13 +75,28 @@ private:
     juce::SmoothedValue<float> onAmount;
 };
 
+/** Stereo width: the sides (left minus right) scaled around the middle (left
+    plus right), so 0 is mono and 2 is twice as wide. Leaves a mono channel
+    alone. Audio thread, except prepare(). */
+class StereoWidth
+{
+public:
+    void prepare (double sampleRate);
+    void process (float* const* channels, int numChannels, int numSamples, float width) noexcept;
+
+private:
+    juce::SmoothedValue<float> amount;
+};
+
 /** One mixer channel's processing, in order: EQ, transient shaper,
-    compressor, saturation. Works in place on one or two channels. */
+    compressor, saturation, stereo width. Works in place on one or two channels. */
 class ChannelChain
 {
 public:
     void prepare (double sampleRate);
-    void process (float* const* channels, int numChannels, int numSamples, const ChannelSettings&) noexcept;
+    /** With a tap, the signal just before and just after the EQ is copied to
+        it, for the Mixer's spectrum display. */
+    void process (float* const* channels, int numChannels, int numSamples, const ChannelSettings&, SpectrumTap* tap = nullptr) noexcept;
 
     float takeMaxGainReductionDb() noexcept         { return compressor.takeMaxGainReductionDb(); }
 
@@ -88,6 +105,7 @@ private:
     TransientShaper transient;
     Compressor compressor;
     Saturator saturator;
+    StereoWidth stereoWidth;
 };
 
 } // namespace lithium

@@ -12,12 +12,14 @@ namespace lithium
     its effect on the FX page.
 
     Every strip is the same fixed stack, top to bottom: name and colour dot;
-    the insert switches (EQ, compressor, transient, saturation); the three
-    sends (Room, Plate, Delay), whose names open their effect; the Pre
-    switch and pan; the fader beside its meter, with a dB scale and readout;
-    then mute, solo and the output. Strips without some of these leave
-    their rows empty, so every fader in the bank lines up. The fader's
-    travel is fixed by the theme (theme::size::faderTravel), never stretched. */
+    the insert switches (EQ, compressor, transient, saturation), where a trim
+    or an FX return has its pan (a drum's or mic's is in the inspector's
+    Channel card); the fader beside its meter, with a dB scale and readout;
+    then mute and solo at the bottom. Outputs aren't on the strips: a drum's
+    or mic's is in the inspector's Channel card, a return's on its card on
+    the FX page. Strips without some of these leave their rows empty, so
+    every fader in the bank lines up. The fader's travel is fixed (the
+    theme's, plus the rows the strips no longer need), never stretched. */
 class MixerStrip final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -27,7 +29,6 @@ public:
     MixerStrip (LithiumDrumsProcessor&, Kind, int slot = -1, const KitInfo* = nullptr);
 
     std::function<void()> onSelect;
-    std::function<void (params::FxReturn)> onOpenReturn;
 
     const Kind kind;
     const int slot;
@@ -44,34 +45,26 @@ public:
 
 private:
     juce::Rectangle<int> getReadoutArea() const;
-    juce::Rectangle<int> getSendCaption (int index) const;
     bool hasInserts() const noexcept     { return kind == Kind::piece || kind == Kind::mic; }
-    void mouseMove (const juce::MouseEvent&) override;
-    void mouseExit (const juce::MouseEvent&) override;
 
     juce::String name, tag;
     juce::Colour dot;
     bool selected = false, silent = false;
-    int hoveredCaption = -1;
 
     ControlSlider fader;
     LevelMeter meter;
-    std::array<Knob, params::numFxReturns> sends { Knob { {}, Knob::Style::compact }, Knob { {}, Knob::Style::compact },
-                                                    Knob { {}, Knob::Style::compact } };
     Knob pan { {}, Knob::Style::compact };
-    ParamToggle pre { "Pre", "Sends before the fader" };
     ParamToggle eq { "EQ", "EQ on/off" }, comp { "Cmp", "Compressor on/off" };
     ParamToggle transient { "Trn", "Transient shaper on/off" }, saturation { "Sat", "Saturation on/off" };
     ParamToggle mute { "M", "Mute" }, solo { "S", "Solo" };
-    ParamCombo output;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> faderAttachment;   // after the fader it uses
 };
 
-/** The top of the Mixer page: the kit's master EQ, which stays put, and
-    everything else about the selected channel (its transient shaper,
-    compressor, saturation, sends and output). Those modules are re-attached
-    to whichever channel is selected. A channel's own EQ is on the Edit page
-    and the FX returns' own effects are on the FX page. */
+/** The top of the Mixer page: the selected channel's EQ, and its fader, pan,
+    sends and output. The modules are re-attached to whichever channel is
+    selected. A drum's compressor, transient shaper, saturation and mics are
+    on the Edit page; the master EQ and the FX returns' effects are on the
+    FX page. */
 class MixerInspector final : public juce::Component
 {
 public:
@@ -80,10 +73,9 @@ public:
 
     std::function<void (params::FxReturn)> onOpenReturn;
 
-    void showChannel (params::ChannelId);
+    /** name: the channel's, for the cards' titles. */
+    void showChannel (params::ChannelId, const juce::String& name);
     void showNothing();
-
-    void pushReduction (float db)            { comp.pushReduction (db); }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -92,12 +84,10 @@ private:
     enum class Mode { none, channel };
     void setMode (Mode);
 
-    LithiumDrumsProcessor& processor;
     Mode mode = Mode::none;
 
+    LithiumDrumsProcessor& processor;
     EqModule eq;
-    CompModule comp;
-    TwoKnobModule transient, saturation;
     RoutingModule routing;
 };
 
