@@ -2,6 +2,7 @@
 
 #include "SpectrumTap.h"
 #include "EngineParams.h"
+#include "MicEmulation.h"
 #include "Voice.h"
 #include "dsp/ChannelChain.h"
 #include "dsp/ConvolutionReverb.h"
@@ -45,8 +46,9 @@ struct MixerFeedback
     static float take (std::atomic<float>& a) noexcept   { return a.exchange (0.0f, std::memory_order_relaxed); }
 };
 
-/** The mixer: a channel per drum, a channel per overhead and room mic, three
-    FX returns, and the master bus with its chain.
+/** The mixer: a channel per drum, a channel per overhead and room mic
+    (recorded, or emulated: see MicEmulation.h), three FX returns, and the
+    master bus with its chain.
 
     The voices render each hit's close mics into its drum's stereo channel
     (getPieceBus(), channels 2p and 2p + 1) and its overhead and room mics
@@ -76,12 +78,13 @@ public:
     int getMaxBlockSize() const noexcept                  { return micBus.getNumSamples(); }
     juce::AudioBuffer<float>& getMicBus() noexcept       { return micBus; }
     juce::AudioBuffer<float>& getPieceBus() noexcept     { return pieceBus; }
-    VoiceBuses getBuses() noexcept                        { return { micBus, pieceBus }; }
+    VoiceBuses getBuses() noexcept                        { return { micBus, pieceBus, &emulationFeed }; }
 
     void clearBuses (int numSamples) noexcept
     {
         micBus.clear (0, numSamples);
         pieceBus.clear (0, numSamples);
+        emulationFeed.clear (0, numSamples);
     }
 
     /** Mixes the first numSamples of the buses into the outputs (adding to
@@ -91,6 +94,9 @@ public:
 
     /** The Room return, for IrLoader to load IRs into. */
     ConvolutionReverb& getRoomReverb() noexcept           { return room; }
+
+    /** The emulated room mics' room, for their own IrLoader. */
+    ConvolutionReverb& getEmulatedRoom() noexcept         { return emulator.getRoomReverb(); }
 
     /** The latency the mixer adds: the limiter's lookahead, when it's on. */
     int getLatencySamples (bool lookahead) const noexcept { return chain.getLatencySamples (lookahead); }
@@ -135,6 +141,8 @@ private:
     std::array<Return, numReturns> returns;
     juce::SmoothedValue<float> masterGain;
     juce::AudioBuffer<float> micBus, pieceBus, masterBus, wet;
+    juce::AudioBuffer<float> emulationFeed;   // one mono channel per piece (see VoiceBuses::emulation)
+    MicEmulator emulator;
     std::array<juce::AudioBuffer<float>, numReturns> sendBuses;
     std::array<std::array<float*, 2>, numReturns> send {};
     std::array<float*, 2> master {};

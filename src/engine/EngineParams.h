@@ -121,19 +121,37 @@ struct EngineParams
     float masterGain = 1.0f;
     bool velocityCrossfade = true;
 
-    bool anyPieceSoloed (int numPieces) const noexcept
+    // Which emulated mics are switched on, by MicRole (see MicEmulation.h).
+    // The close role is never emulated.
+    std::array<bool, numMicRoles> emulate {};
+
+    /** Whether the kit has an emulated mic of this role and it's switched on. */
+    bool isEmulating (const Kit& kit, MicRole r) const noexcept
     {
-        for (int i = 0; i < numPieces; ++i)
-            if (pieces[(size_t) i].solo)
+        return kit.emulatedMic[(size_t) r] >= 0 && emulate[(size_t) r];
+    }
+
+    /** Whether a mic slot's channel plays: a recorded mic, or an emulated one that's switched on. */
+    bool isMicInUse (const Kit& kit, int m) const noexcept
+    {
+        const auto& mic = kit.mics[(size_t) m];
+        return m < kit.numMics || (mic.emulated && isEmulating (kit, mic.role));
+    }
+
+    /** Whether any mic channel in use is soloed. */
+    bool anyMicSoloed (const Kit& kit) const noexcept
+    {
+        for (int i = 0; i < kit.getNumMixerMics(); ++i)
+            if (mics[(size_t) i].solo && isMicInUse (kit, i))
                 return true;
 
         return false;
     }
 
-    bool anyMicSoloed (int numMics) const noexcept
+    bool anyPieceSoloed (int numPieces) const noexcept
     {
-        for (int i = 0; i < numMics; ++i)
-            if (mics[(size_t) i].solo)
+        for (int i = 0; i < numPieces; ++i)
+            if (pieces[(size_t) i].solo)
                 return true;
 
         return false;
@@ -174,6 +192,8 @@ struct EngineParams
                 mics[i].pan = kit.mics[i].startPan;
             }
         }
+
+        emulate = {};   // emulated mics start switched off
     }
 };
 

@@ -273,6 +273,7 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     tune.setBipolar (true);
     pitchEnv.setBipolar (true);
     dynamics.setBipolar (true);
+    mics.onOpenMic = [this] (int m) { showMic (m); };
 
     velocityModule.addAndMakeVisible (volume);
     velocityModule.addAndMakeVisible (dynamics);
@@ -343,7 +344,7 @@ std::vector<int> EditPage::micChannels() const
 
     if (shownKit != nullptr)
         for (size_t m = 0; m < shownKit->mics.size(); ++m)
-            if (! shownKit->mics[m].direct)
+            if (! shownKit->mics[m].direct && params::hasMicChannel (processor.getParameters(), *shownKit, (int) m))
                 result.push_back ((int) m);
 
     return result;
@@ -377,32 +378,58 @@ void EditPage::stepPiece (int delta)
 void EditPage::updateKitInfo()
 {
     const auto info = processor.getKitInfo();
+    const std::array<bool, 2> emulating { params::isEmulating (processor.getParameters(), MicRole::overheads),
+                                          params::isEmulating (processor.getParameters(), MicRole::room) };
 
-    if (info == shownKit)
+    if (info == shownKit && emulating == shownEmulation)
         return;
+
+    // The same kit with an emulated pair switched on or off: only the menu
+    // changes (and the page leaves a mic channel that's gone).
+    if (info == shownKit && info != nullptr)
+    {
+        shownEmulation = emulating;
+        rebuildMenu();
+
+        if (micChannel >= 0 && ! params::hasMicChannel (processor.getParameters(), *info, micChannel))
+            showPiece (processor.getSelection().getSelected());
+        else
+            pieceBox.setSelectedId (micChannel >= 0 ? micMenuId + micChannel + 1 : piece + 1, juce::dontSendNotification);
+
+        return;
+    }
+
+    shownEmulation = emulating;
 
     // The zone map points into the old KitInfo, so let go of that first.
     zoneMap.setArticulation (nullptr, {});
     shownKit = info;
-    pieceBox.clear (juce::dontSendNotification);
-
-    if (info != nullptr)
-    {
-        for (size_t i = 0; i < info->pieces.size(); ++i)
-            pieceBox.addItem (info->pieces[i].name, (int) i + 1);
-
-        if (const auto channels = micChannels(); ! channels.empty())
-        {
-            pieceBox.addSectionHeading ("Mic channels");
-
-            for (const auto m : channels)
-                pieceBox.addItem (info->mics[(size_t) m].name, micMenuId + m + 1);
-        }
-    }
-
+    rebuildMenu();
     piece = -1;
     micChannel = -1;
     showPiece (processor.getSelection().getSelected());
+}
+
+void EditPage::rebuildMenu()
+{
+    pieceBox.clear (juce::dontSendNotification);
+
+    if (shownKit == nullptr)
+        return;
+
+    for (size_t i = 0; i < shownKit->pieces.size(); ++i)
+        pieceBox.addItem (shownKit->pieces[i].name, (int) i + 1);
+
+    if (const auto channels = micChannels(); ! channels.empty())
+    {
+        pieceBox.addSectionHeading ("Mic channels");
+
+        for (const auto m : channels)
+        {
+            const auto& mic = shownKit->mics[(size_t) m];
+            pieceBox.addItem (mic.name + (mic.emulated ? " (emulated)" : ""), micMenuId + m + 1);
+        }
+    }
 }
 
 void EditPage::showPiece (int p)
@@ -524,7 +551,7 @@ void EditPage::showMic (int m)
         image = closer;
     }
 
-    picture->setPiece (image, theme::colours::textMuted, mic.name);
+    picture->setPiece (image, theme::colours::textMuted, mic.name + (mic.emulated ? " (emulated)" : ""));
     picture->setMouseCursor (juce::MouseCursor::NormalCursor);   // nothing to play
 
     const params::ChannelId channel { false, m };
@@ -574,6 +601,10 @@ void EditPage::showArticulation (int a)
 
 void EditPage::timerCallback()
 {
+    // An emulated pair switched on or off changes the drum menu.
+    if (shownKit != nullptr)
+        updateKitInfo();
+
     if (micChannel >= 0)
     {
         comp.pushReduction (MixerFeedback::take (processor.getMixerFeedback().micReductionDb[(size_t) micChannel]));

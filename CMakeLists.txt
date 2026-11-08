@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(LithiumDrums VERSION 0.9.1 LANGUAGES C CXX)
+project(LithiumDrums VERSION 0.9.2 LANGUAGES C CXX)
 
 if(APPLE)
     # JUCE's macOS sources are Objective-C++.
@@ -100,6 +100,7 @@ target_sources(LithiumDrums PRIVATE
     src/engine/DrumEngine.cpp
     src/engine/GroovePlayer.cpp
     src/engine/IrLoader.cpp
+    src/engine/MicEmulation.cpp
     src/engine/Mixer.cpp
     src/engine/dsp/ChannelEq.cpp
     src/engine/dsp/Compressor.cpp
@@ -374,7 +375,7 @@ endif()
 if(LITHIUM_BUILD_TESTS)
     # The tests link the plugin's shared-code library (the processor, engine
     # and UI, compiled once) rather than recompiling the sources.
-    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp tests/GrooveTests.cpp tests/PackTests.cpp tests/SwapTests.cpp tests/FxTests.cpp)
+    add_executable(LithiumDrumsTests tests/TestMain.cpp tests/EngineTests.cpp tests/MixerTests.cpp tests/MidiTests.cpp tests/GrooveTests.cpp tests/PackTests.cpp tests/SwapTests.cpp tests/FxTests.cpp tests/EmulationTests.cpp tests/EmulationCompare.cpp)
     target_include_directories(LithiumDrumsTests PRIVATE src)
     target_compile_definitions(LithiumDrumsTests PRIVATE
         LITHIUM_TEST_KIT_DIR="${LITHIUM_TEST_KIT_DIR}"

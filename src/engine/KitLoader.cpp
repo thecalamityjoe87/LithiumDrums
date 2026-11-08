@@ -2,6 +2,7 @@
 
 #include "DrumEngine.h"
 #include "KitManifest.h"
+#include "MicEmulation.h"
 #include "MidiMapping.h"
 #include "ParallelJobs.h"
 #include "StreamCache.h"
@@ -1014,6 +1015,8 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     }
 
     info.slotPiece = assignStageSlots (roles, splash);
+
+
     info.bitsPerSample = layout->bytesPerSample * 8;
     info.sampleRate = manifest.sampleRate;
     info.memoryBytes = plan->bytesFor (allMics);
@@ -1021,6 +1024,10 @@ std::unique_ptr<Kit> KitLoader::loadKit (const juce::File& folder, const MidiMap
     info.loadSeconds = (juce::Time::getMillisecondCounterHiRes() - startTime) / 1000.0;
 
     kit->samples = std::move (source);
+
+    // Overheads and a room for a kit recorded without them, made from its
+    // other mics; each switched off until asked for (see MicEmulation.h).
+    emulation::addEmulatedMics (*kit, info, options.emulateRecordedMics);
 
     if (planOut != nullptr)
         *planOut = std::move (plan);

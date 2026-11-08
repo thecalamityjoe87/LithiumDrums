@@ -121,6 +121,7 @@ private:
     MixerInspector inspector;
     juce::TextButton channelsView { "Channels" }, trimsView { "Close mics" };
     bool showingTrims = false;
+    std::array<bool, 2> shownEmulation {};   // overheads, room: whether their emulated strips were shown
     juce::Viewport stripView;
     juce::Component stripRow;
     std::vector<std::unique_ptr<MixerStrip>> strips;

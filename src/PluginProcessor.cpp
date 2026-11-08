@@ -79,6 +79,7 @@ LithiumDrumsProcessor::LithiumDrumsProcessor()
     }
 
     updateRoomIr();
+    updateEmulatedRoom();
     startTimerHz (5);
 }
 
@@ -114,7 +115,7 @@ void LithiumDrumsProcessor::prepareToPlay (double sampleRate, int maximumExpecte
     {
         // The IR loader hands the Room reverb new IRs from its own thread;
         // this keeps it from doing so while the reverb is being prepared.
-        std::scoped_lock lock (irLoader.getEngineLock());
+        std::scoped_lock lock (irLoader.getEngineLock(), emulatedRoomLoader.getEngineLock());
         mixer.prepare (sampleRate, std::max (64, maximumExpectedSamplesPerBlock));
     }
 
@@ -720,6 +721,7 @@ void LithiumDrumsProcessor::timerCallback()
 {
     writeHitLog();
     updateRoomIr();
+    updateEmulatedRoom();
     updateLatency();
 
     // Keep the loader's idea of which mics should be in RAM in line with the
@@ -738,6 +740,19 @@ void LithiumDrumsProcessor::timerCallback()
 
         if (! mutes[i] || now - mutedSince[i] < unloadAfterMutedMs)
             wanted |= 1u << i;
+    }
+
+    // An emulated mic that's on and unmuted hears the kit through its source
+    // mics, so those stay loaded even while their own channels are muted.
+    if (const auto info = getKitInfo())
+    {
+        for (const auto role : { MicRole::overheads, MicRole::room })
+        {
+            const auto slot = info->emulatedSlot (role);
+
+            if (slot >= 0 && parameters.getRawParameterValue (params::emulateParam (role))->load() >= 0.5f && ! mutes[(size_t) slot])
+                wanted |= info->emulationSources;
+        }
     }
 
     loader.setWantedMics (wanted);
@@ -1271,6 +1286,16 @@ void LithiumDrumsProcessor::updateRoomIr()
         request.builtIn = 0;
 
     irLoader.request (request);
+}
+
+void LithiumDrumsProcessor::updateEmulatedRoom()
+{
+    // As updateRoomIr(): the loader ignores requests for what it already has.
+    // The emulated room is always a built-in IR, at its full length.
+    IrLoader::Request request;
+    request.builtIn = juce::jlimit (0, (int) irs::builtIn().size() - 1,
+                                    juce::roundToInt (parameters.getRawParameterValue (params::emulatedRoomIr)->load()));
+    emulatedRoomLoader.request (request);
 }
 
 void LithiumDrumsProcessor::updateLatency()

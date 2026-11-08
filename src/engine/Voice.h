@@ -42,6 +42,11 @@ struct VoiceRenderContext
     std::array<float, maxPieces> decayCoefficient;
     // Per piece: the tone filters (pass-through when off).
     std::array<dsp::SvfCoefficients, maxPieces> toneHighPass, toneLowPass;
+    // Mic emulation (see MicEmulation.h): per piece, how loud it goes into
+    // the emulated mics' feed (0 while no emulated mic is listening), and
+    // per mic, the kit's own level for it.
+    std::array<float, maxPieces> emulationLevel {};
+    std::array<float, maxMics> emulationMicGain {};
     // Engine-owned scratch: source frames for the resampler (maxSourceFrames
     // per channel), one stream's output before it's mixed, and the envelope.
     std::array<float*, maxChannelsPerMic> scratch {};
@@ -56,6 +61,10 @@ struct VoiceBuses
 {
     juce::AudioBuffer<float>& mics;
     juce::AudioBuffer<float>& pieces;
+
+    // The emulated mics' feed: one mono channel per piece (channel p), of
+    // the mics PieceData::emulationSources names. Null when nothing reads it.
+    juce::AudioBuffer<float>* emulation = nullptr;
 };
 
 /** One sounding drum hit.
@@ -116,12 +125,15 @@ private:
         std::array<std::array<float, 4>, maxChannelsPerMic> window {};
         float sourceGain = 1.0f;                                          // the piece's PieceData::micGain for this mic
         std::array<float, 2> lastGain {};                                 // left and right, as last rendered
+        bool feedsEmulation = false;                                      // one of its piece's emulationSources
+        float lastEmulationGain = 0.0f;
         std::array<std::array<dsp::SvfState, maxChannelsPerMic>, 2> tone {};   // [high-pass, low-pass][channel]
         std::array<std::array<dsp::SvfState, maxChannelsPerMic>, 2> position {};   // [low shelf, high shelf][channel]
     };
 
     void closeStreams (Kit&) noexcept;
     std::array<float, 2> targetGains (const MicStream&, const VoiceRenderContext&) const noexcept;
+    float emulationGain (const MicStream&, const VoiceRenderContext&) const noexcept;
 
     std::array<MicStream, maxMics> streams;
     int numStreams = 0;

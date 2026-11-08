@@ -138,6 +138,7 @@ void Voice::start (Kit& kit, int p, std::uint32_t chokeGroupMask, const VoiceTri
         s.role = mic.role;
         s.direct = mic.direct;
         s.sourceGain = kit.pieces[(size_t) p].micGain[(size_t) m];
+        s.feedsEmulation = ((kit.pieces[(size_t) p].emulationSources >> m) & 1u) != 0;
         s.numFrames = kit.samples->getNumFrames (id);
         s.tone = {};
         s.position = {};
@@ -171,6 +172,15 @@ std::array<float, 2> Voice::targetGains (const MicStream& s, const VoiceRenderCo
     return { g, g };
 }
 
+float Voice::emulationGain (const MicStream& s, const VoiceRenderContext& ctx) const noexcept
+{
+    if (! s.feedsEmulation)
+        return 0.0f;
+
+    // A stereo mic goes into the mono feed as the average of its sides.
+    return ctx.emulationLevel[(size_t) piece] * ctx.emulationMicGain[(size_t) s.mic] * s.sourceGain / (float) s.numChannels;
+}
+
 void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples, const VoiceRenderContext& ctx) noexcept
 {
     if (! active || numSamples <= 0)
@@ -202,7 +212,11 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
     if (! gainsSet)
     {
         for (int si = 0; si < numStreams; ++si)
-            streams[(size_t) si].lastGain = targetGains (streams[(size_t) si], ctx);
+        {
+            auto& s = streams[(size_t) si];
+            s.lastGain = targetGains (s, ctx);
+            s.lastEmulationGain = emulationGain (s, ctx);
+        }
 
         gainsSet = true;
     }
@@ -398,6 +412,28 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
                         out[i] += x[i] * (startL + (float) (i + 1) * stepL);
                 }
             }
+
+            // 4. The emulated mics' feed: the piece's mono channel in it,
+            //    ramped the same way. Skipped while it's silent and settled.
+            if (s.feedsEmulation && buses.emulation != nullptr)
+            {
+                const auto targetE = emulationGain (s, ctx);
+
+                if (! juce::exactlyEqual (targetE, 0.0f) || ! juce::exactlyEqual (s.lastEmulationGain, 0.0f))
+                {
+                    const auto stepE = (targetE - s.lastEmulationGain) / (float) numSamples;
+                    const auto startE = s.lastEmulationGain + stepE * (float) offset;
+                    auto* out = buses.emulation->getWritePointer ((int) p, startSample + offset);
+
+                    for (int ch = 0; ch < s.numChannels; ++ch)
+                    {
+                        const auto* x = ctx.streamOut[(size_t) ch];
+
+                        for (int i = 0; i < n; ++i)
+                            out[i] += x[i] * (startE + (float) (i + 1) * stepE);
+                    }
+                }
+            }
         }
 
         fraction = (std::uint32_t) (end & (std::int64_t) (one - 1));
@@ -405,9 +441,13 @@ void Voice::render (Kit& kit, VoiceBuses buses, int startSample, int numSamples,
     }
 
     for (int si = 0; si < numStreams; ++si)
-        streams[(size_t) si].lastGain = targetGains (streams[(size_t) si], ctx);
+    {
+        auto& s = streams[(size_t) si];
+        s.lastGain = targetGains (s, ctx);
+        s.lastEmulationGain = emulationGain (s, ctx);
+    }
 
-    // 4. Finished? Faded out, decayed to silence, or every recording played out.
+    // 5. Finished? Faded out, decayed to silence, or every recording played out.
     const auto envelopeNow = decayEnvelope * fadeGain;
 
     if (envelopeNow < silenceThreshold || nextFrame >= longestStream + 4)

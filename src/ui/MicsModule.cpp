@@ -2,6 +2,7 @@
 
 #include "KitArt.h"
 #include "LithiumAssets.h"
+#include "engine/MicEmulation.h"
 #include "SlotGrid.h"
 #include "Theme.h"
 
@@ -23,6 +24,7 @@ namespace
     constexpr int knobWidth = 64, knobHeight = 66;   // a labelled knob: name, dial (theme::size::knob), value
     constexpr float roomHeight = 0.72f;              // the drum view's room stands, as a share of the card's height
     constexpr int maxPerRow = 12;                    // the mic view's knobs per row before it wraps to two
+    constexpr float emulatedTagWidth = 60.0f;        // the EMULATED tag at its narrowest: its word and a little padding
 
     size_t roleIndex (MicRole r) noexcept  { return static_cast<size_t> (r); }
 
@@ -194,6 +196,68 @@ namespace
         return 0.30f;
     }
 
+    juce::Rectangle<float> boundsOf (const std::vector<juce::Point<float>>& points);
+
+    /** Where a render's visible pixels are, as shares of its width and
+        height: the renders have transparent margins of different sizes, so
+        an outline drawn round their whole image isn't even round what shows.
+        Measured once per image (they're juce::ImageCache'd). */
+    juce::Rectangle<float> opaqueShare (const juce::Image& image, float topShare)
+    {
+        static std::map<juce::String, juce::Rectangle<float>> measured;   // message thread only
+        const auto key = juce::String::toHexString ((juce::pointer_sized_int) image.getPixelData().get()) + juce::String (topShare);
+
+        if (const auto it = measured.find (key); it != measured.end())
+            return it->second;
+
+        int x0 = image.getWidth(), y0 = image.getHeight(), x1 = -1, y1 = -1;
+        const juce::Image::BitmapData data (image, juce::Image::BitmapData::readOnly);
+
+        for (int y = 0; y < juce::roundToInt ((float) data.height * topShare); ++y)
+            for (int x = 0; x < data.width; ++x)
+                if (data.getPixelColour (x, y).getAlpha() > 60)
+                {
+                    x0 = std::min (x0, x); x1 = std::max (x1, x);
+                    y0 = std::min (y0, y); y1 = std::max (y1, y);
+                }
+
+        const auto w = (float) std::max (1, image.getWidth()), h = (float) std::max (1, image.getHeight());
+        const auto share = x1 < 0 ? juce::Rectangle<float> (0.0f, 0.0f, 1.0f, 1.0f)
+                                  : juce::Rectangle<float> ((float) x0 / w, (float) y0 / h, (float) (x1 - x0 + 1) / w, (float) (y1 - y0 + 1) / h);
+        return measured[key] = share;
+    }
+
+    /** Around a room pair's two mics (not their stands, whose legs and
+        cable spread across the floor), the same margin on every side: like
+        the overheads' outline, which is round their heads. The mics are in
+        the top quarter of the render. */
+    juce::Rectangle<float> standsOutline (const auto& placed)
+    {
+        if (! placed.image.isValid())
+            return placed.area;
+
+        constexpr float micsShare = 0.25f;
+        return placed.area.getProportion (opaqueShare (placed.image, micsShare)).expanded (8.0f);
+    }
+
+    /** The box around some points. (Rectangle::getUnion() skips empty
+        rectangles, so it can't grow a box from single points.) */
+    juce::Rectangle<float> boundsOf (const std::vector<juce::Point<float>>& points)
+    {
+        if (points.empty())
+            return {};
+
+        auto x0 = points[0].x, y0 = points[0].y, x1 = x0, y1 = y0;
+
+        for (const auto& p : points)
+        {
+            x0 = std::min (x0, p.x); x1 = std::max (x1, p.x);
+            y0 = std::min (y0, p.y); y1 = std::max (y1, p.y);
+        }
+
+        return { x0, y0, x1 - x0, y1 - y0 };
+    }
+
     juce::Point<float> middleOf (const std::vector<juce::Point<float>>& points)
     {
         juce::Point<float> sum;
@@ -301,6 +365,46 @@ MicsModule::MicsModule (juce::AudioProcessorValueTreeState& s) : Module ("Mics")
     reset.onClick = [this] { resetLevels(); };
     addAndMakeVisible (reset);
 
+    // Emulation. The buttons only flip the parameter: the timer sees the
+    // change and rebuilds the view, as it does for one made by the host.
+    for (const auto role : { MicRole::overheads, MicRole::room })
+    {
+        auto& b = emulateButtons[roleIndex (role)];
+        b.setName (role == MicRole::room ? "Emulate room" : "Emulate overheads");
+        b.onClick = [this, role] { params::setEmulating (state, role, ! params::isEmulating (state, role)); };
+        addChildComponent (b);
+    }
+
+    emulationOff.setName ("Emulated mics on or off");
+    emulationOff.onClick = [this]
+    {
+        if (micIsEmulated)
+            params::setEmulating (state, micRole, ! params::isEmulating (state, micRole));
+    };
+    addChildComponent (emulationOff);
+
+    // The overheads' and room's own channels are a drum menu away; these go there.
+    // ("Edit overheads": the user's choice over "Configure" and "Go to".)
+    for (const auto role : { MicRole::overheads, MicRole::room })
+    {
+        auto& b = configureButtons[roleIndex (role)];
+        b.setName (role == MicRole::room ? "Edit room" : "Edit overheads");
+        b.setButtonText (role == MicRole::room ? "Edit room" : "Edit overheads");
+        b.setTooltip (role == MicRole::room ? "Open the room mics' channel: every drum's level in them, and their sound"
+                                            : "Open the overheads' channel: every drum's level in them, and their sound");
+        b.onClick = [this, role]
+        {
+            if (onOpenMic != nullptr && configureSlots[roleIndex (role)] >= 0)
+                onOpenMic (configureSlots[roleIndex (role)]);
+        };
+        addChildComponent (b);
+    }
+
+    roomChoice.addItemList (emulation::roomNames(), 1);
+    roomChoice.setTooltip ("The room the emulated room mics are in");
+    roomAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, params::emulatedRoomIr, roomChoice);
+    addChildComponent (roomChoice);
+
     // The picture follows the knobs, host automation included. Like the
     // other graphs, it polls the parameters on a timer rather than listening:
     // hosts can set parameters from the audio thread, and a listener would
@@ -309,6 +413,11 @@ MicsModule::MicsModule (juce::AudioProcessorValueTreeState& s) : Module ("Mics")
 }
 
 MicsModule::~MicsModule() = default;
+
+std::array<bool, numMicRoles> MicsModule::emulationState() const
+{
+    return { false, params::isEmulating (state, MicRole::overheads), params::isEmulating (state, MicRole::room) };
+}
 
 void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId channel)
 {
@@ -319,6 +428,19 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
     overlay = {};
     view = View::none;
     kit = std::move (k);
+    shownChannel = channel;
+    shownEmulation = emulationState();
+    micIsEmulated = false;
+
+    for (auto& b : emulateButtons)
+        b.setVisible (false);
+
+    emulationOff.setVisible (false);
+    roomChoice.setVisible (false);
+    configureSlots = { -1, -1, -1 };
+
+    for (auto& b : configureButtons)
+        b.setVisible (false);
 
     auto addEntry = [this] (int p, MicRole role, juce::String name, juce::String tooltip, bool available, juce::String note)
     {
@@ -354,7 +476,8 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
         std::array<bool, numMicRoles> kitHas {};
 
         for (const auto& m : kit->mics)
-            kitHas[roleIndex (m.role)] = true;
+            if (! m.emulated)
+                kitHas[roleIndex (m.role)] = true;
 
         const std::array<juce::String, numMicRoles> missing { "No close mics in this kit", "No overheads in this kit", "No room mics in this kit" };
 
@@ -363,6 +486,7 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
             const auto role = static_cast<MicRole> (r);
             auto available = kitHas[r];
             auto note = available ? juce::String() : missing[r];
+            auto emulated = false;
 
             // A drum no close mic recorded has a silent channel (see KitPieceInfo::hasDirectSignal).
             if (role == MicRole::close && available && ! drum.hasDirectSignal)
@@ -371,7 +495,39 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
                 note = "Not on the close mics";
             }
 
+            // Mics the kit doesn't have, but can emulate: an Emulate button,
+            // or, once they're on, their knob, marked as emulated.
+            if (! kitHas[r] && kit->emulatedSlot (role) >= 0)
+            {
+                auto& button = emulateButtons[r];
+                emulated = shownEmulation[r];
+                available = emulated;
+                note = emulated ? juce::String() : missing[r];
+                button.setButtonText (emulated ? "Turn off" : "Emulate");
+                button.setTooltip (emulated ? juce::String ("Turn the emulated ") + (role == MicRole::room ? "room mics" : "overheads") + " off"
+                                   : role == MicRole::room ? juce::String ("This kit was recorded without room mics. Emulate a pair from its other mics, "
+                                                                           "in a built-in room. You can turn them off at any time.")
+                                                           : juce::String ("This kit was recorded without overheads. Emulate a pair over the kit from "
+                                                                           "its close mics. You can turn them off at any time."));
+                button.setVisible (true);
+            }
+
             addEntry (channel.slot, role, roleNames[r], roleTooltips[r], available, note);
+            entries.back().emulated = emulated;
+
+            // Edit overheads / Edit room: the first overhead or room mic with a channel of its
+            // own (a kit of one stereo pair sends it to the drums' channels instead).
+            if (role != MicRole::close)
+            {
+                for (size_t m = 0; m < kit->mics.size() && configureSlots[r] < 0; ++m)
+                    if (kit->mics[m].role == role && ! kit->mics[m].direct && params::hasMicChannel (state, *kit, (int) m))
+                        configureSlots[r] = (int) m;
+
+                configureButtons[r].setVisible (configureSlots[r] >= 0);
+            }
+
+            if (emulated)
+                entries.back().knob->setTooltip (juce::String (roleTooltips[r]) + " (emulated: this kit wasn't recorded with them)");
         }
 
         if (std::none_of (entries.begin(), entries.end(), [] (const Entry& e) { return e.available; }))
@@ -382,7 +538,20 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
         view = View::mic;
         const auto& mic = kit->mics[(size_t) channel.slot];
         micRole = mic.role;
-        setTitle (titlePrefix() + mic.name);
+        micIsEmulated = mic.emulated;
+        setTitle (titlePrefix() + mic.name + (mic.emulated ? " (emulated)" : ""));
+
+        if (micIsEmulated)
+        {
+            emulationOff.setButtonText (shownEmulation[roleIndex (micRole)] ? "Turn off" : "Emulate");
+            emulationOff.setTooltip (shownEmulation[roleIndex (micRole)] ? "Turn these emulated mics off" : "Turn these emulated mics on");
+            emulationOff.setVisible (true);
+            roomChoice.setVisible (micRole == MicRole::room && shownEmulation[roleIndex (micRole)]);
+
+            if (! shownEmulation[roleIndex (micRole)])
+                overlay = juce::String ("This kit was recorded without ") + (micRole == MicRole::room ? "room mics" : "overheads")
+                          + ", and the emulated ones are switched off.";
+        }
 
         if (kitPicture.builtFor != kit)
             buildKitPicture();
@@ -397,7 +566,7 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
                       available, available ? juce::String() : "Not on the close mics");
         }
 
-        if (entries.empty())
+        if (entries.empty() && overlay.isEmpty())
             overlay = "This kit has no drums.";
     }
 
@@ -508,6 +677,14 @@ float MicsModule::levelOf (const Entry& e) const
 
 void MicsModule::timerCallback()
 {
+    // Emulation switched on or off (here, on another page, or by the host):
+    // the view is built again, even while hidden, so it's right when shown.
+    if (kit != nullptr && emulationState() != shownEmulation)
+    {
+        show (kit, shownChannel);
+        return;
+    }
+
     if (! isShowing())
         return;
 
@@ -595,6 +772,9 @@ void MicsModule::drawMics (juce::Graphics& g, const PlacedMics& placed)
 void MicsModule::resized()
 {
     layoutHeaderButtons (nullptr, &reset);
+
+    // Turn off (or Emulate) beside Reset in the header.
+    emulationOff.setBounds (reset.getBounds().withWidth (70).translated (-76, 0));
     const auto c = getContentArea().toFloat();
     floorY = c.getBottom() - 4.0f;
     const auto half = (float) knobWidth * 0.5f;
@@ -696,10 +876,13 @@ void MicsModule::resized()
         }
 
         {
-            // Three-quarters of the card's height, standing at its right.
+            // Three-quarters of the card's height, standing a little to the
+            // drum's right (no further right than the card allows).
             const auto& art = micArt ("mics-room");
-            drumMics[roleIndex (MicRole::room)] = placeMics ("mics-room", c.getHeight() * roomHeight / art.size.y, Anchor::foot,
-                                                             { c.getRight() - 110.0f, floorY });
+            const auto scale = c.getHeight() * roomHeight / art.size.y;
+            const auto foot = art.foot.value_or (juce::Point<float> (0.5f, 1.0f));
+            const auto footX = std::min (c.getRight() - 110.0f, drum.getRight() + 80.0f + foot.x * art.size.x * scale);
+            drumMics[roleIndex (MicRole::room)] = placeMics ("mics-room", scale, Anchor::foot, { footX, floorY });
         }
 
         // Each knob beside its mics: left of the close mic (above the kick's
@@ -718,7 +901,7 @@ void MicsModule::resized()
         if (! room.tips.empty())
         {
             const auto rightMost = *std::max_element (room.tips.begin(), room.tips.end(), [] (auto a, auto b) { return a.x < b.x; });
-            roomKnob = { std::min (c.getRight() - half, rightMost.x + half + 14.0f),
+            roomKnob = { std::min (c.getRight() - half, rightMost.x + half + 28.0f),   // clear of the stand, with its Turn off button under it
                          std::max (c.getY() + knobHeight * 0.5f, rightMost.y - 6.0f) };
         }
 
@@ -728,7 +911,26 @@ void MicsModule::resized()
             roomKnob };
 
         for (size_t r = 0; r < entries.size(); ++r)
+        {
             entries[r].knob->setBounds (juce::Rectangle<float> ((float) knobWidth, (float) knobHeight).withCentre (knobCentres[r]).toNearestInt());
+
+            // Under the knob: below its note while it has one ("No room
+            // mics in this kit"), right under it once the mics are emulated.
+            auto& button = emulateButtons[r];
+            const auto knob = entries[r].knob->getBounds().toFloat();
+            const auto below = entries[r].emulated ? 6.0f : 40.0f;
+            button.setBounds (juce::Rectangle<float> (78.0f, 22.0f)
+                                  .withCentre ({ knob.getCentreX(), knob.getBottom() + below + 11.0f })
+                                  .constrainedWithin (c)
+                                  .toNearestInt());
+
+            // Edit overheads / Edit room under the knob, or under Turn off.
+            const auto configureTop = button.isVisible() ? (float) button.getBottom() + 6.0f : knob.getBottom() + 6.0f;
+            configureButtons[r].setBounds (juce::Rectangle<float> (static_cast<MicRole> (r) == MicRole::room ? 84.0f : 112.0f, 22.0f)
+                                               .withCentre ({ knob.getCentreX(), configureTop + 11.0f })
+                                               .constrainedWithin (c)
+                                               .toNearestInt());
+        }
     }
     else if (view == View::mic && ! entries.empty())
     {
@@ -754,13 +956,25 @@ void MicsModule::resized()
             rowTop += (float) knobHeight + 4.0f;
         }
 
+        // An emulated pair says so along the top, with its room choice.
+        auto top = c.getY();
+
+        if (micIsEmulated)
+        {
+            roomChoice.setBounds (juce::Rectangle<float> (c.getX() + 8.0f, c.getY() + 4.0f, 150.0f, 22.0f)
+                                      .translated (emulatedTagWidth + 8.0f, 0.0f).toNearestInt());
+            top += 30.0f;
+        }
+
         // The overheads hang above the kit, so they get a strip of the card
         // over it for themselves and their cables.
         const auto room = micRole == MicRole::room;
-        const auto top = c.getY() + (room ? 4.0f : 78.0f);
+        top += room ? 4.0f : 78.0f;
         const auto space = juce::Rectangle<float> (c.getX(), top, c.getWidth(), knobsTop - 8.0f - top);
+        // The room pair a little shorter than the kit picture, so it reads
+        // as mics in front of the kit rather than towering over it.
         const auto& roomArt = micArt ("mics-room");
-        const auto roomScale = space.getHeight() / roomArt.size.y;
+        const auto roomScale = space.getHeight() * 0.62f / roomArt.size.y;
         const auto roomWidth = roomArt.size.x * roomScale;
         constexpr float gap = 16.0f;
 
@@ -778,7 +992,8 @@ void MicsModule::resized()
         {
             const auto foot = roomArt.foot.value_or (juce::Point<float> (0.5f, 1.0f));
             kitMics = placeMics ("mics-room", roomScale, Anchor::foot,
-                                 { kitPicture.area.getRight() + gap + foot.x * roomWidth, space.getBottom() });
+                                 { kitPicture.area.getRight() + gap + foot.x * roomWidth,
+                                   kitPicture.area.isEmpty() ? space.getBottom() : kitPicture.area.getBottom() });
         }
         else
         {
@@ -881,12 +1096,46 @@ void MicsModule::paintDrumView (juce::Graphics& g)
         drawPickup (g, tip, to, spread * 0.5f, colour, levelOf (closeEntry));
     }
 
-    drawPicture (g, room.scaled, room.area, roomEntry.available);
+    // An emulated pair is drawn faded inside a dashed outline: there are
+    // no such mics in the recording.
+    if (roomEntry.emulated)
+    {
+        g.setOpacity (0.6f);
+        g.drawImage (room.scaled, room.area);
+        g.setOpacity (1.0f);
+        drawEmulatedOutline (g, standsOutline (room));
+    }
+    else
+    {
+        drawPicture (g, room.scaled, room.area, roomEntry.available);
+    }
+
     drawPicture (g, closeMic.scaled, closeMic.area, closeEntry.available);
-    g.setOpacity (overheadEntry.available ? 1.0f : 0.35f);
+    g.setOpacity (overheadEntry.emulated ? 0.6f : overheadEntry.available ? 1.0f : 0.35f);
     drawMics (g, overheads);
     g.setOpacity (1.0f);
+
+    if (overheadEntry.emulated && ! overheads.tips.empty())
+    {
+        // Around the two mics' heads (the pair's render also has their cables).
+        const auto heads = boundsOf (overheads.tips);
+        drawEmulatedOutline (g, heads.expanded (14.0f, 0.0f).withTop (heads.getY() - 44.0f).withBottom (heads.getY() + 10.0f));
+    }
+
     g.restoreState();
+
+    // EMULATED over each emulated pair's knob.
+    for (const auto* e : { &overheadEntry, &roomEntry })
+        if (e->emulated)
+        {
+            // As wide as the knob's name under it (drawn the same way, see
+            // Knob::paint), so the two line up; wider only if the name is short.
+            const auto knob = e->knob->getBounds().toFloat();
+            const auto nameWidth = getTrackedTextWidth (juce::String (roleNames[e == &roomEntry ? 2 : 1]).toUpperCase(),
+                                                        label (type::caption), 0.08f);
+            const auto tagWidth = getTrackedTextWidth ("EMULATED", label (type::caption), 0.08f) + 10.0f;
+            drawEmulatedTag (g, { knob.getCentreX(), knob.getY() - 9.0f }, std::max (nameWidth, tagWidth));
+        }
 
     // Top left, clear of the mics: how the drum's sound divides between its three mics.
     {
@@ -945,6 +1194,31 @@ void MicsModule::paintMicView (juce::Graphics& g)
 {
     using namespace theme;
 
+    if (micIsEmulated)
+    {
+        // Along the top: EMULATED, the room choice (a component), and what
+        // the pair is made from.
+        const auto c = getContentArea().toFloat();
+        drawEmulatedTag (g, { c.getX() + 8.0f + emulatedTagWidth * 0.5f, c.getY() + 15.0f }, emulatedTagWidth);
+
+        auto fromClose = false, fromOverheads = false;
+
+        for (size_t m = 0; m < kit->mics.size(); ++m)
+            if (((kit->emulationSources >> m) & 1u) != 0)
+                (kit->mics[m].role == MicRole::close ? fromClose : fromOverheads) = true;
+
+        const juce::String sources = fromClose && fromOverheads ? "close mics and overheads" : fromOverheads ? "overheads" : "close mics";
+        const auto made = juce::String ("Made from the ") + sources + (micRole == MicRole::room ? ", in this room" : "");
+        auto text = c.withHeight (30.0f).withTrimmedLeft (8.0f + emulatedTagWidth + 8.0f);
+
+        if (roomChoice.isVisible())
+            text.removeFromLeft (158.0f);
+
+        g.setColour (colours::textMuted);
+        g.setFont (body (type::small));
+        g.drawText (made, text, juce::Justification::centredLeft, true);
+    }
+
     if (kitPicture.scaled.isValid())
         g.drawImage (kitPicture.scaled, kitPicture.area);   // straight on the card, no frame
 
@@ -971,7 +1245,22 @@ void MicsModule::paintMicView (juce::Graphics& g)
         }
     }
 
+    g.setOpacity (micIsEmulated ? 0.6f : 1.0f);
     drawMics (g, kitMics);
+    g.setOpacity (1.0f);
+
+    if (micIsEmulated && kitMics.scaled.isValid())
+    {
+        // The room pair's stands, or the overheads' heads.
+        if (micRole == MicRole::room)
+            drawEmulatedOutline (g, standsOutline (kitMics));
+        else if (! kitMics.tips.empty())
+        {
+            const auto heads = boundsOf (kitMics.tips);
+            drawEmulatedOutline (g, heads.expanded (22.0f, 0.0f).withTop (heads.getY() - 30.0f).withBottom (heads.getY() + 8.0f));
+        }
+    }
+
     g.restoreState();
 
     // Each drum's name where the knob would put its own (see Knob::getNameArea),
@@ -987,6 +1276,37 @@ void MicsModule::paintMicView (juce::Graphics& g)
                                           : colours::textMuted);
         g.drawFittedText (kit->pieces[(size_t) e.piece].name.toUpperCase(), knob.withHeight (14).reduced (2, 0), juce::Justification::centred, 1, 0.7f);
     }
+}
+
+void MicsModule::drawEmulatedOutline (juce::Graphics& g, juce::Rectangle<float> around)
+{
+    juce::Path outline, dashed;
+    outline.addRoundedRectangle (around, 6.0f);
+    const float dashes[] { 5.0f, 4.0f };
+    juce::PathStrokeType (1.2f).createDashedStroke (dashed, outline, dashes, 2);
+    g.setColour (theme::colours::accent.withAlpha (0.75f));
+    g.fillPath (dashed);
+}
+
+void MicsModule::drawEmulatedTag (juce::Graphics& g, juce::Point<float> centre, float width)
+{
+    // Tracked text (a knob's name, and the word in the tag) has its extra
+    // spacing after every letter, the last one too, so the letters sit left
+    // of the middle of the space it takes, by half a letter's spacing. The
+    // pill is centred on the letters, not on that space, so it lines up
+    // with the name under it; the word is laid out the same way as the name.
+    const auto font = theme::label (theme::type::caption);
+    constexpr float tracking = 0.08f;
+    const auto inkShift = 0.5f * tracking * font.getHeight();
+    const auto textArea = juce::Rectangle<float> (width, 16.0f).withCentre (centre);
+    const auto pill = textArea.translated (-inkShift, 0.0f);
+
+    g.setColour (theme::colours::accent.withAlpha (0.16f));
+    g.fillRoundedRectangle (pill, 8.0f);
+    g.setColour (theme::colours::accent.withAlpha (0.8f));
+    g.drawRoundedRectangle (pill.reduced (0.5f), 8.0f, 1.0f);
+    g.setColour (theme::colours::accent);
+    theme::drawTrackedText (g, "EMULATED", font, tracking, textArea, juce::Justification::centred);
 }
 
 //==============================================================================

@@ -52,6 +52,7 @@ private:
     void selectedPieceChanged (int) override;
     void timerCallback() override;
     void updateKitInfo();
+    void rebuildMenu();                     // the drum menu: the drums, then the mic channels
     void showPiece (int);
     void showMic (int slot);
     void showArticulation (int);
@@ -63,6 +64,7 @@ private:
 
     LithiumDrumsProcessor& processor;
     std::shared_ptr<const KitInfo> shownKit;   // keeps the KitInfo the zone map points into alive
+    std::array<bool, 2> shownEmulation {};     // overheads, room: whether their emulated channels are in the menu
     int piece = -1, articulation = 0;
     int micChannel = -1;                       // the mic slot shown instead of a drum, or -1
     std::uint32_t seenHits = 0;

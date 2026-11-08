@@ -1646,6 +1646,9 @@ static int stressKit (lithium::Kit& kit, const lithium::KitInfo& info, lithium::
     return dropouts == 0 ? 0 : 1;
 }
 
+/** --emulation-compare: the emulated mics against real ones (EmulationCompare.cpp). */
+int emulationCompare (const juce::StringArray& args);
+
 /** --fx-cost: what each effect costs, measured on the test kit's mixer with
     noise running through the first drum's channel and sends. */
 static int fxCost()
@@ -2081,6 +2084,9 @@ int main (int argc, char* argv[])
 
     if (args.contains ("--groove-audit"))
         return grooveAudit();
+
+    if (args.contains ("--emulation-compare"))
+        return emulationCompare (args);
 
     if (args.contains ("--fx-cost"))
         return fxCost();

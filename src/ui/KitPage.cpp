@@ -448,7 +448,7 @@ public:
         using namespace theme;
 
         // The piece card's rows, so the two cards line up: title and name,
-        // a full-width control (here the tile switcher: < Open Grooves >),
+        // a full-width control (here the tile switcher: < Browse grooves >),
         // a readout over a bar, and the buttons along the bottom.
         auto area = stagecard::content (*this);
         area.removeFromTop (stagecard::title + stagecard::titleGap + stagecard::name + stagecard::nameGap);
@@ -530,7 +530,7 @@ private:
     ChevronButton previous { "Previous tile", ChevronButton::Direction::left };
     ChevronButton next { "Next tile", ChevronButton::Direction::right };
     PlayStopButton playButton;
-    juce::TextButton loopButton { "Loop" }, openButton { "Open Grooves" };
+    juce::TextButton loopButton { "Loop" }, openButton { "Browse grooves" };
 };
 
 //==============================================================================

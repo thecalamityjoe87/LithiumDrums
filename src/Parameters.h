@@ -29,6 +29,18 @@ juce::String micParamId (int slot, std::string_view name);     // e.g. "mic5_pan
 inline constexpr auto masterVolume = "master_volume";
 inline constexpr auto velocityCrossfade = "velocity_crossfade";
 
+// Mic emulation (see engine/MicEmulation.h): overheads and a room for a kit
+// recorded without them, each switched on by the user, and which built-in
+// room the emulated room is in. Like the mic slots' parameters they belong
+// to the kit, so a kit change resets them (switched off, and the kit's own
+// room choice). Their mixer channels are the mic slots after the kit's own.
+inline constexpr auto emulateOverheads = "mic_emulate_overheads";
+inline constexpr auto emulateRoom = "mic_emulate_room";
+inline constexpr auto emulatedRoomIr = "mic_emulated_room";
+
+/** The on/off parameter of a role's emulated mic (overheads or room). */
+inline const char* emulateParam (MicRole r) noexcept   { return r == MicRole::room ? emulateRoom : emulateOverheads; }
+
 // The FX returns. Every mixer channel has a send to each; a channel's
 // sends are post-fader unless its "send_pre" is on.
 //
@@ -193,6 +205,16 @@ void resetCompressor (juce::AudioProcessorValueTreeState&, ChannelId);
     chain), for its A/B comparison and presets. */
 bool isFxParameter (const juce::String& id);
 
+/** Whether a role's emulated mic (overheads or room) is switched on. Any thread but the audio thread. */
+bool isEmulating (const juce::AudioProcessorValueTreeState&, MicRole);
+
+/** Switches a role's emulated mic on or off, as one gesture for the host. Message thread. */
+void setEmulating (juce::AudioProcessorValueTreeState&, MicRole, bool);
+
+/** Whether a mic slot has a channel to show: one of the kit's own mics, or
+    an emulated one that's switched on. */
+bool hasMicChannel (const juce::AudioProcessorValueTreeState&, const KitInfo&, int slot);
+
 /** The names of the Room reverb's IR choices: the built-in IRs, then "Custom file". */
 juce::StringArray roomIrNames();
 
@@ -288,6 +310,7 @@ private:
     MasterRefs masterChain {};
     Ref master = nullptr;
     Ref crossfade = nullptr;
+    std::array<Ref, numMicRoles> emulate {};   // close is null
 };
 
 } // namespace lithium::params

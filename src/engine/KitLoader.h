@@ -76,6 +76,10 @@ struct KitLoadOptions
     std::shared_ptr<StreamStats> streamStats;   // where a streaming kit counts its reads and dropouts
 
     PieceSwaps swaps;                           // pieces to play with other kits' recordings (loadKit() only)
+
+    // Gives the kit emulated overheads and room even if it has its own, so
+    // the tests can compare the two (see emulation::addEmulatedMics).
+    bool emulateRecordedMics = false;
 };
 
 /** Loads kits on a background thread and publishes them through a KitHandoff.

@@ -293,6 +293,7 @@ private:
     void applyNoteTables() noexcept;
     void sendGroovePattern (bool restart);
     void updateRoomIr();
+    void updateEmulatedRoom();
     void updateLatency();
     juce::ValueTree captureFx() const;
     void applyFx (const juce::ValueTree&);
@@ -347,6 +348,7 @@ private:
     DrumEngine engine { feedback };
     Mixer mixer { &mixerFeedback };
     IrLoader irLoader { mixer.getRoomReverb() };   // after the mixer, whose reverb it loads into
+    IrLoader emulatedRoomLoader { mixer.getEmulatedRoom() };   // the emulated room mics' room (see MicEmulation.h)
     std::int64_t engineClock = 0;                   // samples rendered, for the engine's timing of the pedal
     std::atomic<double> hostBpm { 120.0 };
     bool kitSwapPending = false;

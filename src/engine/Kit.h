@@ -41,6 +41,12 @@ struct MicChannel
     // values EngineParams::resetForKit gives them.
     float startGain = 1.0f;      // linear
     float startPan = 0.0f;       // -1..1, on top of defaultPan
+
+    // An overhead pair or room pair the kit wasn't recorded with, which
+    // MicEmulator makes from the mics it was (see MicEmulation.h). It has
+    // a mixer channel like any other mic, but no recordings: it sits after
+    // the kit's own mics, at or past Kit::numMics.
+    bool emulated = false;
 };
 
 struct Zone
@@ -132,6 +138,14 @@ struct PieceData
     int pedalArticulation = -1, splashArticulation = -1, edgeArticulation = -1;
 
     const Ladder& hatLadder (HatStroke s) const noexcept   { return hatLadders[s == HatStroke::shank ? 1 : 0]; }
+
+    // Mic emulation (see MicEmulation.h): where the piece stands, in metres
+    // (x to the listener's right, y away from the listener toward the
+    // drummer, z up), and which of its mics the emulated mics hear it
+    // through (bit n = mic n): its close mics, or, for a piece no close mic
+    // recorded, the overheads.
+    std::array<float, 3> position {};
+    std::uint32_t emulationSources = 0;
 };
 
 class Kit
@@ -142,9 +156,27 @@ public:
     double sampleRate = 44100.0;
     std::uint64_t serial = 0;    // unique per loaded kit; identifies it in mic load messages
 
-    int numMics = 0;
+    int numMics = 0;                             // the mics with recordings
     std::array<MicChannel, maxMics> mics {};
     int numBusChannels = 0;
+
+    // The emulated overhead and room pairs (see MicEmulation.h), indexed by
+    // MicRole: the mic slot each one has (past numMics), or -1 when the
+    // kit has that role's mics, or no room left for one. The close role is
+    // always -1.
+    std::array<int, numMicRoles> emulatedMic { -1, -1, -1 };
+
+    /** The kit's mics plus its emulated ones: every mic slot with a mixer
+        channel, whether or not its emulation is switched on. */
+    int getNumMixerMics() const noexcept
+    {
+        auto n = numMics;
+
+        for (auto slot : emulatedMic)
+            n = std::max (n, slot + 1);
+
+        return n;
+    }
 
     std::vector<PieceData> pieces;               // at most maxPieces
     std::vector<Articulation> articulations;
@@ -313,6 +345,7 @@ struct KitMicInfo
     float defaultDb = 0.0f, defaultPan = 0.0f;
     float startVolumeDb = 0.0f, startPan = 0.0f;   // a kit preset's starting Volume and Pan (pan -1..1)
     bool direct = true;               // see MicChannel::direct
+    bool emulated = false;            // see MicChannel::emulated
 };
 
 struct KitInfo
@@ -324,7 +357,19 @@ struct KitInfo
     std::vector<MidiMapEntry> kitMidiMap;           // the kit's own default map (empty = it has none)
     bool isPreset = false;
     std::vector<KitPieceInfo> pieces;
-    std::vector<KitMicInfo> mics;
+    std::vector<KitMicInfo> mics;     // the kit's mics, then any emulated ones (see Kit::emulatedMic)
+
+    // As Kit::emulatedMic: the mic slot of the emulated overheads and room,
+    // -1 for none.
+    std::array<int, numMicRoles> emulatedMic { -1, -1, -1 };
+
+    // The mics the emulated ones are made from (bit n = mic n), which have
+    // to stay loaded while emulation is on, even when muted.
+    std::uint32_t emulationSources = 0;
+
+    /** The slot of the emulated mic of this role, or -1. */
+    int emulatedSlot (MicRole r) const noexcept   { return emulatedMic[(size_t) r]; }
+
     std::array<int, numStageSlots> slotPiece {};   // the piece shown in each stage slot, -1 for none
     kitslots::Owners slotOwners;                    // the kit's own piece in each Kit tab slot, before any swaps
     int bitsPerSample = 24;

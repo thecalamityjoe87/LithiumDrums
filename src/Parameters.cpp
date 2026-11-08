@@ -1,6 +1,7 @@
 #include "Parameters.h"
 
 #include "engine/IrLoader.h"
+#include "engine/MicEmulation.h"
 
 #include <map>
 #include <optional>
@@ -387,6 +388,37 @@ juce::StringArray roomIrNames()
     return names;
 }
 
+bool isEmulating (const juce::AudioProcessorValueTreeState& state, MicRole role)
+{
+    if (role == MicRole::close)
+        return false;
+
+    const auto* value = state.getRawParameterValue (emulateParam (role));
+    return value != nullptr && value->load() >= 0.5f;
+}
+
+void setEmulating (juce::AudioProcessorValueTreeState& state, MicRole role, bool on)
+{
+    if (role == MicRole::close)
+        return;
+
+    if (auto* p = state.getParameter (emulateParam (role)))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (on ? 1.0f : 0.0f);
+        p->endChangeGesture();
+    }
+}
+
+bool hasMicChannel (const juce::AudioProcessorValueTreeState& state, const KitInfo& info, int slot)
+{
+    if (! juce::isPositiveAndBelow (slot, (int) info.mics.size()))
+        return false;
+
+    const auto& mic = info.mics[(size_t) slot];
+    return ! mic.emulated || isEmulating (state, mic.role);
+}
+
 bool isFxParameter (const juce::String& id)
 {
     // The master fader is the Mixer page's, not part of the chain.
@@ -580,6 +612,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const SlotName
                                                              volumeRange (6.0f), 0.0f, volumeAttributes()));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { velocityCrossfade, 1 }, "Velocity Crossfade", true));
 
+    {
+        auto group = std::make_unique<Group> ("emulation", "Mic Emulation", " | ");
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { emulateOverheads, 1 }, "Emulated Overheads", false));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { emulateRoom, 1 }, "Emulated Room", false));
+        // Changing the room loads an IR on another thread, so it isn't automatable.
+        group->addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { emulatedRoomIr, 1 }, "Emulated Room Space",
+                                                                       emulation::roomNames(), 0,
+                                                                       juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+        layout.add (std::move (group));
+    }
+
     return layout;
 }
 
@@ -594,6 +637,9 @@ void resetForKit (juce::AudioProcessorValueTreeState& state, const KitInfo& info
     // ... except the choke notes, which come from the kit...
     for (int i = 0; i < maxPieces; ++i)
         set (state, pieceParamId (i, "choke_note"), i < (int) info.pieces.size() ? (float) info.pieces[(size_t) i].defaultChokeNote : -1.0f);
+
+    // ... and the emulated room, which starts in the room the kit suits ...
+    set (state, emulatedRoomIr, (float) emulation::defaultRoomFor (info.id));
 
     // ... and the controls a kit preset starts somewhere else.
     for (int i = 0; i < (int) info.pieces.size(); ++i)
@@ -783,6 +829,8 @@ Snapshot::Snapshot (juce::AudioProcessorValueTreeState& state)
                     find (state, limitOn), find (state, limitCeiling), find (state, limitRelease), find (state, limitLookahead) };
     master = find (state, masterVolume);
     crossfade = find (state, velocityCrossfade);
+    emulate[(size_t) MicRole::overheads] = find (state, emulateOverheads);
+    emulate[(size_t) MicRole::room] = find (state, emulateRoom);
 }
 
 namespace
@@ -945,6 +993,9 @@ void Snapshot::read (EngineParams& out) const noexcept
 
     out.masterGain = dbToGain (load (master));
     out.velocityCrossfade = loadBool (crossfade);
+
+    for (size_t r = 0; r < emulate.size(); ++r)
+        out.emulate[r] = emulate[r] != nullptr && loadBool (emulate[r]);
 }
 
 bool Snapshot::readLookahead() const noexcept

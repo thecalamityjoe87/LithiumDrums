@@ -1703,7 +1703,8 @@ public:
             KitInfo presetInfo;
             auto preset = KitLoader::loadKit (results[1].folder, MidiMap::kitDefault(), presetInfo, error);
             expect (preset != nullptr, error);
-            expectEquals ((int) presetInfo.mics.size(), 1);
+            // Its one recorded mic (the list also has the emulated pairs it can switch on).
+            expectEquals ((int) std::count_if (presetInfo.mics.begin(), presetInfo.mics.end(), [] (const KitMicInfo& mic) { return ! mic.emulated; }), 1);
             expect (presetInfo.memoryBytes < info.memoryBytes);
 
             temp.deleteRecursively();

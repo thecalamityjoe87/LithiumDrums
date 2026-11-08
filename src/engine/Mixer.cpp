@@ -32,6 +32,9 @@ void Mixer::prepare (double newSampleRate, int maxBlockSize)
     micBus.clear();
     pieceBus.setSize (maxPieces * 2, maxBlockSize);
     pieceBus.clear();
+    emulationFeed.setSize (maxPieces, maxBlockSize);
+    emulationFeed.clear();
+    emulator.prepare (newSampleRate, maxBlockSize);
     masterBus.setSize (2, maxBlockSize);
     wet.setSize (2, maxBlockSize);
 
@@ -300,14 +303,18 @@ void Mixer::process (const Kit& kit, int numSamples, const EngineParams& params,
         }
     }
 
-    // The overhead and room mics' channels. (Close mics have none: they feed the drums' channels.)
-    const auto anySolo = params.anyMicSoloed (kit.numMics);
+    // The emulated mics, into their channels of the mic bus.
+    emulator.process (kit, params, emulationFeed, micBus, numSamples);
 
-    for (int m = 0; m < kit.numMics; ++m)
+    // The overhead and room mics' channels. (Close mics have none: they feed
+    // the drums' channels.) Emulated mics that are switched off have none either.
+    const auto anySolo = params.anyMicSoloed (kit);
+
+    for (int m = 0; m < kit.getNumMixerMics(); ++m)
     {
         const auto& mic = kit.mics[(size_t) m];
 
-        if (mic.direct)
+        if (mic.direct || ! params.isMicInUse (kit, m))
             continue;
 
         const auto& mp = params.mics[(size_t) m];

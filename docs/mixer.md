@@ -21,6 +21,21 @@ A kit with no close mics at all (Salamander is one stereo pair) sends every mic 
 
 The close mics themselves have trims (level, pan, mute and solo) under "Close mics" in the Mixer. A trim applies wherever that mic's signal goes, in every drum's channel. Muting a mic for a couple of seconds still unloads it from memory.
 
+## Emulated mics
+
+Some kits were recorded without overheads or a room: Basalt's kits have only close mics, Big Rusty and Tchimera have close mics and overheads, and Salamander, SM Drums and the Open Source Drum Kit are one stereo pair. For those, Lithium can make the missing pair from the mics the kit does have (`src/engine/MicEmulation.cpp`). It's off until you ask: the Mics card on the Edit page shows an **Emulate** button under the missing pair's knob. An emulated pair is always marked as one. Its mics are drawn faded inside a dashed outline with an **EMULATED** tag, its Mixer strip says "Emulated", and the drum menu calls it "Room (emulated)". **Turn off** takes it away again. Choosing another kit switches emulation off.
+
+How it's made:
+
+- **Each drum is heard through one mic:** its loudest close mic, or the overheads for a drum with none of its own (Tchimera's cymbals). A close mic only counts as a drum's own if the drum is within 12 dB of the loudest thing on it, so a crash leaking into the hi-hat mic isn't heard through that. One mic rather than all of them, because a drum's mics are at different distances, and summing kick-in and kick-out cancels part of its low end. The voices sum these into a mono feed per drum. The feed is taken at the kit's own level for the mic, not the mic's trim, so turning a close mic down doesn't make the drum quieter in the room, and the source mics stay loaded while emulation is on, even if they're muted.
+- **Every drum stands where it does on the Kit tab** (positions from `assets/blender-kit.py`). The **overheads** are a spaced pair 70 cm apart, 1.5 m up and centred on the snare. Each drum reaches each mic after the time its distance takes, a little quieter with distance, plus its reflection off the floor. That gives the pair a stereo image from time and level differences, the way a real spaced pair works. A close mic's low end (proximity effect, a mic inside the kick) isn't what a mic over the kit hears, so each drum's feed is shelved down by its role first.
+- **The room** is a wide pair 2.6 m in front of the kit, in a built-in room: Studio, Seminar Room, Tiled Room or Hall, convolved. Each kit starts in the room that suits it. To change it, click **Edit room** under the room's knob (or pick "Room (emulated)" from the drum menu): the room's channel view on the Mics card has the menu. Every kit's overheads and room, emulated or recorded, have the same button on a drum's Mics card (**Edit overheads**, **Edit room**), which opens their channel.
+- **Close mics are mixed hot.** A kick, hi-hat or ride is pushed up close, so a mic across the room hears them much quieter, relative to the snare, than the close mix has them. Each role has a level correction, measured against the real overheads and rooms of DRSKit and MuldjordKit. `LithiumDrumsTests --emulation-compare "<kit folder>"` loads a kit that has both, adds emulated pairs too, and prints each drum's level, arrival time, stereo image, ring time and spectrum through both. With the corrections, the emulated overheads land within a few dB of the real ones on each drum, and arrive within about a millisecond. `--out <folder>` writes a short pattern through each pair as WAV files, for listening.
+
+Close mics aren't emulated. A stereo pair's samples already hold the room they were recorded in, and no filter takes that back out convincingly.
+
+An emulated pair is a mic slot after the kit's own, with a channel like any other: its fader, pan, EQ, compressor, sends and output all work, and each drum's Overheads and Room knobs on the Mics card set how much of it the pair hears. Switched on, the overheads cost a few multiply-adds per sounding drum per sample. The room costs about as much as the Room return.
+
 ## Shaping each hit (Edit page, first row)
 
 These work inside the voice, on every mic of the hit, so they change the drum everywhere: close mics, overheads and room.
@@ -75,7 +90,7 @@ Each piece slot `pieceN_` has the whole drum's `volume`, `tune`, `decay`, `mute`
 
 Every piece and mic slot also has a channel: `output`, `room_send`, `reverb_send` (the Plate), `delay_send`, `send_pre`; `eq_on`, `eq_hpf`, `eq_low_freq`, `eq_low_gain`, `eq_mid1_freq`, `eq_mid1_gain`, `eq_mid1_q`, `eq_mid2_freq`, `eq_mid2_gain`, `eq_mid2_q`, `eq_high_freq`, `eq_high_gain`; `comp_on`, `comp_threshold`, `comp_ratio`, `comp_attack`, `comp_release`, `comp_makeup`, `comp_mix`; `trans_on`, `trans_attack`, `trans_sustain`; `sat_on`, `sat_drive`, `sat_mix`; `width`. A close mic's channel parameters exist but do nothing, because hosts need the same parameters in every slot.
 
-The returns and the master chain's parameters are listed in `src/Parameters.h`; the Plate keeps the old reverb's `reverb_*` IDs.
+The returns and the master chain's parameters are listed in `src/Parameters.h`; the Plate keeps the old reverb's `reverb_*` IDs. Mic emulation has `mic_emulate_overheads`, `mic_emulate_room` and `mic_emulated_room` (the room, not automatable); like the mic slots, a kit change resets them.
 
 Defaults come from the structs the DSP uses (`ChannelSettings`, `PieceParams`, `ReverbSettings`), so the parameters and the engine can't disagree about what neutral means; a test checks it. Choosing a kit from the menu puts every piece and mic parameter back to its default. The returns and the master chain keep their settings, since they aren't part of a kit.
 

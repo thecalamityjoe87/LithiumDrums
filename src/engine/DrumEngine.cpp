@@ -772,7 +772,7 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
 {
     const auto numPieces = (int) kit.pieces.size();
     const auto anySolo = params.anyPieceSoloed (numPieces);
-    const auto anyMicSolo = params.anyMicSoloed (kit.numMics);
+    const auto anyMicSolo = params.anyMicSoloed (kit);
 
     // The close mics' trims and pans, once per mic rather than per piece.
     std::array<std::array<float, 2>, maxMics> micGains {};
@@ -789,6 +789,24 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
         micGains[(size_t) m] = { mic.defaultGain * mp.volume * l, mic.defaultGain * mp.volume * r };
     }
 
+    // Mic emulation: the feed runs while an emulated mic is switched on and
+    // can be heard. It takes the kit's own level for each source mic, not
+    // the mic's trim: turning down a close mic doesn't make the drum quieter
+    // in the room.
+    auto emulationListening = false;
+
+    for (const auto role : { MicRole::overheads, MicRole::room })
+    {
+        if (! params.isEmulating (kit, role))
+            continue;
+
+        const auto& mp = params.mics[(size_t) kit.emulatedMic[(size_t) role]];
+        emulationListening = emulationListening || (! mp.mute && (! anyMicSolo || mp.solo));
+    }
+
+    for (int m = 0; m < kit.numMics; ++m)
+        context.emulationMicGain[(size_t) m] = kit.mics[(size_t) m].defaultGain;
+
     for (size_t i = 0; i < (size_t) numPieces; ++i)
     {
         const auto& pp = params.pieces[i];
@@ -796,6 +814,8 @@ void DrumEngine::updateRenderContext (const Kit& kit, const EngineParams& params
         const auto audible = ! pp.mute && (! anySolo || pp.solo);
         const auto level = audible ? pp.volume * kitPiece.defaultGain : 0.0f;
         const auto decay = pp.decay * kitPiece.defaultDecay;
+
+        context.emulationLevel[i] = emulationListening ? level : 0.0f;
 
         for (size_t r = 0; r < (size_t) numMicRoles; ++r)
             context.roleGains[i][r] = level * pp.sends[r];

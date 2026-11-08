@@ -112,6 +112,12 @@ public:
     void read (SampleCursor&, float* const* dest, int numFrames) noexcept override;
     void close (SampleCursor&) noexcept override;
 
+    /** The start of a sample, as far as it's in RAM (for a streaming kit,
+        its preload), without opening a stream. Returns how many frames it
+        copied (0 for a mic that isn't loaded). Not for the audio thread's
+        playback; the loader uses it to look at a kit's recordings. */
+    int peekStart (SampleId id, float* const* dest, int numFrames) const noexcept   { return readStored (id, 0, dest, numFrames); }
+
 protected:
     /** Copies the frames of [position, position + numFrames) that are held in
         RAM into dest, from dest[ch][0]. Returns how many it copied: frames

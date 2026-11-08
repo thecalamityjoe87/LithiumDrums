@@ -21,12 +21,22 @@ namespace lithium
        mouse gets a line from the mics.
 
     Mics the kit doesn't have, or that didn't record the drum, are drawn
-    dimmed with their knob disabled and a note. */
+    dimmed with their knob disabled and a note. For overheads or room mics
+    the kit doesn't have, the note comes with an Emulate button, which
+    switches on the emulated pair (see engine/MicEmulation.h). An emulated
+    pair is always marked as one: drawn faded inside a dashed outline, with
+    an EMULATED tag, and its own channel's view says what it's made from,
+    has a Turn off button and, for the room, the room it's in. */
 class MicsModule final : public Module, private juce::Timer
 {
 public:
     explicit MicsModule (juce::AudioProcessorValueTreeState&);
     ~MicsModule() override;
+
+    /** Asked to show a mic slot's own channel: the drum view's Edit
+        overheads and Edit room buttons, which open the overheads' or room's view (where an emulated
+        room's room is chosen, and every drum's level in them set). */
+    std::function<void (int micSlot)> onOpenMic;
 
     /** Shows a drum's or an overhead/room mic's channel of this kit. The
         module keeps the KitInfo alive (it's shared, and the Mixer may swap
@@ -51,6 +61,7 @@ private:
         bool available = true;
         juce::String note;                     // why it isn't available
         float shownLevel = -1.0f;              // what the picture was last drawn with
+        bool emulated = false;                 // drum view: the role's mics are emulated ones, switched on
     };
 
     /** The drum view's drum: its render, and where it's drawn (worked out in resized()). */
@@ -107,8 +118,27 @@ private:
     void paintDrumView (juce::Graphics&);
     void paintMicView (juce::Graphics&);
 
+    /** Emulation: the switches as they are, and the drawing that marks an emulated pair. */
+    std::array<bool, numMicRoles> emulationState() const;
+    static void drawEmulatedOutline (juce::Graphics&, juce::Rectangle<float> around);
+    static void drawEmulatedTag (juce::Graphics&, juce::Point<float> centre, float width);
+
     juce::AudioProcessorValueTreeState& state;
     juce::TextButton reset { "Reset" };
+
+    // Emulation (see the class comment). The drum view's Emulate / Turn off
+    // button per role (close has none); the mic view's Turn off and room choice.
+    std::array<juce::TextButton, numMicRoles> emulateButtons;
+    juce::TextButton emulationOff { "Turn off" };
+    // Drum view: under the overheads' and room's knobs, opening their own
+    // channel (the first of that role, if the kit has several); and that slot, -1 for none.
+    std::array<juce::TextButton, numMicRoles> configureButtons;
+    std::array<int, numMicRoles> configureSlots { -1, -1, -1 };
+    juce::ComboBox roomChoice;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> roomAttachment;
+    bool micIsEmulated = false;                // the mic view's mic is an emulated one
+    std::array<bool, numMicRoles> shownEmulation {};   // the switches when the view was built
+    params::ChannelId shownChannel;
 
     std::shared_ptr<const KitInfo> kit;
     View view = View::none;

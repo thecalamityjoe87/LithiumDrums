@@ -99,7 +99,8 @@ MixerStrip::MixerStrip (LithiumDrumsProcessor& p, Kind k, int s, const KitInfo* 
             const auto& mic = kit->mics[(size_t) slot];
             name = mic.name;
             dot = accent;
-            tag = juce::String (mic.role == MicRole::room ? "Room" : "Overhead") + (mic.numChannels > 1 ? juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 St")) : juce::String());
+            tag = mic.emulated ? juce::String ("Emulated")
+                               : juce::String (mic.role == MicRole::room ? "Room" : "Overhead") + (mic.numChannels > 1 ? juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 St")) : juce::String());
             addChannelControls ({ false, slot });
             mute.attach (state, params::micParamId (slot, "mute"));
             solo.attach (state, params::micParamId (slot, "solo"));
@@ -448,6 +449,8 @@ void MixerPage::rebuildStrips()
 {
     strips.clear();
     dividers.clear();
+    shownEmulation = { params::isEmulating (processor.getParameters(), MicRole::overheads),
+                       params::isEmulating (processor.getParameters(), MicRole::room) };
 
     if (shownKit != nullptr)
     {
@@ -475,8 +478,9 @@ void MixerPage::rebuildStrips()
 
             dividers.push_back ((int) strips.size());
 
+            // The overheads and room; emulated ones only while they're switched on.
             for (size_t m = 0; m < shownKit->mics.size(); ++m)
-                if (! shownKit->mics[m].direct)
+                if (! shownKit->mics[m].direct && params::hasMicChannel (processor.getParameters(), *shownKit, (int) m))
                     add (MixerStrip::Kind::mic, (int) m);
         }
     }
@@ -505,7 +509,8 @@ void MixerPage::updateSelection()
     auto channel = processor.selectedMixerChannel;
     const auto valid = channel.isPiece ? juce::isPositiveAndBelow (channel.slot, (int) shownKit->pieces.size())
                                        : juce::isPositiveAndBelow (channel.slot, (int) shownKit->mics.size())
-                                             && ! shownKit->mics[(size_t) channel.slot].direct;
+                                             && ! shownKit->mics[(size_t) channel.slot].direct
+                                             && params::hasMicChannel (processor.getParameters(), *shownKit, channel.slot);
 
     if (! valid)
         channel = processor.selectedMixerChannel = { true, 0 };
@@ -522,6 +527,12 @@ void MixerPage::updateSelection()
 
 void MixerPage::timerCallback()
 {
+    // An emulated pair switched on or off (on the Mics card, or by the
+    // host) adds or removes its strip.
+    if (shownKit != nullptr && shownEmulation != std::array<bool, 2> { params::isEmulating (processor.getParameters(), MicRole::overheads),
+                                                                      params::isEmulating (processor.getParameters(), MicRole::room) })
+        rebuildStrips();
+
     // Read and clear the peaks even while hidden, so the meters don't show a
     // stale burst when the page comes back.
     auto& fb = processor.getMixerFeedback();
