@@ -13,9 +13,10 @@ namespace lithium
      - The hi-hat pedal: its controller and MIDI channel (with Learn), invert,
        calibration, response curve, where the openness steps change, and the
        chicks and foot splashes the pedal can play by itself.
-     - The positional pads (snare, ride, toms): on or off, controller and
-       channel (with Learn), curve, calibration, and how strongly position
-       changes the sound on kits without positional recordings.
+     - The positional pads (snare, hi-hat, ride, toms): on or off,
+       controller and channel (with Learn), curve, calibration, how strongly
+       position changes the sound on kits without positional recordings, and
+       velocity compensation for pads that read edge hits softer.
      - The MIDI monitor: every note and controller as it arrives, and what
        it did.
 

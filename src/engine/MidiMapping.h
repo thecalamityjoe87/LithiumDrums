@@ -39,6 +39,33 @@ RoleMapEntry entryForArticulation (const KitInfo&, int articulation, int note);
     role-based entries instead. Other maps are copied as they are. */
 MidiMap editableCopy (const MidiMap&, const KitInfo&);
 
+/** The map's velocity settings for one of the kit's pieces, or nullptr if
+    it has none (it plays linear). Resolving the map uses the same lookup. */
+const PieceVelocity* findPieceVelocity (const VelocitySettings&, const KitInfo&, int piece);
+
+/** Sets one piece's velocity settings, replacing whatever was saved for it.
+    The piece is named in kit-independent terms (like a learned note), so
+    whatever pv names is ignored; neutral settings are just removed. */
+void setPieceVelocity (VelocitySettings&, const KitInfo&, int piece, PieceVelocity pv);
+
+/** The name an articulation's Velocity Adjust is saved under: its standard
+    articulation name, so it means the same hit on every kit. */
+juce::String velocityAdjustKey (const KitInfo&, int articulation);
+
+/** One of the kit's articulations' Velocity Adjust from a piece's settings.
+    Saved names are matched like a map's notes (an adjust saved as "rim"
+    applies to a kit's "rimshot"), but only to the articulation that best
+    plays the name, so it never spills onto a sibling articulation. */
+int velocityAdjustFor (const PieceVelocity&, const KitInfo&, int articulation);
+
+/** Sets one articulation's Velocity Adjust, replacing whatever name it was
+    saved under before. */
+void setVelocityAdjust (PieceVelocity&, const KitInfo&, int articulation, int amount);
+
+/** What every incoming velocity plays at with this curve and global
+    setting: rounded, and never below 1, so a hit never goes silent. */
+VelocityTable makeVelocityTable (const VelocityCurve&, float global);
+
 /** Which piece and articulation (within the piece) a flattened articulation index is. */
 std::pair<int, int> pieceAndArticulation (const KitInfo&, int articulation);
 

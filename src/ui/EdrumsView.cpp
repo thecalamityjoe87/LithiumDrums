@@ -10,6 +10,11 @@ namespace
     constexpr int rowHeight = theme::size::button;
     constexpr int labelWidth = 92;
     constexpr int cardHeader = 34;
+
+    // A positional pad: its name, the controller row, three slider rows and
+    // the position bar with its labels underneath.
+    constexpr int sliderRowHeight = 18;
+    constexpr int padHeight = 22 + 4 + rowHeight + 4 + 3 * sliderRowHeight + 4 + 6 + 14;
     constexpr int maxMonitorLines = 300;
     const std::array<const char*, numPositionSources> padNames { "Snare", "Ride", "Toms", "Hi-hat" };   // by PositionSource
 
@@ -223,7 +228,8 @@ private:
 
 //==============================================================================
 /** One positional pad: on/off, its controller and channel, Learn, Calibrate,
-    the curve, the emulation amount and where the last hit was. */
+    the curve, the emulation amount, the edge velocity compensation and
+    where the last hit was. */
 class EdrumsView::PadRow final : public juce::Component
 {
 public:
@@ -233,6 +239,7 @@ public:
         fillChannels (channel);
         setUpSlider (curve, -1.0, 1.0, 0.0);
         setUpSlider (emulation, 0.0, 1.0, 0.5);
+        setUpSlider (edgeVelocity, -1.0, 1.0, 0.0);
 
         const auto ride = source == PositionSource::ride;
         const auto hat = source == PositionSource::hihat;
@@ -247,8 +254,11 @@ public:
                               : hat ? "How strongly the hats' tone changes from the bell to the edge of the bow (brighter, more wash). "
                                       "No kit has hats recorded at several positions, so this always applies; the pedal still sets how open they are."
                                     : "On kits without positional recordings: how strongly the tone changes towards the edge (less body, more ring)");
+        edgeVelocity.setTooltip ("Velocity compensation, for pads that read edge hits softer (or louder) than centre hits. "
+                                 "Right of the middle, hits get louder towards the edge, up to half as loud again at the far edge; "
+                                 "left, softer. Only hits that follow the position.");
 
-        for (auto* c : std::initializer_list<juce::Component*> { &on, &cc, &channel, &learn, &calibrate, &curve, &emulation })
+        for (auto* c : std::initializer_list<juce::Component*> { &on, &cc, &channel, &learn, &calibrate, &curve, &emulation, &edgeVelocity })
             addAndMakeVisible (c);
     }
 
@@ -256,7 +266,7 @@ public:
     juce::TextButton on { "On" };
     juce::ComboBox cc, channel;
     juce::TextButton learn { "Learn" }, calibrate { "Calibrate" };
-    ControlSlider curve, emulation;
+    ControlSlider curve, emulation, edgeVelocity;
     float position = -1.0f;
     int low = 0, high = 127;
 
@@ -277,6 +287,7 @@ public:
                          title.toFloat(), juce::Justification::centredLeft);
         drawLabel (g, curveText, "Curve");
         drawLabel (g, emulationText, source == PositionSource::ride ? "Edge blend" : "Edge tone");
+        drawLabel (g, edgeVelocityText, "Edge velocity");
         drawValueBar (g, bar.toFloat(), position, colours::groupSnare, low, high);
         g.setColour (colours::textMuted);
         g.setFont (body (11.0f));
@@ -304,9 +315,10 @@ public:
         learn.setBounds (row);
         area.removeFromTop (space::xs);
 
-        for (auto [slider, text] : { std::pair { &curve, &curveText }, std::pair { &emulation, &emulationText } })
+        for (auto [slider, text] : { std::pair { &curve, &curveText }, std::pair { &emulation, &emulationText },
+                                     std::pair { &edgeVelocity, &edgeVelocityText } })
         {
-            auto r = area.removeFromTop (20);
+            auto r = area.removeFromTop (sliderRowHeight);
             *text = r.removeFromLeft (labelWidth);
             slider->setBounds (r);
         }
@@ -316,7 +328,7 @@ public:
     }
 
 private:
-    juce::Rectangle<int> title, curveText, emulationText, bar;
+    juce::Rectangle<int> title, curveText, emulationText, edgeVelocityText, bar;
 };
 
 //==============================================================================
@@ -447,6 +459,7 @@ EdrumsView::EdrumsView (LithiumDrumsProcessor& p) : processor (p), thresholds (s
         pad->channel.onChange = [this, i] { setControllers ([this, i] (auto& c) { c.positionChannel[i] = pads[i]->channel.getSelectedId() - 1; }); };
         pad->curve.onValueChange = [this, i] { setControllers ([this, i] (auto& c) { c.positionCurve[i] = (float) pads[i]->curve.getValue(); }); };
         pad->emulation.onValueChange = [this, i] { setControllers ([this, i] (auto& c) { c.positionEmulation[i] = (float) pads[i]->emulation.getValue(); }); };
+        pad->edgeVelocity.onValueChange = [this, i] { setControllers ([this, i] (auto& c) { c.positionVelocity[i] = (float) pads[i]->edgeVelocity.getValue(); }); };
         pad->learn.onClick = [this, i] { startLearning (learning == (int) i + 1 ? -1 : (int) i + 1); };
         pad->calibrate.onClick = [this, i] { startCalibrating (calibrating == (int) i + 1 ? -1 : (int) i + 1); };
         addAndMakeVisible (*pad);
@@ -496,6 +509,7 @@ void EdrumsView::refresh()
         pad.channel.setSelectedId (c.positionChannel[i] + 1, juce::dontSendNotification);
         pad.curve.setValue (c.positionCurve[i], juce::dontSendNotification);
         pad.emulation.setValue (c.positionEmulation[i], juce::dontSendNotification);
+        pad.edgeVelocity.setValue (c.positionVelocity[i], juce::dontSendNotification);
         pad.low = c.positionMin[i];
         pad.high = c.positionMax[i];
         pad.repaint();
@@ -845,8 +859,8 @@ void EdrumsView::resized()
 
         for (const auto source : positionDisplayOrder)
         {
-            pads[(size_t) source]->setBounds (a.removeFromTop (124));
-            a.removeFromTop (space::sm);
+            pads[(size_t) source]->setBounds (a.removeFromTop (padHeight));
+            a.removeFromTop (space::xxs);
         }
     }
 

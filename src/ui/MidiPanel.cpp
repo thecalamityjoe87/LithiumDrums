@@ -13,6 +13,7 @@ namespace
     constexpr int chipWidth = 62, chipGap = 6;
     constexpr double flashMs = 220.0;
     constexpr double confirmMs = 3000.0;
+    constexpr int velocityCardHeight = 168;
 
     juce::String noteChipText (int note)
     {
@@ -26,14 +27,63 @@ namespace
 }
 
 //==============================================================================
-/** One line of the mapping table: a piece's name, or one of its
-    articulations with its notes, follow toggle and Learn button. */
+/** Velocity Adjust for one articulation: a small bar that fills from the
+    middle, with the amount on it. Drag (Shift
+    for fine steps) or scroll; double-click for 0. */
+class MidiPanel::AdjustSlider final : public ControlSlider
+{
+public:
+    AdjustSlider()
+    {
+        setSliderStyle (juce::Slider::LinearHorizontal);
+        setRange (-PieceVelocity::maxAdjust, PieceVelocity::maxAdjust, 1.0);
+        setDoubleClickReturnValue (true, 0.0);
+        setTooltip ("Velocity Adjust: makes just this articulation hit harder or softer, before the piece's curve. "
+                    "Drag or scroll; double-click for 0.");
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+        const auto box = getLocalBounds().toFloat().reduced (0.5f);
+        const auto value = (float) getValue();
+        const auto centre = box.getCentreX();
+        const auto end = centre + (box.getWidth() * 0.5f - 2.0f) * value / (float) PieceVelocity::maxAdjust;
+
+        g.setColour (colours::panel);
+        g.fillRoundedRectangle (box, 4.0f);
+
+        if (! juce::exactlyEqual (value, 0.0f))
+        {
+            g.setColour (colours::accent.withAlpha (0.35f));
+            g.fillRect (juce::Rectangle<float>::leftTopRightBottom (std::min (centre, end), box.getY() + 2.0f,
+                                                                    std::max (centre, end), box.getBottom() - 2.0f));
+        }
+
+        g.setColour (isMouseOverOrDragging() || hasKeyboardFocus (false) ? colours::accent.withAlpha (0.7f) : colours::borderStrong);
+        g.drawRoundedRectangle (box, 4.0f, 1.0f);
+
+        const auto amount = juce::roundToInt (value);
+        g.setColour (amount != 0 ? colours::text : colours::textMuted);
+        g.setFont (mono (11.5f, amount != 0 ? Weight::medium : Weight::regular));
+        g.drawText (amount > 0 ? "+" + juce::String (amount) : juce::String (amount), getLocalBounds(), juce::Justification::centred, false);
+    }
+};
+
+//==============================================================================
+/** One line of the mapping table: a piece's name (click it to show its
+    velocity curve), or one of its articulations with its Velocity Adjust,
+    notes, follow toggle and Learn button. */
 class MidiPanel::Row final : public juce::Component,
                               public juce::SettableTooltipClient
 {
 public:
     // A piece header.
-    Row (juce::String pieceName, juce::Colour dot) : name (std::move (pieceName)), colour (dot), header (true) {}
+    Row (juce::String pieceName, juce::Colour dot) : name (std::move (pieceName)), colour (dot), header (true)
+    {
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        setTooltip ("Click to show this piece's velocity curve");
+    }
 
     // An articulation.
     Row (int articulationIndex, juce::String articulationName, Follow canFollow)
@@ -52,11 +102,26 @@ public:
         learnButton.setTooltip ("Click, then hit a pad, or click a key on the keyboard: that note will play this");
         learnButton.onClick = [this] { if (onLearn) onLearn(); };
         addAndMakeVisible (learnButton);
+
+        adjust.onValueChange = [this] { if (onAdjust) onAdjust (juce::roundToInt (adjust.getValue())); };
+        addAndMakeVisible (adjust);
     }
 
-    std::function<void()> onLearn, onAudition;
+    std::function<void()> onLearn, onAudition, onSelect;
     std::function<void (Follow)> onFollow;
-    std::function<void (int)> onRemoveNote;
+    std::function<void (int)> onRemoveNote, onAdjust;
+
+    void setAdjust (int amount)    { adjust.setValue (amount, juce::dontSendNotification); }
+
+    /** A header: whether the velocity card shows this piece. */
+    void setSelected (bool s)
+    {
+        if (s != selected)
+        {
+            selected = s;
+            repaint();
+        }
+    }
 
     bool isHeader() const noexcept          { return header; }
     int getArticulation() const noexcept    { return articulation; }
@@ -109,7 +174,7 @@ public:
         {
             g.setColour (colour);
             g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ 10.0f, (float) area.getCentreY() + 2.0f }));
-            g.setColour (colours::text);
+            g.setColour (selected ? colours::accent : colours::text);
             drawTrackedText (g, name.toUpperCase(), label (14.0f, Weight::semibold), 0.1f,
                              area.withTrimmedLeft (22).toFloat().withTrimmedTop (4.0f), juce::Justification::centredLeft);
             g.setColour (colours::border);
@@ -178,6 +243,7 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (6, 5);
+        adjust.setBounds (area.withWidth (adjustWidth).withSizeKeepingCentre (adjustWidth, 20));
         learnButton.setBounds (area.removeFromRight (learnWidth));
         area.removeFromRight (8);
         followButton.setBounds (area.removeFromRight (followWidth));
@@ -223,7 +289,12 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (header)
+        {
+            if (onSelect)
+                onSelect();
+
             return;
+        }
 
         for (const auto& [rect, note] : chips)
         {
@@ -241,14 +312,16 @@ public:
     }
 
 private:
-    static constexpr int nameWidth = 150, learnWidth = 76, followWidth = 80;
+    // The adjust slider on the left, then the name.
+    static constexpr int adjustWidth = 54, nameLeft = 6 + adjustWidth + 8;
+    static constexpr int nameWidth = 130, learnWidth = 76, followWidth = 80;
 
-    juce::Rectangle<int> getNameArea() const     { return getLocalBounds().withTrimmedLeft (22).withWidth (nameWidth); }
+    juce::Rectangle<int> getNameArea() const     { return getLocalBounds().withTrimmedLeft (nameLeft).withWidth (nameWidth); }
     bool isSpare (int note) const                { return std::find (spares.begin(), spares.end(), note) != spares.end(); }
 
     juce::Rectangle<int> getChipArea() const
     {
-        return getLocalBounds().withTrimmedLeft (22 + nameWidth + 8).withTrimmedRight (6 + learnWidth + 8 + followWidth + 12).reduced (0, 5);
+        return getLocalBounds().withTrimmedLeft (nameLeft + nameWidth + 8).withTrimmedRight (6 + learnWidth + 8 + followWidth + 12).reduced (0, 5);
     }
 
     const juce::String name;
@@ -260,9 +333,10 @@ private:
     std::vector<int> notes, spares;
     std::vector<std::pair<juce::Rectangle<int>, int>> chips;
     juce::Rectangle<int> overflow;
-    bool learning = false;
+    bool learning = false, selected = false;
     double flashUntil = 0.0;
     juce::TextButton followButton, learnButton { "Learn" };
+    AdjustSlider adjust;
 };
 
 //==============================================================================
@@ -462,6 +536,40 @@ MidiPanel::MidiPanel (LithiumDrumsProcessor& p) : OverlayPanel ("MIDI Mapping", 
     invertButton.onClick = [this] { setControllers ([this] (auto& c) { c.pedalInverted = invertButton.getToggleState(); }); };
     addAndMakeVisible (invertButton);
 
+    // The velocity card.
+    curveEditor.onChange = [this] (const VelocityCurve& curve)
+    {
+        editPieceVelocity (velocityPiece, [&curve] (PieceVelocity& pv) { pv.curve = curve; });
+    };
+    addAndMakeVisible (curveEditor);
+
+    for (size_t i = 0; i < velocityCurvePresets.size(); ++i)
+        curvePresets.addItem (velocityCurvePresets[i].name, (int) i + 1);
+
+    curvePresets.setTooltip ("Ready-made curves to start from: Softer needs harder hits for the same level, Harder makes light hits louder");
+    curvePresets.onChange = [this]
+    {
+        if (const auto i = curvePresets.getSelectedId() - 1; juce::isPositiveAndBelow (i, (int) velocityCurvePresets.size()))
+            editPieceVelocity (velocityPiece, [i] (PieceVelocity& pv) { pv.curve = velocityCurvePresets[(size_t) i].make(); });
+    };
+    addAndMakeVisible (curvePresets);
+
+    globalVelocity.setSliderStyle (juce::Slider::LinearHorizontal);
+    globalVelocity.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    globalVelocity.setRange (-1.0, 1.0, 0.01);
+    globalVelocity.setDoubleClickReturnValue (true, 0.0);
+    globalVelocity.setColour (juce::Slider::trackColourId, theme::colours::accent);
+    globalVelocity.setColour (juce::Slider::backgroundColourId, theme::colours::background);
+    globalVelocity.setTooltip ("Global Velocity, for every piece and articulation. Softer: the hardest hit plays at 90. "
+                               "Harder: the softest hit plays at 60. In the middle, the whole range is used. Double-click for the middle.");
+    globalVelocity.onValueChange = [this]
+    {
+        auto velocity = processor.getMidiMap().velocity;
+        velocity.global = (float) globalVelocity.getValue();
+        processor.setVelocity (velocity);
+    };
+    addAndMakeVisible (globalVelocity);
+
     processor.addChangeListener (this);
     processor.getMidiMapBroadcaster().addChangeListener (this);
 }
@@ -480,7 +588,7 @@ void MidiPanel::showEdrums (bool show)
     setTitle (show ? "E-Drums" : "MIDI Mapping");
     edrums.setVisible (show);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &viewport, &keyboard, &invertButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &viewport, &keyboard, &invertButton, &curveEditor, &curvePresets, &globalVelocity })
         c->setVisible (! show);
 
     for (auto& c : controllers)
@@ -559,12 +667,19 @@ void MidiPanel::rebuildRows()
     rows.clear();
     shownKit = processor.getKitInfo();
     selected = -1;   // articulation indices belong to the kit
+    velocityPiece = -1;
 
     if (shownKit != nullptr)
     {
+        // The velocity card starts on the piece selected on the Kit page.
+        const auto kitSelection = processor.getSelection().getSelected();
+        velocityPiece = juce::isPositiveAndBelow (kitSelection, (int) shownKit->pieces.size()) ? kitSelection : 0;
+
         for (const auto& [p, piece] : juce::enumerate (shownKit->pieces))
         {
-            rows.push_back (std::make_unique<Row> (piece.name, theme::groupColour (info (piece.role).group)));
+            auto header = std::make_unique<Row> (piece.name, theme::groupColour (info (piece.role).group));
+            header->onSelect = [this, pieceIndex = (int) p] { selectPiece (pieceIndex); };
+            rows.push_back (std::move (header));
 
             for (const auto& [a, art] : juce::enumerate (piece.articulations))
             {
@@ -580,6 +695,11 @@ void MidiPanel::rebuildRows()
                 {
                     processor.audition (pieceIndex, LithiumDrumsProcessor::auditionVelocity, local);
                     selectArticulation (index);
+                    selectPiece (pieceIndex);
+                };
+                row->onAdjust = [this, pieceIndex, index] (int amount)
+                {
+                    editPieceVelocity (pieceIndex, [this, index, amount] (PieceVelocity& pv) { setVelocityAdjust (pv, *shownKit, index, amount); });
                 };
                 row->onRemoveNote = [this] (int note) { processor.forgetNote (note); };
                 row->onFollow = [this, index] (Follow f) { processor.setFollow (index, f); };
@@ -597,11 +717,19 @@ void MidiPanel::rebuildRows()
 void MidiPanel::updateRows()
 {
     const auto table = processor.getNoteTable();
+    const auto map = processor.getMidiMap();
 
     for (auto& r : rows)
     {
         if (r->isHeader())
             continue;
+
+        if (shownKit != nullptr)
+        {
+            const auto piece = pieceAndArticulation (*shownKit, r->getArticulation()).first;
+            const auto* pv = findPieceVelocity (map.velocity, *shownKit, piece);
+            r->setAdjust (pv != nullptr ? velocityAdjustFor (*pv, *shownKit, r->getArticulation()) : 0);
+        }
 
         std::vector<int> notes, spares;
         bool following = false;
@@ -623,8 +751,8 @@ void MidiPanel::updateRows()
     }
 
     updateKeyboard (table);
+    updateVelocity();
 
-    const auto map = processor.getMidiMap();
     controllers[0]->setController (map.controllers.hihatPedal);
     invertButton.setToggleState (map.controllers.pedalInverted, juce::dontSendNotification);
 
@@ -664,6 +792,64 @@ void MidiPanel::setControllers (const std::function<void (ControllerSettings&)>&
     auto c = processor.getMidiMap().controllers;
     change (c);
     processor.setControllers (c);
+}
+
+//==============================================================================
+void MidiPanel::selectPiece (int piece)
+{
+    if (piece == velocityPiece)
+        return;
+
+    velocityPiece = piece;
+    curveEditor.showHit (-1, -1);
+    updateVelocity();
+}
+
+void MidiPanel::updateVelocity()
+{
+    const auto map = processor.getMidiMap();
+    const auto hasPiece = shownKit != nullptr && juce::isPositiveAndBelow (velocityPiece, (int) shownKit->pieces.size());
+    const auto* pv = hasPiece ? findPieceVelocity (map.velocity, *shownKit, velocityPiece) : nullptr;
+    const auto curve = pv != nullptr ? pv->curve : VelocityCurve {};
+
+    curveEditor.setEnabled (hasPiece);
+    curvePresets.setEnabled (hasPiece);
+    globalVelocity.setEnabled (shownKit != nullptr);
+    curveEditor.setCurve (curve, map.velocity.global);
+    globalVelocity.setValue (map.velocity.global, juce::dontSendNotification);
+
+    // The preset the curve is, or "Custom" once it's been edited.
+    const auto preset = std::find_if (velocityCurvePresets.begin(), velocityCurvePresets.end(), [&] (const auto& p) { return p.make() == curve; });
+
+    if (preset != velocityCurvePresets.end())
+        curvePresets.setSelectedId ((int) (preset - velocityCurvePresets.begin()) + 1, juce::dontSendNotification);
+    else
+        curvePresets.setText ("Custom", juce::dontSendNotification);
+
+    // The list's header for the piece shows it's the one on the card.
+    int piece = -1;
+
+    for (auto& r : rows)
+        if (r->isHeader())
+            r->setSelected (++piece == velocityPiece);
+
+    repaint (velocityCard);
+}
+
+void MidiPanel::editPieceVelocity (int piece, const std::function<void (PieceVelocity&)>& change)
+{
+    if (shownKit == nullptr || ! juce::isPositiveAndBelow (piece, (int) shownKit->pieces.size()))
+        return;
+
+    auto velocity = processor.getMidiMap().velocity;
+    PieceVelocity pv;
+
+    if (const auto* saved = findPieceVelocity (velocity, *shownKit, piece))
+        pv = *saved;
+
+    change (pv);
+    setPieceVelocity (velocity, *shownKit, piece, std::move (pv));
+    processor.setVelocity (velocity);
 }
 
 void MidiPanel::startLearning (int articulation)
@@ -828,8 +1014,22 @@ void MidiPanel::timerCallback()
 
             if (shownKit != nullptr)
             {
-                const auto target = processor.getNoteTable().targets[(size_t) note];
+                const auto table = processor.getNoteTable();
+                const auto target = table.targets[(size_t) note];
                 const auto [p, a] = pieceAndArticulation (*shownKit, target.articulation);
+
+                // What the velocity settings made of it (without the edge
+                // compensation, which depends on where the pad was hit).
+                if (p >= 0)
+                {
+                    const auto out = table.velocityFor (note, p, velocity);
+
+                    if (out != velocity)
+                        lastNoteText << juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) << out;
+
+                    if (p == velocityPiece)
+                        curveEditor.showHit (velocity, out);
+                }
 
                 if (p >= 0)
                     lastTargetText = shownKit->pieces[(size_t) p].name + ", " + shownKit->pieces[(size_t) p].articulations[(size_t) a].name
@@ -928,6 +1128,37 @@ void MidiPanel::paint (juce::Graphics& g)
                       "strike position play their own sound until the e-kit sends that controller.",
                       hintArea, juce::Justification::topLeft, 4, 1.0f);
 
+    // The velocity card.
+    g.setColour (colours::raised);
+    g.fillRoundedRectangle (velocityCard.toFloat(), 8.0f);
+    g.setColour (colours::border);
+    g.drawRoundedRectangle (velocityCard.toFloat().reduced (0.5f), 8.0f, 1.0f);
+
+    const auto pieceName = shownKit != nullptr && juce::isPositiveAndBelow (velocityPiece, (int) shownKit->pieces.size())
+                             ? shownKit->pieces[(size_t) velocityPiece].name : juce::String();
+    g.setColour (colours::textMuted);
+    drawTrackedText (g, "VELOCITY", label (12.5f, Weight::semibold), 0.12f, velocityTitle.toFloat(), juce::Justification::centredLeft);
+    g.setColour (colours::text);
+    drawTrackedText (g, pieceName.toUpperCase(), label (14.0f, Weight::semibold), 0.1f,
+                     velocityTitle.toFloat().withTrimmedLeft (84.0f), juce::Justification::centredLeft);
+
+    g.setColour (colours::textMuted);
+    g.setFont (body (12.5f));
+    g.drawText ("Curve", presetsLabel, juce::Justification::centredLeft, false);
+    drawTrackedText (g, "GLOBAL", label (12.0f, Weight::semibold), 0.12f, globalLabel.toFloat(), juce::Justification::centredLeft);
+
+    g.setFont (body (11.5f));
+    g.drawText ("Softer", globalMarks, juce::Justification::centredLeft, false);
+    g.drawText ("Default", globalMarks, juce::Justification::centred, false);
+    g.drawText ("Harder", globalMarks, juce::Justification::centredRight, false);
+
+    const auto global = (float) globalVelocity.getValue();
+    g.setColour (colours::text);
+    g.setFont (mono (12.0f));
+    g.drawText ("plays " + juce::String (juce::roundToInt (applyGlobalVelocity (1.0f, global))) + " to "
+                    + juce::String (juce::roundToInt (applyGlobalVelocity (127.0f, global))),
+                globalRange, juce::Justification::centredLeft, false);
+
     if (shownKit == nullptr)
     {
         g.setFont (body (15.0f));
@@ -960,13 +1191,37 @@ void MidiPanel::layoutContent (juce::Rectangle<int> area)
     editorRow.removeFromRight (8);
     nameEditor.setBounds (editorRow);
 
-    // Like AD2: the monitor on the left, the articulations in the middle and
-    // the keyboard on the right, next to the rows it maps.
+    // The monitor on the left, the articulations in the middle and the
+    // keyboard on the right, next to the rows it maps.
     monitorArea = area.removeFromLeft (monitorWidth);
     area.removeFromLeft (20);
     keyboard.setBounds (area.removeFromRight (keyboardWidth));
     area.removeFromRight (20);
+
+    // The velocity card above the list: the curve on the left, the piece's
+    // name, its preset curves and the global velocity on the right.
+    velocityCard = area.removeFromTop (velocityCardHeight);
+    area.removeFromTop (10);
     viewport.setBounds (area);
+
+    {
+        auto card = velocityCard.reduced (14, 10);
+        curveEditor.setBounds (card.removeFromLeft (250));
+        card.removeFromLeft (18);
+
+        velocityTitle = card.removeFromTop (24);
+        card.removeFromTop (8);
+        auto row = card.removeFromTop (theme::size::button);
+        presetsLabel = row.removeFromLeft (46);
+        curvePresets.setBounds (row.withWidth (std::min (row.getWidth(), 150)));
+        card.removeFromTop (16);
+        auto globalTitle = card.removeFromTop (18);
+        globalLabel = globalTitle.removeFromLeft (70);
+        globalRange = globalTitle;
+        card.removeFromTop (2);
+        globalVelocity.setBounds (card.removeFromTop (20));
+        globalMarks = card.removeFromTop (16);
+    }
 
     auto monitor = monitorArea.reduced (18, 16);
     lastNoteArea = monitor.removeFromTop (92);

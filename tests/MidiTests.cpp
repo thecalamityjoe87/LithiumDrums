@@ -901,7 +901,18 @@ public:
 
             auto controllers = processor.getMidiMap().controllers;
             controllers.hihatPedal = 11;
+            controllers.positionVelocity[(size_t) PositionSource::snare] = 0.4f;
             processor.setControllers (controllers);
+
+            // Velocity settings are part of the map, so they're saved with the project.
+            auto velocity = processor.getMidiMap().velocity;
+            velocity.global = -0.5f;
+            PieceVelocity snare;
+            snare.curve = VelocityCurve::harder();
+            const auto snarePiece = (int) (std::find_if (info->pieces.begin(), info->pieces.end(), [] (const auto& p) { return p.id == "snare"; })
+                                           - info->pieces.begin());
+            setPieceVelocity (velocity, *info, snarePiece, snare);
+            processor.setVelocity (velocity);
 
             expect (processor.isMidiMapModified());
             expectEquals ((int) processor.getNoteTable().targets[60].articulation, offCenter);
@@ -918,6 +929,9 @@ public:
             expect (restored.getMidiMap().sameMapping (processor.getMidiMap()));
             expect (restored.isMidiMapModified());
             expectEquals (restored.getMidiMap().controllers.hihatPedal, 11);
+            expect (restored.getMidiMap().velocity == processor.getMidiMap().velocity);
+            expect (! restored.getMidiMap().velocity.isNeutral());
+            expect (restored.getNoteTable().velocityCurves[(size_t) snarePiece] == makeVelocityTable (VelocityCurve::harder(), -0.5f));
             expectEquals ((int) restored.getNoteTable().targets[60].articulation, offCenter);
 
             juce::AudioBuffer<float> buffer (2, 512);
@@ -967,6 +981,249 @@ public:
 
             expectEquals (allocations, 0);
             expect (processor.getFeedback().hihatOpenness.load() >= 0.0f);
+        }
+    }
+};
+
+//==============================================================================
+class VelocityTests final : public juce::UnitTest
+{
+public:
+    VelocityTests() : juce::UnitTest ("Velocity curves", "Lithium") {}
+
+    /** The velocity a piece's last hit played at. */
+    static int lastVelocity (const MidiRig& rig, const juce::String& pieceId)
+    {
+        const auto hit = LastHit::unpack (rig.feedback.lastHit[(size_t) rig.piece (pieceId)].load());
+        return hit.has_value() ? hit->velocity : -1;
+    }
+
+    void runTest() override
+    {
+        beginTest ("Curves: the presets, smooth between nodes, never overshooting");
+        {
+            const auto linear = VelocityCurve::linear();
+            expect (linear.isLinear());
+
+            for (int v = 0; v < 128; ++v)
+                expectWithinAbsoluteError (linear ((float) v), (float) v, 0.001f);
+
+            const auto softer = VelocityCurve::softer(), harder = VelocityCurve::harder();
+            expectWithinAbsoluteError (softer (64.0f), 36.0f, 0.001f, "a curve passes through its nodes");
+            expectWithinAbsoluteError (harder (64.0f), 92.0f, 0.001f);
+            expectWithinAbsoluteError (softer (127.0f), 127.0f, 0.001f);
+            expectWithinAbsoluteError (harder (0.0f), 0.0f, 0.001f);
+
+            for (int v = 1; v < 128; ++v)
+            {
+                expect (softer ((float) v) >= softer ((float) v - 1.0f) && harder ((float) v) >= harder ((float) v - 1.0f), "rising nodes, rising curve");
+                expect (softer ((float) v) <= (float) v && harder ((float) v) >= (float) v);
+            }
+
+            // A plateau stays flat: no bump above it between its nodes.
+            const VelocityCurve plateau { { { 0, 0 }, { 30, 100 }, { 60, 100 }, { 127, 127 } } };
+
+            for (int v = 30; v <= 60; ++v)
+                expectWithinAbsoluteError (plateau ((float) v), 100.0f, 0.001f);
+
+            for (int v = 0; v < 128; ++v)
+                expect (plateau ((float) v) >= 0.0f && plateau ((float) v) <= 127.0f);
+        }
+
+        beginTest ("Curves are sanitised: sorted, ends at 0 and 127, limited nodes");
+        {
+            const VelocityCurve messy { { { 127, 200 }, { 40, 50 }, { 3, -10 }, { 40.2f, 60 }, { 90, 100 } } };
+            const auto clean = messy.sanitised();
+            expectEquals ((int) clean.nodes.size(), 4, "the node a fraction away from another is dropped");
+            expectEquals (clean.nodes.front().in, 0.0f);
+            expectEquals (clean.nodes.front().out, 0.0f);
+            expectEquals (clean.nodes.back().in, 127.0f);
+            expectEquals (clean.nodes.back().out, 127.0f);
+
+            VelocityCurve crowded;
+
+            for (int i = 0; i <= 20; ++i)
+                crowded.nodes.push_back ({ (float) i * 6.0f, (float) i * 3.0f });
+
+            expectEquals ((int) crowded.sanitised().nodes.size(), VelocityCurve::maxNodes);
+
+            const VelocityCurve straight { { { 0, 0 }, { 50, 50 }, { 127, 127 } } };
+            expect (straight.sanitised().nodes.empty(), "a straight line is stored as no nodes");
+            expect (straight == VelocityCurve::linear());
+        }
+
+        beginTest ("Global Velocity: Softer (max 90), Default and Harder (min 60)");
+        {
+            expectWithinAbsoluteError (applyGlobalVelocity (127.0f, -1.0f), 90.0f, 0.001f);
+            expectWithinAbsoluteError (applyGlobalVelocity (1.0f, -1.0f), 1.0f, 0.001f);
+            expectWithinAbsoluteError (applyGlobalVelocity (1.0f, 1.0f), 60.0f, 0.001f);
+            expectWithinAbsoluteError (applyGlobalVelocity (127.0f, 1.0f), 127.0f, 0.001f);
+            expectWithinAbsoluteError (applyGlobalVelocity (127.0f, -0.5f), 108.5f, 0.001f, "it moves smoothly between the marks");
+            expectWithinAbsoluteError (applyGlobalVelocity (1.0f, 0.5f), 30.5f, 0.001f);
+
+            for (int v = 1; v < 128; ++v)
+                expectWithinAbsoluteError (applyGlobalVelocity ((float) v, 0.0f), (float) v, 0.0001f);
+
+            expect (makeVelocityTable (VelocityCurve::linear(), 0.0f) == linearVelocityTable(), "neutral settings change nothing");
+        }
+
+        beginTest ("A hit never drops to silence, and never goes past 127");
+        {
+            const VelocityCurve silent { { { 0, 0 }, { 64, 0 }, { 127, 0 } } };
+
+            for (const auto v : makeVelocityTable (silent, 0.0f))
+                expectEquals ((int) v, 1);
+
+            NoteTable table;
+            table.velocityAdjust[38] = PieceVelocity::maxAdjust;
+            table.velocityAdjust[40] = -PieceVelocity::maxAdjust;
+            expectEquals (table.velocityFor (38, 0, 100), 127);
+            expectEquals (table.velocityFor (40, 0, 20), 1);
+            expectEquals (table.velocityFor (41, 0, 127, 1.0f), 127, "edge compensation is clamped too");
+            expectEquals (table.velocityFor (41, 0, 80, 1.0f), 120);
+            expectEquals (table.velocityFor (41, 0, 80, -1.0f), 40);
+
+            // The adjust comes before the curve: 50 + 10 goes through the curve as 60.
+            table.velocityCurves[2] = makeVelocityTable (VelocityCurve::harder(), 0.0f);
+            table.velocityAdjust[45] = 10;
+            expectEquals (table.velocityFor (45, 2, 50), (int) table.velocityCurves[2][60]);
+        }
+
+        beginTest ("Old maps load as linear and neutral");
+        {
+            MidiMap old;
+            expect (MidiMap::parse (R"({ "name": "Old", "controllers": { "pads": { "snare": { "curve": 0.2 } } },
+                                         "notes": [ { "note": 38, "role": "snare" } ] })", old).wasOk());
+            expect (old.velocity.isNeutral());
+            expect (old.controllers.positionVelocity == std::array<float, numPositionSources> {});
+            expect (! old.toJson().contains ("\"velocity\""), "neutral settings aren't written out");
+
+            for (const auto& m : MidiMap::factoryMaps())
+                expect (m.velocity.isNeutral(), m.name);
+
+            MidiRig rig;
+            const auto table = resolveMidiMap (old, rig.info);
+
+            for (const auto& curve : table.velocityCurves)
+                expect (curve == linearVelocityTable());
+
+            expect (table.velocityAdjust == std::array<std::int8_t, 128> {});
+        }
+
+        beginTest ("Velocity settings survive a round trip through JSON");
+        {
+            MidiRig rig;
+            auto map = MidiMap::rolandVDrums();
+            map.velocity.global = 0.25f;
+            map.controllers.positionVelocity[(size_t) PositionSource::toms] = -0.3f;
+
+            const auto snare = rig.piece ("snare");
+            PieceVelocity pv;
+            pv.curve = { { { 0, 0 }, { 40, 70.5f }, { 100, 110 }, { 127, 120 } } };
+            pv.setAdjust (velocityAdjustKey (rig.info, rig.articulation ("snare", "rimshot")), 15);
+            setPieceVelocity (map.velocity, rig.info, snare, pv);
+            expectEquals ((int) map.velocity.pieces.size(), 1);
+
+            MidiMap back;
+            expect (MidiMap::parse (map.toJson(), back).wasOk());
+            expect (back.sameMapping (map));
+            expect (back.velocity == map.velocity);
+            expectEquals (back.controllers.positionVelocity[(size_t) PositionSource::toms], -0.3f);
+
+            expect (MidiMap::parse (R"({ "velocity": { "pieces": [ { "role": "drum" } ] }, "notes": [] })", back).failed());
+            expect (MidiMap::parse (R"({ "velocity": { "pieces": [ { "role": "snare", "curve": [ 3 ] } ] }, "notes": [] })", back).failed());
+        }
+
+        beginTest ("Each piece gets its own curve, each articulation its own adjust");
+        {
+            MidiRig rig;
+            const auto snare = rig.piece ("snare"), kick = rig.piece ("kick");
+            const auto rimshot = rig.articulation ("snare", "rimshot");
+
+            auto map = MidiMap::kitDefault();
+            PieceVelocity pv;
+            pv.curve = VelocityCurve::harder();
+            pv.setAdjust (velocityAdjustKey (rig.info, rimshot), 20);
+            setPieceVelocity (map.velocity, rig.info, snare, pv);
+            map.velocity.global = -1.0f;
+
+            const auto table = resolveMidiMap (map, rig.info);
+            expect (table.velocityCurves[(size_t) snare] == makeVelocityTable (VelocityCurve::harder(), -1.0f));
+            expect (table.velocityCurves[(size_t) kick] == makeVelocityTable (VelocityCurve::linear(), -1.0f), "global applies to every piece");
+
+            for (int n = 0; n < 128; ++n)
+                expectEquals ((int) table.velocityAdjust[(size_t) n], table.targets[(size_t) n].articulation == rimshot ? 20 : 0);
+
+            expect (findPieceVelocity (map.velocity, rig.info, snare) != nullptr);
+            expect (findPieceVelocity (map.velocity, rig.info, kick) == nullptr);
+
+            // Saved names are matched like notes: "rim" from another kit is
+            // this kit's rimshot, "cross_stick" its sidestick. The
+            // articulation's own name wins, and setting it replaces the alias.
+            const auto sidestick = rig.articulation ("snare", "sidestick");
+            PieceVelocity other;
+            other.setAdjust ("rim", 9);
+            other.setAdjust ("cross_stick", -7);
+            expectEquals (velocityAdjustFor (other, rig.info, rimshot), 9);
+            expectEquals (velocityAdjustFor (other, rig.info, sidestick), -7);
+            expectEquals (velocityAdjustFor (other, rig.info, rig.articulation ("snare", "center")), 0);
+            other.setAdjust ("rimshot", 4);
+            expectEquals (velocityAdjustFor (other, rig.info, rimshot), 4);
+            setVelocityAdjust (other, rig.info, sidestick, 11);
+            expectEquals (velocityAdjustFor (other, rig.info, sidestick), 11);
+            expectEquals (other.adjustFor ("cross_stick"), 0, "the alias it was saved under is replaced");
+
+            // Back to neutral: the piece's entry goes.
+            setPieceVelocity (map.velocity, rig.info, snare, {});
+            expect (map.velocity.pieces.empty());
+        }
+
+        beginTest ("MIDI notes play through the curves; grooves and clicks don't");
+        {
+            MidiRig rig;
+            auto map = MidiMap::rolandVDrums();
+            PieceVelocity pv;
+            pv.curve = VelocityCurve::softer();
+            setPieceVelocity (map.velocity, rig.info, rig.piece ("snare"), pv);
+            rig.useMap (map);
+
+            rig.note (40, 64);   // the rimshot: no position
+            expectEquals (lastVelocity (rig, "snare"), juce::roundToInt (VelocityCurve::softer() (64.0f)));
+
+            rig.note (36, 64);
+            expectEquals (lastVelocity (rig, "kick"), 64, "the kick has no curve");
+
+            // A groove hit or a click on the kit names an articulation and keeps its velocity.
+            rig.engine.trigger (*rig.kit, rig.articulation ("snare", "rimshot"), 64, rig.params);
+            expectEquals (lastVelocity (rig, "snare"), 64);
+            rig.engine.stopAll (*rig.kit);
+        }
+
+        beginTest ("Edge compensation: hits that follow the position get louder towards the edge");
+        {
+            MidiRig rig;
+            auto map = MidiMap::rolandVDrums();
+            map.controllers.positionVelocity[(size_t) PositionSource::snare] = 1.0f;
+            rig.useMap (map);
+
+            rig.note (38, 80);
+            expectEquals (lastVelocity (rig, "snare"), 80, "no position yet");
+
+            rig.cc (16, 0);
+            rig.note (38, 80);
+            expectEquals (lastVelocity (rig, "snare"), 80, "a centre hit is left alone");
+
+            rig.cc (16, 127);
+            rig.note (38, 80);
+            expectEquals (lastVelocity (rig, "snare"), 120, "the far edge, half as loud again");
+
+            rig.note (40, 80);
+            expectEquals (lastVelocity (rig, "snare"), 80, "rimshots don't follow the position");
+
+            rig.setControllers ([] (auto& c) { c.positionEnabled[(size_t) PositionSource::snare] = false; });
+            rig.note (38, 80);
+            expectEquals (lastVelocity (rig, "snare"), 80, "positional sensing off: no compensation");
+            rig.engine.stopAll (*rig.kit);
         }
     }
 };
@@ -1337,5 +1594,6 @@ static EdrumTests edrumTests;
 static MidiMapTests midiMapTests;
 static ControllerTests controllerTests;
 static MidiProcessorTests midiProcessorTests;
+static VelocityTests velocityTests;
 
 } // namespace lithium

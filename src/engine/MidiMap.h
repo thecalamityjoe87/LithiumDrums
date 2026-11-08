@@ -4,7 +4,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <optional>
 #include <vector>
 
@@ -110,8 +112,111 @@ struct ControllerSettings
     // the edge (drums), or how much of the edge hit is blended in (ride).
     std::array<float, numPositionSources> positionEmulation { 0.5f, 0.5f, 0.5f, 0.5f };
 
+    // Edge velocity compensation, -1..1: many pads read edge hits softer
+    // than centre hits. Hits that follow the
+    // position get louder (above 0) or softer (below 0) towards the edge, by
+    // up to maxEdgeVelocity of their velocity at the far edge. 0 = off.
+    std::array<float, numPositionSources> positionVelocity {};
+    static constexpr float maxEdgeVelocity = 0.5f;
+
     bool operator== (const ControllerSettings&) const = default;
 };
+
+//==============================================================================
+// Velocity response: a curve per piece, an adjustment per articulation and
+// one global setting. Like the
+// controller settings, they describe the player's pads, not the sound, so
+// they're saved with the map (and the project), never in a preset.
+
+/** One node of a velocity curve, both in MIDI velocity (0..127). */
+struct VelocityNode
+{
+    float in = 0.0f, out = 0.0f;
+    bool operator== (const VelocityNode&) const = default;
+};
+
+/** How the velocity a pad sends becomes the velocity that plays. The nodes
+    run from in = 0 to in = 127, in order; between them the curve is a
+    monotone cubic, so it's smooth but never overshoots a node (and a rising
+    set of nodes always gives a rising curve). No nodes is the straight line. */
+struct VelocityCurve
+{
+    static constexpr int maxNodes = 8;
+    std::vector<VelocityNode> nodes;
+
+    /** The output velocity (0..127, not rounded) for an input velocity. */
+    float operator() (float in) const;
+
+    bool isLinear() const;
+
+    /** The nodes made valid: sorted, at least a velocity apart, the first
+        at 0 and the last at 127, no more than maxNodes, outputs in 0..127.
+        A straight line comes back with no nodes. */
+    VelocityCurve sanitised() const;
+
+    static VelocityCurve linear()    { return {}; }
+    static VelocityCurve softer()    { return { { { 0, 0 }, { 64, 36 }, { 127, 127 } } }; }   // hit harder for the same level
+    static VelocityCurve harder()    { return { { { 0, 0 }, { 64, 92 }, { 127, 127 } } }; }   // light hits come out louder
+
+    bool operator== (const VelocityCurve& other) const    { return sanitised().nodes == other.sanitised().nodes; }
+};
+
+/** The curves offered in the MIDI panel's Velocity Curve menu, in order. */
+struct VelocityCurvePreset
+{
+    const char* name;
+    VelocityCurve (*make)();
+};
+
+inline constexpr std::array<VelocityCurvePreset, 3> velocityCurvePresets {{
+    { "Linear", &VelocityCurve::linear },
+    { "Softer", &VelocityCurve::softer },
+    { "Harder", &VelocityCurve::harder },
+}};
+
+/** One piece's velocity settings. The piece is named the way a learned
+    note names it (see entryForArticulation): by role and its place among
+    the kit's pieces of that role, or for percussion and splashes by name,
+    so a map's settings mean the same piece on every kit. */
+struct PieceVelocity
+{
+    static constexpr int maxAdjust = 50;
+
+    PieceRole role = PieceRole::other;
+    int nth = 0;
+    juce::String name;
+
+    VelocityCurve curve;
+
+    // Velocity Adjust: added to the incoming velocity of one articulation,
+    // before the curve. By standard
+    // articulation name (Articulations.h); -maxAdjust..maxAdjust.
+    std::vector<std::pair<juce::String, int>> adjust;
+
+    int adjustFor (const juce::String& articulation) const;
+    void setAdjust (const juce::String& articulation, int amount);   // 0 removes it
+
+    bool isNeutral() const    { return curve.isLinear() && adjust.empty(); }
+    bool samePiece (const PieceVelocity& o) const    { return role == o.role && nth == o.nth && name == o.name; }
+    bool operator== (const PieceVelocity&) const = default;
+};
+
+struct VelocitySettings
+{
+    // Global Velocity, -1..1. -1 is Softer (the hardest hit plays at 90), 0
+    // the default (the whole range) and 1 Harder (the softest hit plays at
+    // 60); in between moves smoothly.
+    float global = 0.0f;
+
+    std::vector<PieceVelocity> pieces;   // only pieces with settings; others are linear
+
+    bool isNeutral() const    { return juce::exactlyEqual (global, 0.0f) && pieces.empty(); }
+    bool operator== (const VelocitySettings&) const = default;
+};
+
+/** Global Velocity applied to a velocity (0..127): the range 1..127 is
+    squeezed into 1..90 at -1, or 60..127 at 1. Never below 1. */
+float applyGlobalVelocity (float velocity, float global) noexcept;
 
 /** One entry of a kit's own map (kit.json "midiMap"). */
 struct MidiMapEntry
@@ -162,6 +267,7 @@ struct MidiMap
     bool useKitMap = false;
 
     ControllerSettings controllers;
+    VelocitySettings velocity;
     std::vector<RoleMapEntry> entries;
 
     static juce::Result parse (const juce::String& json, MidiMap& result);
@@ -175,7 +281,8 @@ struct MidiMap
 
     bool sameMapping (const MidiMap& other) const
     {
-        return useKitMap == other.useKitMap && controllers == other.controllers && entries == other.entries;
+        return useKitMap == other.useKitMap && controllers == other.controllers && velocity == other.velocity
+            && entries == other.entries;
     }
 
     // --- The built-in maps (assets/midi-maps). ------------------------------
@@ -204,6 +311,20 @@ struct NoteTarget
     bool spare = false;                      // given automatically, to something the map doesn't reach
 };
 
+/** What each incoming velocity (0..127) plays at, for one piece. */
+using VelocityTable = std::array<std::uint8_t, 128>;
+
+/** The straight line: every velocity plays as itself, but never below 1. */
+constexpr VelocityTable linearVelocityTable() noexcept
+{
+    VelocityTable t {};
+
+    for (size_t v = 0; v < t.size(); ++v)
+        t[v] = (std::uint8_t) (v == 0 ? 1 : v);
+
+    return t;
+}
+
 /** A MIDI map resolved against one kit, for the audio thread: plain data,
     trivially copyable, so it can be passed through a lock-free queue by
     value and copied in the audio callback without allocating. */
@@ -211,6 +332,31 @@ struct NoteTable
 {
     std::array<NoteTarget, 128> targets {};
     ControllerSettings controllers;
+
+    // The velocity settings, worked out on the message thread so a hit only
+    // looks them up. Each note's Velocity Adjust (its articulation's), and
+    // each piece's curve with the global velocity already applied, by piece
+    // index in the kit.
+    std::array<std::int8_t, 128> velocityAdjust {};
+    std::array<VelocityTable, maxPieces> velocityCurves = []
+    {
+        std::array<VelocityTable, maxPieces> tables {};
+        tables.fill (linearVelocityTable());
+        return tables;
+    }();
+
+    /** The velocity a note on a piece plays at (1..127). In order: the edge
+        compensation (edgeAmount = the pad's compensation times how far
+        towards the edge the hit was, 0 = none), the articulation's adjust,
+        the piece's curve, then the global velocity. */
+    int velocityFor (int note, int piece, int velocity, float edgeAmount = 0.0f) const noexcept
+    {
+        if (! juce::exactlyEqual (edgeAmount, 0.0f))
+            velocity = (int) std::lround ((float) velocity * (1.0f + ControllerSettings::maxEdgeVelocity * edgeAmount));
+
+        velocity = std::clamp (velocity + velocityAdjust[(size_t) (note & 0x7f)], 0, 127);
+        return velocityCurves[(size_t) std::clamp (piece, 0, maxPieces - 1)][(size_t) velocity];
+    }
 };
 
 static_assert (std::is_trivially_copyable_v<NoteTable>, "NoteTable is copied on the audio thread");

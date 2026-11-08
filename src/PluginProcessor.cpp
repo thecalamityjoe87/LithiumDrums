@@ -882,6 +882,13 @@ void LithiumDrumsProcessor::setControllers (const ControllerSettings& controller
     setMidiMap (map, true);
 }
 
+void LithiumDrumsProcessor::setVelocity (const VelocitySettings& velocity)
+{
+    auto map = getMidiMap();
+    map.velocity = velocity;
+    setMidiMap (map, true);
+}
+
 //==============================================================================
 void LithiumDrumsProcessor::getStateInformation (juce::MemoryBlock& destData)
 {

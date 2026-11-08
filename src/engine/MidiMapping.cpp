@@ -208,6 +208,51 @@ namespace
     }
 }
 
+namespace
+{
+    /** The kit piece a piece's velocity settings are for (-1 for none). Only
+        the piece they name: a curve for the third crash never lands on the
+        second. */
+    int pieceForVelocity (const PieceVelocity& pv, const KitInfo& info)
+    {
+        // On the kit they were made on, a piece named by its id is that very piece.
+        if (pv.name.isNotEmpty())
+            for (size_t p = 0; p < info.pieces.size(); ++p)
+                if (info.pieces[p].role == pv.role && info.pieces[p].id == pv.name)
+                    return (int) p;
+
+        RoleMapEntry e;
+        e.role = pv.role;
+        e.nth = pv.nth;
+        e.name = pv.name;
+        e.exact = true;
+
+        const auto [piece, substitute] = pieceFor (e, info);
+        return substitute ? -1 : piece;
+    }
+
+    /** Each note's adjust and each piece's velocity table. */
+    void resolveVelocity (NoteTable& table, const VelocitySettings& velocity, const KitInfo& info)
+    {
+        std::array<const PieceVelocity*, maxPieces> settings {};
+
+        for (size_t p = 0; p < info.pieces.size() && p < settings.size(); ++p)
+        {
+            settings[p] = findPieceVelocity (velocity, info, (int) p);
+            table.velocityCurves[p] = makeVelocityTable (settings[p] != nullptr ? settings[p]->curve : VelocityCurve {}, velocity.global);
+        }
+
+        for (size_t n = 0; n < table.targets.size(); ++n)
+        {
+            const auto a = table.targets[n].articulation;
+            const auto [p, local] = pieceAndArticulation (info, a);
+
+            if (p >= 0 && p < maxPieces && settings[(size_t) p] != nullptr)
+                table.velocityAdjust[n] = (std::int8_t) velocityAdjustFor (*settings[(size_t) p], info, a);
+        }
+    }
+}
+
 NoteTable resolveMidiMap (const MidiMap& map, const KitInfo& info)
 {
     NoteTable table;
@@ -218,6 +263,91 @@ NoteTable resolveMidiMap (const MidiMap& map, const KitInfo& info)
 
     resolveEntries (table, map, info);
     addSpareNotes (table, map, info);
+    resolveVelocity (table, map.velocity, info);
+    return table;
+}
+
+const PieceVelocity* findPieceVelocity (const VelocitySettings& velocity, const KitInfo& info, int piece)
+{
+    for (const auto& pv : velocity.pieces)
+        if (pieceForVelocity (pv, info) == piece)
+            return &pv;
+
+    return nullptr;
+}
+
+void setPieceVelocity (VelocitySettings& velocity, const KitInfo& info, int piece, PieceVelocity pv)
+{
+    if (! juce::isPositiveAndBelow (piece, (int) info.pieces.size()))
+        return;
+
+    std::erase_if (velocity.pieces, [&] (const auto& o) { return pieceForVelocity (o, info) == piece; });
+
+    // Named the way a learned note names its piece.
+    const auto key = entryForArticulation (info, info.pieces[(size_t) piece].firstArticulation, 0);
+    pv.role = key.role;
+    pv.nth = key.nth;
+    pv.name = key.name;
+    pv.curve = pv.curve.sanitised();
+
+    if (! pv.isNeutral())
+        velocity.pieces.push_back (std::move (pv));
+}
+
+juce::String velocityAdjustKey (const KitInfo& info, int articulation)
+{
+    const auto [p, a] = pieceAndArticulation (info, articulation);
+
+    if (p < 0)
+        return {};
+
+    const auto& piece = info.pieces[(size_t) p];
+    const auto id = piece.articulations[(size_t) a].id.toStdString();   // outlives the string_view
+    const auto standard = articulations::standardName (piece.role, id);
+    return { standard.data(), standard.size() };
+}
+
+int velocityAdjustFor (const PieceVelocity& pv, const KitInfo& info, int articulation)
+{
+    const auto piece = pieceAndArticulation (info, articulation).first;
+
+    if (piece < 0)
+        return 0;
+
+    // The articulation's own standard name wins over an alias that also reaches it.
+    const auto key = velocityAdjustKey (info, articulation);
+    auto amount = 0;
+
+    for (const auto& [name, adjust] : pv.adjust)
+    {
+        if (name == key)
+            return adjust;
+
+        if (articulationFor (info, piece, name, true) == articulation)
+            amount = adjust;
+    }
+
+    return amount;
+}
+
+void setVelocityAdjust (PieceVelocity& pv, const KitInfo& info, int articulation, int amount)
+{
+    const auto piece = pieceAndArticulation (info, articulation).first;
+
+    if (piece < 0)
+        return;
+
+    std::erase_if (pv.adjust, [&] (const auto& a) { return articulationFor (info, piece, a.first, true) == articulation; });
+    pv.setAdjust (velocityAdjustKey (info, articulation), amount);
+}
+
+VelocityTable makeVelocityTable (const VelocityCurve& curve, float global)
+{
+    VelocityTable table {};
+
+    for (size_t v = 0; v < table.size(); ++v)
+        table[v] = (std::uint8_t) juce::jlimit (1, 127, juce::roundToInt (applyGlobalVelocity (curve ((float) v), global)));
+
     return table;
 }
 

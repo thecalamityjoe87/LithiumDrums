@@ -175,7 +175,8 @@ choices. Closing quickly and opening past 30% within 250 ms plays the kit's
 foot splash, if it has one.
 
 **Positional pads** (snare, hi-hat, ride, toms): On, controller and channel
-(Learn), Calibrate, Curve, and Edge tone or Edge blend (above). A digital
+(Learn), Calibrate, Curve, Edge tone or Edge blend (above), and Edge velocity
+(see Velocity curves). A digital
 hi-hat sends where its bow was struck as well as how far the pedal is down:
 the pedal still picks how open the hats play, and the bow position changes
 their tone, brighter and washier from the bell side to the edge (no kit has
@@ -202,6 +203,64 @@ map on CC 4, with no positional pads.
 The Kit page shows the pedal's openness beside the hi-hat, with lights for
 incoming notes and pedal messages, once MIDI has arrived.
 
+## Velocity curves
+
+The map shapes the velocity of the notes that come in, to suit the player's
+pads. In the MIDI panel, the velocity card sits above the articulations, and
+each articulation row has its own slider on the left. In order, a note's
+velocity goes through:
+
+1. **Edge velocity** (E-Drums view, per positional pad). Many pads read edge
+   hits softer than centre hits. Right of the middle, hits that follow the
+   strike position get louder towards the edge, up to half as loud again at
+   the far edge; left of it, softer. Centre hits, and hits that don't follow
+   the position (rimshots), are left alone.
+2. **Velocity Adjust** (per articulation), -50 to +50, added to the
+   velocity: a louder sidestick than the regular snare, say.
+3. **The piece's curve**, for the piece last clicked in the list (its
+   header, or an articulation's name): velocity in across, velocity out up.
+   Drag a node to move it (the end nodes only up and down), click to add one
+   (up to eight), double-click one to remove it. Between the nodes the curve
+   is a monotone cubic: smooth, and never overshooting a node. **Curve**
+   offers Linear, Softer (hit harder for the same level) and Harder (light
+   hits come out louder) to start from; an edited curve shows as Custom. The
+   dot is the last hit on the piece.
+4. **Global**, for every piece. Its three marks: Softer, the hardest hit
+   plays at 90; Default, the whole range; Harder, the softest hit plays at
+   60. Between them it moves smoothly: the range 1-127 is squeezed into 1 up
+   to 90, or 60 up to 127, and the card shows the range it plays. The faint
+   second line on the curve is what the piece really plays at.
+5. **Clamp** to 1-127. A curve can't silence a hit.
+
+All of this happens before the velocity picks a zone, a round robin or a
+pedal or position step, so a softer curve also plays softer samples. The
+input monitor shows the velocity that came in and, when the settings changed
+it, what it played at (`vel 100 → 87`).
+
+**Which hits.** Only notes that arrive as MIDI: from the e-kit or the host,
+and a click on the MIDI panel's keyboard, which stands in for a pad. The
+Grooves page's preview, a groove dragged out as MIDI, and clicks on a piece on
+the Kit or Edit page keep their own velocities: the settings live in the
+MIDI panel, and a player on the Grooves page wouldn't know to look there. A
+dragged groove does go through the curves when the host plays it back into
+Lithium, like any other MIDI.
+
+**Saved with the map.** Like the controller settings, velocity settings
+describe the player's pads, not the sound: they're in the map's JSON
+(`velocity`, and each pad's `edgeVelocity`), so built-in, saved and learned
+maps all carry them, and the project keeps them with its map. Presets never
+hold them. Maps saved before velocity curves load as linear and neutral. A
+piece's settings name it the way MIDI learn does (its role and place among
+the kit's pieces of that role, or by name for percussion and splashes), so
+"the first rack tom's curve" means the first rack tom on every kit; an
+adjust names the standard articulation (`rimshot`, `cross_stick`), matched
+on other kits the way a map's notes are (`rim` reaches a kit's `rimshot`),
+but only on the articulation that best plays it.
+
+The Edit page's **Dynamics** is something else: how much velocity changes a
+drum's level. The curves here change the velocity itself, before anything
+plays.
+
 ## Cymbals and hats ring on
 
 Hitting a ringing cymbal again, on the bow, the bell or the edge, adds to the
@@ -227,9 +286,9 @@ ride pattern doesn't lose wash audibly.
 
 ## The MIDI panel
 
-The panel follows Addictive Drums 2's layout: the input monitor and the
-controller settings on the left, the kit's articulations in the middle, and a
-keyboard on the right.
+The panel has three columns: the input monitor and the controller settings
+on the left, the kit's articulations in the middle, and a keyboard on the
+right.
 
 The keyboard stands upright, high notes at the top, and shows every note with
 its number and what it plays, tinted with the drum's colour (cymbal choke
@@ -238,7 +297,8 @@ mapped notes are; click or drag it, or use the mouse wheel, to move. Clicking
 a key plays the note through the map, exactly as MIDI input would (pedal and
 position following included), harder the further right you click, so the
 velocity zones can be heard. Notes that come in light their keys and scroll
-them into view. Clicking an articulation's name plays it and outlines its keys.
+them into view. Clicking an articulation's name plays it, outlines its keys and shows its
+piece's velocity curve.
 
 ## MIDI learn and saved maps
 
@@ -270,7 +330,15 @@ just its name, so it plays the same on a machine without that saved map.
   "id": "roland-vdrums",
   "name": "Roland V-Drums",
   "controllers": { "hihatPedal": 4, "pedalInverted": false,
-                   "snarePosition": 16, "ridePosition": 17, "tomPosition": 18, "hihatPosition": 19 },
+                   "snarePosition": 16, "ridePosition": 17, "tomPosition": 18, "hihatPosition": 19,
+                   "pads": { "snare": { "curve": 0.0, "edgeVelocity": 0.3 } } },
+  "velocity": {
+    "global": -0.5,
+    "pieces": [
+      { "role": "snare", "curve": [ [0, 0], [64, 92], [127, 127] ], "adjust": { "rimshot": 12 } },
+      { "role": "tom", "nth": 1, "curve": [ [0, 0], [64, 36], [127, 127] ] }
+    ]
+  },
   "notes": [
     { "note": 38, "role": "snare", "articulation": "center", "follow": "position" },
     { "note": 43, "role": "toms", "nth": 2, "articulation": "center", "follow": "position" },
@@ -281,7 +349,8 @@ just its name, so it plays the same on a machine without that saved map.
 
 | Field | Meaning |
 |---|---|
-| `controllers` | Controller numbers, 0-127, or -1 for off. `pedalInverted` is for pedals that send 127 when open. Also `hihatChannel` (0 = any), `pedalRange` (`min`, `max`), `pedalCurve` (-1..1), `hatThresholds` (four, rising), `chickFromPedal` (`off`, `auto`, `always`), `chickSensitivity`, `footSplash`, and `pads` (`snare`, `ride`, `toms`, `hihat`: `channel`, `enabled`, `min`, `max`, `curve`, `emulation`). All optional. |
+| `controllers` | Controller numbers, 0-127, or -1 for off. `pedalInverted` is for pedals that send 127 when open. Also `hihatChannel` (0 = any), `pedalRange` (`min`, `max`), `pedalCurve` (-1..1), `hatThresholds` (four, rising), `chickFromPedal` (`off`, `auto`, `always`), `chickSensitivity`, `footSplash`, and `pads` (`snare`, `ride`, `toms`, `hihat`: `channel`, `enabled`, `min`, `max`, `curve`, `emulation`, `edgeVelocity` (-1..1, 0 = off)). All optional. |
+| `velocity` | Optional; without it everything is linear. `global`: -1 (Softer, max 90) to 1 (Harder, min 60), 0 = the whole range. `pieces`: only pieces with settings, each named by `role`, `nth` (optional) and `name` (optional, for percussion and splashes: the piece's id), as MIDI learn names them. `curve`: `[in, out]` nodes, 0-127, from in 0 to in 127, at most 8 (missing = linear). `adjust`: standard articulation name to -50..50. |
 | `role` | A piece role (`kick`, `snare`, `hihat`, `tom`, `floor_tom`, `crash`, `ride`, `china`, `other`), or `toms` for any tom. |
 | `nth` | Which piece of the role, from 0. Optional. |
 | `articulation` | A standard articulation name (or any kit's own name). |
@@ -297,8 +366,10 @@ A saved map's id is `user:` plus its file name. The built-in maps are in
 ## How it reaches the audio thread
 
 A map is resolved against the loaded kit into a `NoteTable`: 128 entries of
-articulation and follow mode, plus the controller numbers. It is plain data
-(about 530 bytes), so the message thread copies it into a lock-free
+articulation and follow mode, the controller settings, each note's Velocity
+Adjust, and a 128-entry velocity table per piece (its curve with the global
+velocity already applied, worked out on the message thread), so a hit only
+looks its velocity up. It is plain data (about 4 KB), so the message thread copies it into a lock-free
 single-producer queue, and the audio thread copies it out into the kit at the
 start of a block: no allocation, no locks and no shared ownership. Each table
 carries the serial of the kit it was made for. A table for a kit that is still

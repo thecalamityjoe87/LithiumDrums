@@ -217,6 +217,21 @@ void DrumEngine::noteOn (Kit& kit, int note, int velocity, const EngineParams& p
         event.position = hatPosition;
     }
 
+    // The map's velocity settings, before anything picks a step or a zone:
+    // the pad's edge compensation (for hits that follow the position), the
+    // articulation's adjust, the piece's curve and the global velocity. All
+    // looked up in the note table. Grooves and clicks on a piece call
+    // trigger() directly, so they keep their own velocities. The monitor
+    // still shows what came in.
+    auto edgeAmount = 0.0f;
+
+    if (target.follow == Follow::position && strike >= 0.0f && c.positionEnabled[source])
+        edgeAmount = strike * c.positionVelocity[source];
+    else if (target.follow == Follow::pedal && hatPosition >= 0.0f && c.positionEnabled[(size_t) PositionSource::hihat])
+        edgeAmount = hatPosition * c.positionVelocity[(size_t) PositionSource::hihat];
+
+    velocity = kit.notes.velocityFor (note, art.piece, velocity, edgeAmount);
+
     if (target.follow == Follow::pedal && openness >= 0.0f)
     {
         played = playLadder (kit, piece.hatLadder (art.stroke), hatLadderValue (openness, c), velocity, params, hatLevel, hatTone);

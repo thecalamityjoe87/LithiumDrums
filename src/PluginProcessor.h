@@ -194,6 +194,10 @@ public:
 
     void setControllers (const ControllerSettings&);
 
+    /** Changes the map's velocity settings: Global Velocity, and each
+        piece's curve and Velocity Adjust (see setPieceVelocity()). */
+    void setVelocity (const VelocitySettings&);
+
     juce::ChangeBroadcaster& getMidiMapBroadcaster() noexcept        { return midiMapBroadcaster; }
 
     /** Plays a MIDI note as if it came in from MIDI: through the map, with

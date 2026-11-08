@@ -3,6 +3,7 @@
 #include "EdrumsView.h"
 #include "InfoPanels.h"
 #include "MidiKeyboard.h"
+#include "VelocityCurveEditor.h"
 #include "MidiMapLibrary.h"
 
 namespace lithium
@@ -13,7 +14,7 @@ namespace lithium
 
     The toolbar picks a map (Kit default, General MIDI, the e-kit maps and
     the user's saved ones) and saves, reverts, deletes or makes default the
-    current one. Below it, three columns, laid out like Addictive Drums 2's:
+    current one. Below it, three columns:
 
      - the input monitor: the last note and what it played, and the pedal
        and position controllers with their CC numbers;
@@ -22,6 +23,12 @@ namespace lithium
        removes its note, and the follow button makes the articulation's
        notes follow the hi-hat pedal or the strike position;
      - the keyboard: every note labelled with what it plays.
+
+    Above the articulations, the velocity card: the curve of the piece last
+    clicked in the list, with ready-made curves, and the global velocity for
+    every piece. Each articulation row has its Velocity Adjust slider on the
+    left. All of it is saved in the map and applies to notes that come in as
+    MIDI (and the keyboard here), not to grooves or clicks on the kit.
 
     The E-Drums view (the switch in the toolbar) sets up the e-kit's hi-hat
     pedal and positional pads, and has the MIDI monitor (see EdrumsView). */
@@ -42,6 +49,7 @@ public:
 private:
     class Row;
     class ControllerRow;
+    class AdjustSlider;
 
     void layoutContent (juce::Rectangle<int>) override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -60,6 +68,11 @@ private:
     void saveAs();
     void setControllers (const std::function<void (ControllerSettings&)>&);
     void showEdrums (bool);
+
+    // The velocity card
+    void selectPiece (int piece);
+    void updateVelocity();
+    void editPieceVelocity (int piece, const std::function<void (PieceVelocity&)>&);
 
     LithiumDrumsProcessor& processor;
     juce::SharedResourcePointer<Settings> settings;
@@ -86,6 +99,13 @@ private:
     int selected = -1;                      // the articulation whose keys are outlined
 
     MidiKeyboard keyboard;
+
+    // The velocity card
+    VelocityCurveEditor curveEditor;
+    juce::ComboBox curvePresets;
+    ControlSlider globalVelocity;
+    juce::Rectangle<int> velocityCard, velocityTitle, presetsLabel, globalLabel, globalMarks, globalRange;
+    int velocityPiece = -1;                 // the piece whose curve shows, -1 = none
     juce::String keyboardScrolledFor;       // the map and kit the keyboard last scrolled to
 
     // The input monitor
