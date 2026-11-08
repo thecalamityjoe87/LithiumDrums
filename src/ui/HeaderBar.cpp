@@ -1,6 +1,7 @@
 #include "HeaderBar.h"
 
 #include "LithiumLookAndFeel.h"
+#include "Logo.h"
 #include "ModelPicker.h"
 #include "PresetPanel.h"
 #include "Theme.h"
@@ -31,26 +32,6 @@ namespace
     {
         const auto mb = (double) bytes / (1024.0 * 1024.0);
         return mb >= 1000.0 ? juce::String (mb / 1024.0, 2) + " GB" : juce::String (juce::roundToInt (mb)) + " MB";
-    }
-
-    // The logo mark: two drumsticks crossed in an X, each with a bead tip.
-    void drawLogoMark (juce::Graphics& g, juce::Rectangle<float> area)
-    {
-        const auto c = area.getCentre();
-        const auto r = area.getWidth() * 0.5f;
-
-        for (const auto angle : { -0.25f * juce::MathConstants<float>::pi, 0.25f * juce::MathConstants<float>::pi })
-        {
-            const auto dir = juce::Point<float> (std::sin (angle), -std::cos (angle));
-            const auto butt = c - dir * r * 0.95f;
-            const auto tip = c + dir * r * 0.78f;
-
-            juce::Path stick;
-            stick.startNewSubPath (butt);
-            stick.lineTo (tip);
-            g.strokePath (stick, juce::PathStrokeType (r * 0.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-            g.fillEllipse (juce::Rectangle<float> (r * 0.36f, r * 0.36f).withCentre (c + dir * r * 0.9f));
-        }
     }
 }
 
@@ -729,8 +710,7 @@ void HeaderBar::paint (juce::Graphics& g)
     g.setColour (colours::border);
     g.fillRect (getLocalBounds().removeFromBottom (1));
 
-    g.setColour (colours::accent);
-    drawLogoMark (g, { 20.0f, 15.0f, 26.0f, 26.0f });
+    logo::drawMark (g, { 20.0f, 15.0f, 26.0f, 26.0f }, colours::accent, colours::panel);
 
     const auto boldFont = label (wordmarkSize, Weight::bold);
     const auto lithiumWidth = getTrackedTextWidth ("LITHIUM", boldFont, wordmarkTracking);

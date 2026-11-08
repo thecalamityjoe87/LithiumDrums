@@ -581,11 +581,12 @@ public:
                               area.removeFromTop (44), juce::Justification::topLeft, 3, 1.0f);
         }
 
+        // A small dot between the links, as the About panel's credits have.
         if (! separatorArea.isEmpty())
         {
+            const auto centre = separatorArea.toFloat().getCentre().translated (0.0f, 1.0f);
             g.setColour (colours::textMuted);
-            g.setFont (body (13.0f));
-            g.drawText ("|", separatorArea, juce::Justification::centred, false);
+            g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (centre));
         }
 
         // Above the button: what the download is doing, or what went wrong.
@@ -623,7 +624,7 @@ public:
         area.removeFromBottom (missing != nullptr ? 8 : 0);
         auto links = area.removeFromBottom (22);
 
-        // LICENSE | SOURCE, each as wide as its text.
+        // LICENCE · SOURCE, each as wide as its text.
         const auto font = theme::body (13.0f);
         const auto width = [&] (const juce::HyperlinkButton& l) { return (int) std::ceil (theme::getTrackedTextWidth (l.getButtonText(), font, 0.0f)) + 2; };
         auto x = links.getX();

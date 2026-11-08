@@ -1,0 +1,24 @@
+/build/
+/dist/
+/.cache/
+compile_commands.json
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Blender output from assets/blender-kit.py (copy finished renders into assets/kit-renders/)
+/assets/layers/
+/assets/preview.png
+/assets/full.png
+/assets/ids.png
+/assets/pal.json
+
+# Drum kits, grooves and their downloads never go in the repository (see the README).
+/kits/
+/Kits/
+/grooves/
+/Grooves/
+*.zip
+*.7z
+*.tar

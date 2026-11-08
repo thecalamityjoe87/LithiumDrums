@@ -79,25 +79,42 @@ private:
     juce::Rectangle<int> messageArea;
 };
 
-/** About and credits: the attribution and licence of every installed kit,
-    which CC BY requires to be shown, plus the fonts and JUCE. */
+/** About Lithium Drums: a brand block on top (the app icon, name, version,
+    who made it, links to the project and the licence), then two tabs.
+    About says what it is, its licence (the copyright and no-warranty notice
+    the AGPL asks interactive programs to show) and what it's built with.
+    Credits lists the attribution and licence of every installed kit pack,
+    groove pack and built-in reverb IR, which their CC BY licences require. */
 class AboutPanel final : public OverlayPanel
 {
 public:
     explicit AboutPanel (LithiumDrumsProcessor&);
+    ~AboutPanel() override;
 
     /** Re-reads the installed kits. Called each time the panel opens. */
     void refresh();
 
+    void paint (juce::Graphics&) override;
+
 private:
-    class KitCard;
+    class TabButton;
+    class AboutTab;
+    class CreditRow;
+    class SectionHeading;
 
     void layoutContent (juce::Rectangle<int>) override;
+    void showCredits (bool);
 
     LithiumDrumsProcessor& processor;
-    juce::Viewport viewport;
-    juce::Component list;
-    std::vector<std::unique_ptr<juce::Component>> cards;
+    juce::Image icon;   // the app icon, rendered once at twice its drawn size
+
+    std::unique_ptr<TabButton> aboutTabButton, creditsTabButton;
+    juce::TextButton websiteButton { "GitHub" }, licenseButton { "Licence" };
+
+    std::unique_ptr<AboutTab> aboutTab;
+    juce::Viewport creditsView;          // the Credits tab: a scrolling list
+    juce::Component creditsList;
+    std::vector<std::unique_ptr<juce::Component>> creditRows;
 };
 
 /** Settings: where the kits are, and how they stream from disk. */

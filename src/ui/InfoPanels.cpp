@@ -1,5 +1,6 @@
 #include "InfoPanels.h"
 
+#include "Logo.h"
 #include "Theme.h"
 #include "engine/StreamCache.h"
 #include "grooves/GrooveLibrary.h"
@@ -147,187 +148,393 @@ void PromptPanel::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-/** The credits of one content pack (or of a kit outside any pack): what's in
-    it, who made it, the credits text, and its licence and source links. */
-class AboutPanel::KitCard final : public juce::Component
+namespace
 {
-public:
-    static constexpr int height = 178;
+    // About's layout, relative to the card.
+    constexpr int aboutPadding = 32;
+    constexpr int iconSize = 84;
+    constexpr int tabsTop = aboutPadding + iconSize + 22;
+    constexpr int tabsHeight = 34;
 
-    struct Content
+    juce::AttributedString wrapped (const juce::String& text, juce::Font font, juce::Colour colour)
     {
-        juce::String title, contents, author, credits, licenseName, licenseUrl, sourceUrl;
-        juce::File licenseFile;
-        bool shareAlike = false;
+        juce::AttributedString s;
+        s.append (text, font, colour);
+        s.setWordWrap (juce::AttributedString::byWord);
+        s.setLineSpacing (2.0f);
+        return s;
+    }
+
+    /** How tall `text` wraps to at `width`. */
+    int heightOf (const juce::String& text, juce::Font font, int width)
+    {
+        if (text.isEmpty())
+            return 0;
+
+        juce::TextLayout layout;
+        layout.createLayout (wrapped (text, font, {}), (float) width);
+        return (int) std::ceil (layout.getHeight());
+    }
+
+    /** Draws wrapped text at the top of `area`; returns how tall it was. */
+    int drawWrapped (juce::Graphics& g, const juce::String& text, juce::Font font, juce::Colour colour, juce::Rectangle<int> area)
+    {
+        if (text.isEmpty())
+            return 0;
+
+        juce::TextLayout layout;
+        layout.createLayout (wrapped (text, font, colour), (float) area.getWidth());
+        layout.draw (g, area.toFloat().withHeight (layout.getHeight()));
+        return (int) std::ceil (layout.getHeight());
+    }
+
+    /** A small uppercase heading with a rule under it, as the Mixer and FX pages label their sections. */
+    void drawHeading (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area)
+    {
+        using namespace theme;
+        g.setColour (colours::textMuted);
+        drawTrackedText (g, text.toUpperCase(), label (13.0f, Weight::semibold), 0.12f,
+                         area.toFloat().withTrimmedBottom (6.0f), juce::Justification::bottomLeft);
+        g.setColour (colours::border);
+        g.fillRect (area.removeFromBottom (1));
+    }
+
+    juce::Font linkFont() { return theme::body (13.0f); }
+
+    /** A line of muted text in the Credits list. */
+    struct Note final : public juce::Component
+    {
+        explicit Note (juce::String t) : text (std::move (t)) {}
+
+        int heightFor (int width) const { return heightOf (text, font(), width) + 16; }
+
+        void paint (juce::Graphics& g) override
+        {
+            drawWrapped (g, text, font(), theme::colours::textMuted, getLocalBounds().withTrimmedTop (4));
+        }
+
+        static juce::Font font() { return theme::body (14.0f); }
+        const juce::String text;
     };
 
-    explicit KitCard (Content c) : content (std::move (c))
+    int linkWidth (const juce::HyperlinkButton& link)
     {
-        auto setUpLink = [this] (juce::HyperlinkButton& link, const juce::String& text, const juce::String& url)
+        return (int) std::ceil (theme::getTrackedTextWidth (link.getButtonText(), linkFont(), 0.0f)) + 2;
+    }
+}
+
+//==============================================================================
+/** About / Credits, drawn like the header's page tabs. */
+class AboutPanel::TabButton final : public juce::Button
+{
+public:
+    explicit TabButton (const juce::String& name) : juce::Button (name)
+    {
+        setClickingTogglesState (true);
+        setRadioGroupId (1);
+    }
+
+    int getIdealWidth() const
+    {
+        return juce::roundToInt (theme::getTrackedTextWidth (getName().toUpperCase(), font(), tracking)) + 22;
+    }
+
+    void paintButton (juce::Graphics& g, bool isMouseOver, bool) override
+    {
+        const auto& textColour = theme::colours::text;   // inside a Button, plain "text" would be Button::text
+        const auto active = getToggleState();
+
+        g.setColour (active ? textColour : (isMouseOver ? textColour.withAlpha (0.85f) : theme::colours::textMuted));
+        theme::drawTrackedText (g, getName().toUpperCase(), font(), tracking, getLocalBounds().toFloat(), juce::Justification::centred);
+
+        if (active)
+        {
+            g.setColour (theme::colours::accent);
+            g.fillRect (getLocalBounds().removeFromBottom (2).reduced (10, 0));
+        }
+    }
+
+private:
+    static constexpr float tracking = 0.1f;
+    static juce::Font font() { return theme::label (15.0f, theme::Weight::semibold); }
+};
+
+//==============================================================================
+/** The About tab: what Lithium Drums is, its licence, and what it's built with. */
+class AboutPanel::AboutTab final : public juce::Component
+{
+public:
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+        auto area = getLocalBounds();
+
+        area.removeFromTop (drawWrapped (g, "Lithium Drums is a sampled acoustic drum kit. It plays real multi-mic recordings through "
+                                            "a mixer and effects, and plays recorded grooves in time with your host. Use it as a VST3, "
+                                            "CLAP or AU plugin, or on its own as a standalone app.",
+                                         body (15.0f), colours::text, area));
+        area.removeFromTop (18);
+
+        drawHeading (g, "Licence", area.removeFromTop (26));
+        area.removeFromTop (10);
+        // The GPL family asks interactive programs to show a copyright and
+        // no-warranty notice; this is it.
+        area.removeFromTop (drawWrapped (g, "Copyright (C) 2026 " LITHIUM_AUTHOR_STRING ". Lithium Drums is free software: you can "
+                                            "redistribute and change it under the terms of the GNU Affero General Public License, "
+                                            "version 3. It comes with no warranty.",
+                                         body (14.0f), colours::text.withAlpha (0.85f), area));
+        area.removeFromTop (18);
+
+        drawHeading (g, "Built with", area.removeFromTop (26));
+        area.removeFromTop (8);
+
+        static const std::pair<const char*, const char*> parts[] {
+            { "JUCE", "GNU AGPLv3" },
+            { "VST3 SDK (Steinberg)", "MIT" },
+            { "CLAP and clap-juce-extensions", "MIT" },
+            { "LZMA SDK (Igor Pavlov)", "Public domain" },
+            { "Barlow and Barlow Condensed fonts", "SIL Open Font License" },
+            { "IBM Plex Mono font", "SIL Open Font License" },
+        };
+
+        for (const auto& [name, licence] : parts)
+        {
+            auto row = area.removeFromTop (22);
+            g.setColour (colours::text);
+            g.setFont (body (14.0f));
+            g.drawText (name, row, juce::Justification::centredLeft, true);
+            g.setColour (colours::textMuted);
+            g.setFont (mono (12.5f));
+            g.drawText (licence, row.withTrimmedLeft (row.getWidth() / 2), juce::Justification::centredLeft, true);
+        }
+
+        area.removeFromTop (6);
+        g.setColour (colours::textMuted);
+        g.setFont (body (12.5f));
+        g.drawText ("Their full notices are in THIRD-PARTY-NOTICES.txt, installed with Lithium Drums.",
+                    area.removeFromTop (20), juce::Justification::centredLeft, true);
+    }
+};
+
+//==============================================================================
+/** A heading in the Credits list. */
+class AboutPanel::SectionHeading final : public juce::Component
+{
+public:
+    explicit SectionHeading (juce::String t) : text (std::move (t)) {}
+
+    void paint (juce::Graphics& g) override  { drawHeading (g, text, getLocalBounds()); }
+
+private:
+    const juce::String text;
+};
+
+//==============================================================================
+/** One credit: a kit pack, groove pack or reverb IR. Its name with the
+    licence and source links on the same line, who made it, what's in it,
+    and the authors' credits text. Rows are as tall as their text. */
+class AboutPanel::CreditRow final : public juce::Component
+{
+public:
+    struct Content
+    {
+        juce::String title, author, contents, credits, licenseName, licenseUrl, sourceUrl;
+        juce::File licenseFile;
+    };
+
+    explicit CreditRow (Content c) : content (std::move (c))
+    {
+        auto setUp = [this] (juce::HyperlinkButton& link, const juce::String& text, const juce::String& url, bool visible)
         {
             link.setButtonText (text);
             link.setURL (juce::URL (url));
-            link.setFont (theme::body (13.0f), false, juce::Justification::centredLeft);
+            link.setFont (linkFont(), false, juce::Justification::centredRight);
             link.setColour (juce::HyperlinkButton::textColourId, theme::colours::accent);
             link.setTooltip (url);
-            link.setVisible (url.isNotEmpty());
+            link.setVisible (visible);
             addChildComponent (link);
         };
 
-        setUpLink (sourceLink, "Source", content.sourceUrl);
-        setUpLink (licenseLink, content.licenseName.isNotEmpty() ? content.licenseName : juce::String ("Licence"),
-                   content.licenseUrl);
+        setUp (licenseLink, content.licenseName.isNotEmpty() ? content.licenseName : juce::String ("Licence"),
+               content.licenseUrl, content.licenseUrl.isNotEmpty());
+        setUp (sourceLink, "Source", content.sourceUrl, content.sourceUrl.isNotEmpty());
 
-        licenseFileButton.setButtonText ("Licence file");
-        licenseFileButton.setTooltip (content.licenseFile.getFullPathName());
-        licenseFileButton.onClick = [file = content.licenseFile] { file.startAsProcess(); };
-        licenseFileButton.setVisible (content.licenseFile.existsAsFile());
-        addChildComponent (licenseFileButton);
+        // The licence text that came with the download, opened in the
+        // system's text viewer.
+        setUp (licenseFileLink, "Licence file", {}, content.licenseFile.existsAsFile());
+        licenseFileLink.setTooltip (content.licenseFile.getFullPathName());
+        licenseFileLink.onClick = [file = content.licenseFile] { file.startAsProcess(); };
+    }
+
+    int heightFor (int width) const
+    {
+        return padding + 22 + 18 + gapBefore (content.contents) + heightOf (content.contents, contentsFont(), width)
+               + gapBefore (content.credits) + heightOf (content.credits, creditsFont(), width) + padding;
     }
 
     void paint (juce::Graphics& g) override
     {
         using namespace theme;
-
-        g.setColour (colours::raised);
-        g.fillRoundedRectangle (getLocalBounds().toFloat(), 8.0f);
-        g.setColour (colours::border);
-        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 8.0f, 1.0f);
-
-        auto area = getLocalBounds().reduced (16, 12);
+        auto area = getLocalBounds().withTrimmedTop (padding);
 
         g.setColour (colours::text);
-        g.setFont (body (17.0f, Weight::semibold));
-        g.drawText (content.title, area.removeFromTop (24), juce::Justification::centredLeft, true);
+        g.setFont (body (15.5f, Weight::semibold));
+        g.drawText (content.title, area.removeFromTop (22).withTrimmedRight (linksWidth + 16), juce::Justification::centredLeft, true);
 
         g.setColour (colours::textMuted);
         g.setFont (body (13.5f));
         g.drawText ("by " + (content.author.isNotEmpty() ? content.author : juce::String ("unknown author")),
-                    area.removeFromTop (20), juce::Justification::centredLeft, true);
+                    area.removeFromTop (18), juce::Justification::centredLeft, true);
 
-        if (content.contents.isNotEmpty())
-        {
-            g.setFont (body (12.5f));
-            g.drawFittedText (content.contents, area.removeFromTop (20), juce::Justification::centredLeft, 1, 0.8f);
-        }
+        area.removeFromTop (gapBefore (content.contents));
+        area.removeFromTop (drawWrapped (g, content.contents, contentsFont(), colours::textMuted, area));
+        area.removeFromTop (gapBefore (content.credits));
+        drawWrapped (g, content.credits, creditsFont(), colours::text.withAlpha (0.85f), area);
 
-        area.removeFromTop (6);
-        g.setColour (colours::text.withAlpha (0.85f));
-        g.setFont (body (13.0f));
-        g.drawFittedText (content.credits, area.removeFromTop (54), juce::Justification::topLeft, 3, 1.0f);
+        g.setColour (colours::border);
+        g.fillRect (getLocalBounds().removeFromBottom (1));
 
-        if (! separatorArea.isEmpty())
+        for (const auto& dot : dots)
         {
             g.setColour (colours::textMuted);
-            g.drawText ("|", separatorArea, juce::Justification::centred, false);
+            g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (dot));
         }
     }
 
     void resized() override
     {
-        auto row = getLocalBounds().reduced (16, 12).removeFromBottom (24);
-        licenseFileButton.setBounds (row.removeFromRight (110));
+        // The links right-aligned on the title's line, a dot between each.
+        auto row = getLocalBounds().withTrimmedTop (padding).removeFromTop (22);
+        dots.clear();
+        linksWidth = 0;
+        bool first = true;
 
-        // LICENSE | SOURCE, each as wide as its text.
-        const auto font = theme::body (13.0f);
-        const auto width = [&] (const juce::HyperlinkButton& l) { return (int) std::ceil (theme::getTrackedTextWidth (l.getButtonText(), font, 0.0f)) + 2; };
-        auto x = row.getX();
-        separatorArea = {};
-
-        if (licenseLink.isVisible())
+        for (auto* link : { &licenseFileLink, &sourceLink, &licenseLink })
         {
-            licenseLink.setBounds (x, row.getY(), width (licenseLink), row.getHeight());
-            x = licenseLink.getRight();
+            if (! link->isVisible())
+                continue;
+
+            if (! first)
+            {
+                dots.push_back ({ (float) row.getRight() - 7.0f, (float) row.getCentreY() + 1.0f });
+                row.removeFromRight (14);
+            }
+
+            link->setBounds (row.removeFromRight (linkWidth (*link)));
+            first = false;
         }
 
-        if (licenseLink.isVisible() && sourceLink.isVisible())
-        {
-            separatorArea = { x, row.getY(), separatorWidth, row.getHeight() };
-            x = separatorArea.getRight();
-        }
-
-        sourceLink.setBounds (x, row.getY(), width (sourceLink), row.getHeight());
+        linksWidth = getWidth() - row.getRight();
     }
 
 private:
-    static constexpr int separatorWidth = 14;
+    static constexpr int padding = 14;
+    static juce::Font contentsFont() { return theme::body (13.0f); }
+    static juce::Font creditsFont()  { return theme::body (13.5f); }
+    static int gapBefore (const juce::String& text) { return text.isNotEmpty() ? 6 : 0; }
 
     const Content content;
-    juce::Rectangle<int> separatorArea;
-    juce::HyperlinkButton sourceLink, licenseLink;
-    juce::TextButton licenseFileButton;
+    juce::HyperlinkButton licenseLink, sourceLink, licenseFileLink;
+    std::vector<juce::Point<float>> dots;
+    int linksWidth = 0;
 };
 
-AboutPanel::AboutPanel (LithiumDrumsProcessor& p) : OverlayPanel ("About Lithium Drums", 760, 640), processor (p)
+//==============================================================================
+AboutPanel::AboutPanel (LithiumDrumsProcessor& p)
+    : OverlayPanel ({}, 760, 640),   // no title: the brand block is the heading
+      processor (p),
+      icon (logo::renderIcon (iconSize * 2)),
+      aboutTabButton (std::make_unique<TabButton> ("About")),
+      creditsTabButton (std::make_unique<TabButton> ("Credits")),
+      aboutTab (std::make_unique<AboutTab>())
 {
-    viewport.setViewedComponent (&list, false);
-    viewport.setScrollBarsShown (true, false);
-    viewport.setScrollBarThickness (8);
-    viewport.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, theme::colours::borderStrong);
-    addAndMakeVisible (viewport);
+    aboutTabButton->onClick = [this] { showCredits (false); };
+    creditsTabButton->onClick = [this] { showCredits (true); };
+    addAndMakeVisible (*aboutTabButton);
+    addAndMakeVisible (*creditsTabButton);
+
+    websiteButton.setTooltip (LITHIUM_WEBSITE_STRING);
+    websiteButton.onClick = [] { juce::URL (LITHIUM_WEBSITE_STRING).launchInDefaultBrowser(); };
+    licenseButton.setTooltip ("The GNU Affero General Public License, version 3");
+    licenseButton.onClick = [] { juce::URL ("https://www.gnu.org/licenses/agpl-3.0.html").launchInDefaultBrowser(); };
+    addAndMakeVisible (websiteButton);
+    addAndMakeVisible (licenseButton);
+
+    addChildComponent (*aboutTab);
+    creditsView.setViewedComponent (&creditsList, false);
+    creditsView.setScrollBarsShown (true, false);
+    creditsView.setScrollBarThickness (8);
+    creditsView.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, theme::colours::borderStrong);
+    addChildComponent (creditsView);
+
+    showCredits (false);
+}
+
+AboutPanel::~AboutPanel() = default;
+
+void AboutPanel::showCredits (bool credits)
+{
+    aboutTabButton->setToggleState (! credits, juce::dontSendNotification);
+    creditsTabButton->setToggleState (credits, juce::dontSendNotification);
+    aboutTab->setVisible (! credits);
+    creditsView.setVisible (credits);
+}
+
+void AboutPanel::paint (juce::Graphics& g)
+{
+    using namespace theme;
+    OverlayPanel::paint (g);
+
+    const auto card = getCardBounds();
+    const auto iconArea = juce::Rectangle<int> (iconSize, iconSize).withPosition (card.getPosition() + juce::Point<int> (aboutPadding, aboutPadding));
+    g.drawImage (icon, iconArea.toFloat());
+
+    // The wordmark, as in the header, then the version and who made it.
+    auto text = card.withTrimmedLeft (iconArea.getRight() - card.getX() + 22).withTrimmedTop (aboutPadding + 2).toFloat();
+    const auto bold = label (30.0f, Weight::bold);
+    const auto lithiumWidth = getTrackedTextWidth ("LITHIUM", bold, 0.14f);
+    const auto wordmarkRow = text.removeFromTop (34.0f);
+    g.setColour (colours::text);
+    drawTrackedText (g, "LITHIUM", bold, 0.14f, wordmarkRow, juce::Justification::centredLeft);
+    g.setColour (colours::textMuted);
+    drawTrackedText (g, "DRUMS", label (30.0f, Weight::semibold), 0.14f, wordmarkRow.withTrimmedLeft (lithiumWidth + 8.0f),
+                     juce::Justification::centredLeft);
+
+    g.setFont (mono (13.0f));
+    g.drawText ("Version " LITHIUM_VERSION_STRING, text.removeFromTop (22.0f), juce::Justification::centredLeft, false);
+
+    // "by Isaac Joseph · Calamity Audio": the name in full colour, the brand muted.
+    const auto byLine = text.removeFromTop (22.0f);
+    const juce::String by = "by " LITHIUM_AUTHOR_STRING;
+    const auto byWidth = getTrackedTextWidth (by, body (15.0f), 0.0f);
+    g.setColour (colours::text);
+    g.setFont (body (15.0f));
+    g.drawText (by, byLine, juce::Justification::centredLeft, false);
+    g.setColour (colours::textMuted);
+    g.drawText (juce::String (juce::CharPointer_UTF8 ("\xc2\xb7 ")) + LITHIUM_COMPANY_STRING,
+                byLine.withTrimmedLeft (byWidth + 4.5f), juce::Justification::centredLeft, false);
+
+    // The rule under the tabs.
+    g.setColour (colours::border);
+    g.fillRect (card.getX() + aboutPadding, card.getY() + tabsTop + tabsHeight, card.getWidth() - 2 * aboutPadding, 1);
 }
 
 void AboutPanel::refresh()
 {
-    cards.clear();
+    creditRows.clear();
 
-    // About the plugin, then one card per installed kit.
-    struct Intro final : public juce::Component
-    {
-        void paint (juce::Graphics& g) override
-        {
-            using namespace theme;
-            auto area = getLocalBounds();
+    auto add = [this] (std::unique_ptr<juce::Component> c) { creditRows.push_back (std::move (c)); };
+    auto heading = [&] (const juce::String& text) { add (std::make_unique<SectionHeading> (text)); };
 
-            g.setColour (colours::text);
-            g.setFont (body (14.0f));
-            g.drawFittedText ("Lithium Drums " LITHIUM_VERSION_STRING ". The kits, grooves and room reverb IRs below are recordings released under "
-                              "open licences by their authors. Credit them as shown when you publish music made with them.",
-                              area.removeFromTop (40), juce::Justification::topLeft, 2, 1.0f);
+    add (std::make_unique<Note> ("These recordings are their authors' work, released under open licences. "
+                                 "Credit them as shown when you publish music made with them."));
 
-            g.setColour (colours::textMuted);
-            g.setFont (body (12.5f));
-            g.drawFittedText ("Fonts: Barlow, Barlow Condensed and IBM Plex Mono, under the SIL Open Font License. "
-                              "Built with JUCE.",
-                              area.removeFromTop (34), juce::Justification::topLeft, 2, 1.0f);
-        }
-    };
-
-    cards.push_back (std::make_unique<Intro>());
-
-    // The Room reverb's impulse responses: the measured ones each with
-    // their attribution and what was changed (as CC BY asks), the
-    // synthesized ones (ours, CC0) together.
-    {
-        juce::StringArray synthesized;
-        const IrInfo* cc0 = nullptr;
-
-        for (const auto& ir : irs::builtIn())
-        {
-            if (ir.sourceUrl.isEmpty())
-            {
-                synthesized.add (ir.name);
-                cc0 = &ir;
-                continue;
-            }
-
-            cards.push_back (std::make_unique<KitCard> (KitCard::Content {
-                "Room reverb IR: " + ir.name, ir.source, ir.author, ir.description + " Changes: " + ir.changes,
-                ir.licenseName, ir.licenseUrl, ir.sourceUrl, {}, false }));
-        }
-
-        if (cc0 != nullptr)
-            cards.push_back (std::make_unique<KitCard> (KitCard::Content {
-                "Room reverb IRs: " + synthesized.joinIntoString (", "), "Synthesized for Lithium Drums", cc0->author,
-                "Made by tools/irgen from image-source early reflections and a band-split noise tail. Free to use for anything.",
-                cc0->licenseName, cc0->licenseUrl, {}, {}, false }));
-    }
-
+    // Kits: one row per content pack, naming its kits and presets; kits
+    // outside a pack get a row each.
+    heading ("Kits");
     const auto library = kitlibrary::scan (processor.getKitsFolder());
     const auto& kits = library.kits;
 
-    // One card per content pack, naming its kits and presets; kits outside
-    // a pack get a card each.
     for (size_t p = 0; p < library.packs.size(); ++p)
     {
         const auto& pack = library.packs[p];
@@ -345,9 +552,9 @@ void AboutPanel::refresh()
         if (! presetNames.isEmpty())
             contents << ".  " << (presetNames.size() == 1 ? "Preset: " : "Presets: ") << presetNames.joinIntoString (", ");
 
-        cards.push_back (std::make_unique<KitCard> (KitCard::Content {
-            pack.name, contents, pack.author, pack.credits.isNotEmpty() ? pack.credits : pack.description,
-            pack.licenseName, pack.licenseUrl, pack.sourceUrl, pack.licenseFile, pack.shareAlike }));
+        add (std::make_unique<CreditRow> (CreditRow::Content {
+            pack.name, pack.author, contents, pack.credits.isNotEmpty() ? pack.credits : pack.description,
+            pack.licenseName, pack.licenseUrl, pack.sourceUrl, pack.licenseFile }));
     }
 
     for (const auto& k : kits)
@@ -356,64 +563,107 @@ void AboutPanel::refresh()
             continue;
 
         const auto& c = k.credits();
-        cards.push_back (std::make_unique<KitCard> (KitCard::Content {
-            c.name, c.basedOn.isNotEmpty() ? "Preset of " + c.basedOn : juce::String(), c.author,
-            c.credits.isNotEmpty() ? c.credits : c.description, c.licenseName, c.licenseUrl, c.sourceUrl,
-            c.licenseFile, c.shareAlike }));
+        add (std::make_unique<CreditRow> (CreditRow::Content {
+            c.name, c.author, c.basedOn.isNotEmpty() ? "Preset of " + c.basedOn : juce::String(),
+            c.credits.isNotEmpty() ? c.credits : c.description, c.licenseName, c.licenseUrl, c.sourceUrl, c.licenseFile }));
     }
 
     if (kits.empty())
-    {
-        struct Empty final : public juce::Component
-        {
-            void paint (juce::Graphics& g) override
-            {
-                g.setColour (theme::colours::textMuted);
-                g.setFont (theme::body (14.0f));
-                g.drawFittedText ("No kits are installed. The README explains where to download kits and how to import them.",
-                                  getLocalBounds(), juce::Justification::centredLeft, 2, 1.0f);
-            }
-        };
-
-        cards.push_back (std::make_unique<Empty>());
-    }
+        add (std::make_unique<Note> ("No kits are installed yet. Open Browse, in the header, to download one."));
 
     // Groove packs need crediting too: the grooves dragged into a project are their drummers' playing.
-    for (const auto& pack : grooves::scan (Settings::getGroovesFolder()).packs)
+    const auto groovePacks = grooves::scan (Settings::getGroovesFolder()).packs;
+
+    if (! groovePacks.empty())
+        heading ("Grooves");
+
+    for (const auto& pack : groovePacks)
     {
         int fills = 0;
 
-        for (const auto& g : pack.grooves)
-            fills += (int) g.fills.size();
+        for (const auto& gr : pack.grooves)
+            fills += (int) gr.fills.size();
 
-        cards.push_back (std::make_unique<KitCard> (KitCard::Content {
-            pack.name, "Grooves: " + juce::String ((int) pack.grooves.size()) + " grooves and " + juce::String (fills) + " fills",
-            pack.author, pack.credits.isNotEmpty() ? pack.credits : pack.description, pack.licenseName, pack.licenseUrl,
-            pack.sourceUrl, pack.licenseFile, pack.licenseName.containsIgnoreCase ("-SA") }));
+        add (std::make_unique<CreditRow> (CreditRow::Content {
+            pack.name, pack.author, juce::String ((int) pack.grooves.size()) + " grooves and " + juce::String (fills) + " fills",
+            pack.credits.isNotEmpty() ? pack.credits : pack.description, pack.licenseName, pack.licenseUrl,
+            pack.sourceUrl, pack.licenseFile }));
     }
 
-    for (auto& c : cards)
-        list.addAndMakeVisible (*c);
+    // The Room reverb's impulse responses: the measured ones each with their
+    // attribution and what was changed (as CC BY asks), the synthesized ones together.
+    heading ("Room reverb impulse responses");
+    {
+        juce::StringArray synthesized;
+        const IrInfo* cc0 = nullptr;
+
+        for (const auto& ir : irs::builtIn())
+        {
+            if (ir.sourceUrl.isEmpty())
+            {
+                synthesized.add (ir.name);
+                cc0 = &ir;
+                continue;
+            }
+
+            add (std::make_unique<CreditRow> (CreditRow::Content {
+                ir.name, ir.author, ir.source, ir.description + " Changes: " + ir.changes,
+                ir.licenseName, ir.licenseUrl, ir.sourceUrl, {} }));
+        }
+
+        if (cc0 != nullptr)
+            add (std::make_unique<CreditRow> (CreditRow::Content {
+                synthesized.joinIntoString (", "), cc0->author, "Synthesized for Lithium Drums by tools/irgen",
+                "Image-source early reflections and a band-split noise tail. Free to use for anything.",
+                cc0->licenseName, cc0->licenseUrl, {}, {} }));
+    }
+
+    for (auto& c : creditRows)
+        creditsList.addAndMakeVisible (*c);
 
     resized();
 }
 
-void AboutPanel::layoutContent (juce::Rectangle<int> area)
+void AboutPanel::layoutContent (juce::Rectangle<int>)
 {
-    viewport.setBounds (area);
+    const auto card = getCardBounds();
 
-    constexpr int gap = 10, introHeight = 84;
-    const auto width = area.getWidth() - 12;   // room for the scroll bar
+    // The links at the right of the brand block, level with the version line.
+    auto links = juce::Rectangle<int> (card.getRight() - aboutPadding - 236, card.getY() + aboutPadding + 26, 236, 30);
+    licenseButton.setBounds (links.removeFromRight (112));
+    links.removeFromRight (12);
+    websiteButton.setBounds (links.removeFromRight (112));
+
+    auto tabs = juce::Rectangle<int> (card.getX() + aboutPadding - 11, card.getY() + tabsTop, 300, tabsHeight);
+    aboutTabButton->setBounds (tabs.removeFromLeft (aboutTabButton->getIdealWidth()));
+    tabs.removeFromLeft (6);
+    creditsTabButton->setBounds (tabs.removeFromLeft (creditsTabButton->getIdealWidth()));
+
+    // The tabs' content: under the tabs, above the Close button.
+    const auto content = card.reduced (aboutPadding, 0).withTop (card.getY() + tabsTop + tabsHeight + 20).withTrimmedBottom (64);
+    aboutTab->setBounds (content);
+    creditsView.setBounds (content.withTrimmedRight (-12));   // the scroll bar sits in the padding
+
+    const auto width = content.getWidth();
     int y = 0;
 
-    for (size_t i = 0; i < cards.size(); ++i)
+    for (size_t i = 0; i < creditRows.size(); ++i)
     {
-        const auto h = i == 0 ? introHeight : (dynamic_cast<KitCard*> (cards[i].get()) != nullptr ? KitCard::height : 40);
-        cards[i]->setBounds (0, y, width, h);
-        y += h + gap;
+        auto* c = creditRows[i].get();
+        int h = 34;   // a section heading
+
+        if (auto* row = dynamic_cast<CreditRow*> (c))
+            h = row->heightFor (width);
+        else if (auto* note = dynamic_cast<Note*> (c))
+            h = note->heightFor (width);
+        else if (i > 0)
+            y += 14;   // space above each heading
+
+        c->setBounds (0, y, width, h);
+        y += h;
     }
 
-    list.setSize (width, std::max (0, y - gap));
+    creditsList.setSize (width, y);
 }
 
 //==============================================================================

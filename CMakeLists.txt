@@ -48,10 +48,14 @@ endif()
 juce_add_plugin(LithiumDrums
     PRODUCT_NAME                "${LITHIUM_PRODUCT_NAME}"
     COMPANY_NAME                "${LITHIUM_COMPANY_NAME}"
+    COMPANY_COPYRIGHT           "Copyright (C) 2026 ${LITHIUM_AUTHOR}. GNU AGPLv3."
+    COMPANY_WEBSITE             "${LITHIUM_WEBSITE}"
     BUNDLE_ID                   "${LITHIUM_BUNDLE_ID}"
     PLUGIN_MANUFACTURER_CODE    "${LITHIUM_MANUFACTURER_CODE}"
     PLUGIN_CODE                 "${LITHIUM_PLUGIN_CODE}"
     FORMATS                     ${lithium_formats}
+    ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/icon-1024.png"
+    ICON_SMALL                  "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/icon-256.png"
     IS_SYNTH                    TRUE
     NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
@@ -112,6 +116,7 @@ target_sources(LithiumDrums PRIVATE
     src/ui/LithiumLookAndFeel.cpp
     src/ui/MainView.cpp
     src/ui/HeaderBar.cpp
+    src/ui/Logo.cpp
     src/ui/KitPage.cpp
     src/ui/KitStage.cpp
     src/ui/KitArt.cpp
@@ -140,9 +145,11 @@ target_include_directories(LithiumDrums PRIVATE src)
 # and slot pictures, finish-<kit id>-*.png. Picked up as they're added.
 file(GLOB lithium_finish_images CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/kit-renders/finish-*.png")
 
-juce_add_binary_data(LithiumAssets
-    NAMESPACE   LithiumAssets
-    HEADER_NAME LithiumAssets.h
+# The fonts on their own, so the Linux installer can use them without
+# carrying the kit renders.
+juce_add_binary_data(LithiumFonts
+    NAMESPACE   LithiumFonts
+    HEADER_NAME LithiumFonts.h
     SOURCES
         assets/fonts/Barlow-Regular.ttf
         assets/fonts/Barlow-Medium.ttf
@@ -152,6 +159,12 @@ juce_add_binary_data(LithiumAssets
         assets/fonts/BarlowCondensed-Bold.ttf
         assets/fonts/IBMPlexMono-Regular.ttf
         assets/fonts/IBMPlexMono-Medium.ttf
+)
+
+juce_add_binary_data(LithiumAssets
+    NAMESPACE   LithiumAssets
+    HEADER_NAME LithiumAssets.h
+    SOURCES
         assets/kit-renders/layout.json
         assets/kit-renders/room.png
         assets/kit-renders/base.png
@@ -246,11 +259,15 @@ target_compile_definitions(LithiumDrums
         JUCE_USE_LAME_AUDIO_FORMAT=0
         JUCE_USE_WINDOWS_MEDIA_FORMAT=0
         JUCE_JACK=1
-        LITHIUM_VERSION_STRING="${PROJECT_VERSION}")
+        LITHIUM_VERSION_STRING="${PROJECT_VERSION}"
+        LITHIUM_AUTHOR_STRING="${LITHIUM_AUTHOR}"
+        LITHIUM_COMPANY_STRING="${LITHIUM_COMPANY_NAME}"
+        LITHIUM_WEBSITE_STRING="${LITHIUM_WEBSITE}")
 
 target_link_libraries(LithiumDrums
     PRIVATE
         LithiumAssets
+        LithiumFonts
         LithiumImportMaps
         LithiumLzma
     PUBLIC
@@ -337,6 +354,45 @@ target_link_libraries(LithiumRoomGen PRIVATE
     juce::juce_graphics
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
+
+# ---------------------------------------------------------------------------
+# Icon and installers
+
+# Writes the app icon and the installers' artwork (assets/icon/) from the
+# logo code the header draws with. Like the renders, its output is committed;
+# run scripts/make-icons.sh by hand after changing the logo.
+juce_add_console_app(LithiumIconGen PRODUCT_NAME "LithiumIconGen")
+target_sources(LithiumIconGen PRIVATE tools/icongen/IconGenerator.cpp src/ui/Logo.cpp)
+target_include_directories(LithiumIconGen PRIVATE src)
+target_compile_definitions(LithiumIconGen PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(LithiumIconGen PRIVATE
+    LithiumFonts
+    juce::juce_graphics
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)
+
+# The graphical installer in the Linux download ("Install Lithium Drums").
+# Windows and macOS use their own installers (packaging/).
+if(UNIX AND NOT APPLE)
+    juce_add_gui_app(LithiumDrumsInstaller
+        PRODUCT_NAME "Install Lithium Drums"
+        COMPANY_NAME "${LITHIUM_COMPANY_NAME}"
+        VERSION      "${PROJECT_VERSION}")
+    target_sources(LithiumDrumsInstaller PRIVATE
+        tools/installer/InstallerMain.cpp
+        tools/installer/Installation.cpp
+        src/ui/Logo.cpp
+        src/ui/LithiumLookAndFeel.cpp)
+    target_include_directories(LithiumDrumsInstaller PRIVATE src)
+    target_compile_definitions(LithiumDrumsInstaller PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+        LITHIUM_VERSION_STRING="${PROJECT_VERSION}")
+    target_link_libraries(LithiumDrumsInstaller PRIVATE
+        LithiumFonts
+        juce::juce_gui_basics
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+endif()
 
 # ---------------------------------------------------------------------------
 # Room reverb impulse responses

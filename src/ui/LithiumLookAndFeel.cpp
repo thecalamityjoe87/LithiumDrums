@@ -1,6 +1,6 @@
 #include "LithiumLookAndFeel.h"
 
-#include "LithiumAssets.h"
+#include "LithiumFonts.h"
 
 namespace lithium
 {
@@ -15,7 +15,7 @@ namespace
 
 EmbeddedFonts::EmbeddedFonts()
 {
-    using namespace LithiumAssets;
+    using namespace LithiumFonts;
     barlowRegular     = loadTypeface (BarlowRegular_ttf, BarlowRegular_ttfSize);
     barlowMedium      = loadTypeface (BarlowMedium_ttf, BarlowMedium_ttfSize);
     barlowSemiBold    = loadTypeface (BarlowSemiBold_ttf, BarlowSemiBold_ttfSize);

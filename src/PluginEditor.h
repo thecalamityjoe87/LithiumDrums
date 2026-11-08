@@ -17,6 +17,7 @@ public:
     ~LithiumDrumsEditor() override;
 
     void resized() override;
+    void parentHierarchyChanged() override;
 
 private:
     // The LookAndFeel must outlive every component using it, so it is
@@ -24,6 +25,7 @@ private:
     LithiumLookAndFeel lookAndFeel;
     MainView view;
     juce::TooltipWindow tooltips { this, 600 };
+    juce::Component::SafePointer<juce::DocumentWindow> iconisedWindow;   // the standalone window, once it has the icon
 };
 
 } // namespace lithium

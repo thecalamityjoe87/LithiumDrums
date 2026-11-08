@@ -1,5 +1,7 @@
 # Lithium Drums
 
+By Isaac Joseph ([Calamity Audio](https://github.com/thecalamityjoe87)). Free software under the GNU AGPLv3.
+
 Lithium Drums is a sampled acoustic drum kit plugin. It plays real multi-mic drum recordings, with velocity zones, round-robins, and close, overhead and room mics, through a built-in mixer. It runs as a VST3, CLAP, AU (macOS) or standalone app.
 
 It's early: this is Milestone 8 (version 0.9.3). It plays real recorded kits from eleven free libraries, which it downloads and converts for you: sixteen kits, plus eighteen kit presets that reuse their recordings with other pieces, tuning or mics. For rock, start with CrocellKit or Naked Drums. Large kits stream from disk, so DRSKit takes about 360 MB of RAM instead of 3 GB. The Edit tab shapes each drum (velocity response, tuning and pitch bend, tone and its volume envelope), sets how much each mic hears it on a picture of the drum and its mics (and, for a kit recorded without overheads or a room, can emulate them from its other mics), and runs its transient shaper, saturation and compressor. The Mixer tab has a channel per drum, plus the overhead and room mics, three effect returns and the master; selecting a channel shows its EQ, pan, stereo width and sends, and each channel sends to the returns (Room, a convolution reverb; Plate, an algorithmic one; and a tempo-synced Delay), whose effects are on the FX tab along with the master bus chain (EQ, glue and crush compressors, tape, transient shaper, limiter). Any drum can be swapped for the same kind of drum from another installed kit, and the whole sound saved as a preset. The Grooves tab plays 1,150 recorded drum performances through the kit, in time with your host, and drags them into a track as MIDI. The kit format, kit presets, piece swapping, content packs and the importers are described in [docs/kit-format.md](docs/kit-format.md), streaming in [docs/streaming.md](docs/streaming.md), shaping and mixing in [docs/mixer.md](docs/mixer.md), the effects in [docs/fx.md](docs/fx.md), MIDI maps and e-kits in [docs/midi.md](docs/midi.md), and grooves in [docs/grooves.md](docs/grooves.md).
@@ -24,14 +26,21 @@ scripts/build.sh release      # or: debug
 
 The script just runs `cmake --preset <name>` and `cmake --build --preset <name>`. Output lands in `build/<preset>/`. The build runs one compile per 2.5 GB of RAM, since JUCE's sources take a lot of memory to compile and a compile per core can run a machine out of it. On Windows, run the same presets from a Visual Studio developer prompt. On macOS, install Ninja with Homebrew.
 
-To create a distributable archive, run `scripts/package.sh release` on Linux or
-macOS. It creates a platform-specific archive in `dist/` containing the VST3
-and CLAP plugins, the standalone app, the importer utility, factory presets,
-and this README. macOS packages also contain the AU component. On Windows,
-run `powershell -ExecutionPolicy Bypass -File scripts/package.ps1`; use
-`scripts/build.ps1` for a direct Windows build. The scripts accept `debug` or
-`release` as the first argument (or `-Preset` in PowerShell) and an optional
-output directory.
+## Installers
+
+Each system gets a graphical installer that shows the two ways to use Lithium Drums (as a plugin in a DAW, or as a standalone app) and lets the user pick the standalone app, VST3, CLAP (and AU on macOS):
+
+| System | Installer | Built by | Installs to |
+|---|---|---|---|
+| Linux | `LithiumDrums-<version>-linux-x86_64.tar.gz`: unpack, double-click "Install Lithium Drums" (its own window, `tools/installer/`) | `scripts/package.sh` | the home folder, no password: `~/.vst3`, `~/.clap`, `~/.local/share/lithium-drums` plus an app-menu entry |
+| Windows | `LithiumDrums-<version>-windows-setup.exe` (Inno Setup, `packaging/windows/LithiumDrums.iss`) | `scripts/package.ps1` (needs Inno Setup 6 or 7) | `Program Files`, `Common Files\VST3`, `Common Files\CLAP` |
+| macOS | `LithiumDrums-<version>-macos.pkg` (the Installer app, `packaging/macos/`) | `scripts/package.sh` | `/Applications`, `/Library/Audio/Plug-Ins/{VST3,CLAP,Components}` |
+
+Running the Linux installer again offers Update and Remove; Remove deletes only what it installed (it keeps a list in `~/.local/share/lithium-drums/install.json`), never kits, presets or settings. It also runs from a terminal: `./"Install Lithium Drums" --install` (or `--remove`).
+
+`.github/workflows/release.yml` builds all three on GitHub's machines: run it from the Actions tab, or push a version tag (`v0.9.3`) to get a draft release with the installers attached. Unsigned, Windows shows a SmartScreen warning and macOS an "unidentified developer" one; the workflow's comments list the secrets that turn on macOS signing and notarization (an Apple Developer account).
+
+The icon and the installers' artwork (`assets/icon/`) are drawn from the same code as the header's logo (`src/ui/Logo.cpp`); after changing it, run `scripts/make-icons.sh` (needs ImageMagick).
 
 ## Getting the kits
 
@@ -114,5 +123,9 @@ build/release/LithiumRoomGen_artefacts/Release/LithiumRoomGen assets/kit-renders
 ```
 
 ## Licences
+
+Lithium Drums is Copyright (C) 2026 Isaac Joseph. It is free software: you can redistribute it and change it under the terms of the GNU Affero General Public License, version 3, in [LICENSE](LICENSE). It comes with no warranty.
+
+The packages also carry `THIRD-PARTY-NOTICES.txt`, the copyright notices and licences of the code built into the program (JUCE and the libraries it includes, the VST3 SDK, CLAP, the LZMA SDK) and of the fonts. `scripts/third-party-notices.py` writes it from the licence files of the downloaded dependencies, so it follows their versions.
 
 The grooves are the Groove MIDI Dataset's drummers', under CC BY 4.0; the About dialog credits them. The Room reverb's Seminar Room IR is from the HOMULA-RIR dataset (Politecnico di Milano, CC BY 4.0); its other IRs are synthesized by `tools/irgen` and are CC0. The fonts (Barlow, Barlow Condensed, IBM Plex Mono) are under the SIL Open Font License; see `assets/fonts/`. JUCE is dual-licensed under the AGPLv3 and a commercial licence. The kits are their authors', under the licences in the table above.

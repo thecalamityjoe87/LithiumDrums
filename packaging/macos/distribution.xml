@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The macOS Installer's pages and choices. build-pkg.sh replaces @VERSION@.
+     "Customize" on the Installation Type page shows the choices below. -->
+<installer-gui-script minSpecVersion="2">
+    <title>Lithium Drums @VERSION@</title>
+    <organization>io.github.thecalamityjoe87</organization>
+    <domains enable_localSystem="true"/>
+    <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <os-version min="11.0"/>
+
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="LICENSE.txt" mime-type="text/plain"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <background file="background.png" mime-type="image/png" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background.png" mime-type="image/png" alignment="bottomleft" scaling="none"/>
+
+    <choices-outline>
+        <line choice="app"/>
+        <line choice="vst3"/>
+        <line choice="clap"/>
+        <line choice="au"/>
+        <line choice="presets"/>
+    </choices-outline>
+
+    <choice id="app" title="Standalone app"
+            description="Lithium Drums on its own, in Applications. No DAW needed: play it from an e-kit or MIDI keyboard.">
+        <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.app"/>
+    </choice>
+    <choice id="vst3" title="VST3 plugin"
+            description="For Cubase, Reaper, Studio One, Ableton Live, Bitwig and most other DAWs. Installs to /Library/Audio/Plug-Ins/VST3.">
+        <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.vst3"/>
+    </choice>
+    <choice id="clap" title="CLAP plugin"
+            description="For Bitwig, Reaper and other CLAP hosts. Installs to /Library/Audio/Plug-Ins/CLAP.">
+        <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.clap"/>
+    </choice>
+    <choice id="au" title="Audio Unit plugin"
+            description="For Logic Pro, GarageBand and MainStage. Installs to /Library/Audio/Plug-Ins/Components.">
+        <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.au"/>
+    </choice>
+    <choice id="presets" title="Factory presets" enabled="false"
+            description="The sound presets every format shares. Always installed.">
+        <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.presets"/>
+    </choice>
+
+    <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.app">app.pkg</pkg-ref>
+    <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.vst3">vst3.pkg</pkg-ref>
+    <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.clap">clap.pkg</pkg-ref>
+    <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.au">au.pkg</pkg-ref>
+    <pkg-ref id="io.github.thecalamityjoe87.lithiumdrums.presets">presets.pkg</pkg-ref>
+</installer-gui-script>

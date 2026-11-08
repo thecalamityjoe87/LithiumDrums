@@ -1,0 +1,121 @@
+# Builds the installers for all three systems on GitHub's machines.
+#
+# Runs by hand (Actions tab > Release > Run workflow), which leaves the
+# installers as downloadable artifacts of the run, or on pushing a version tag
+# (git tag v0.9.3 && git push --tags), which also puts them in a draft GitHub
+# Release to check and publish.
+#
+# macOS signing and notarization happen only when these repository secrets
+# exist (Settings > Secrets and variables > Actions); without them the .pkg is
+# unsigned:
+#   MACOS_CERTIFICATES_P12      base64 of a .p12 holding both Developer ID certificates
+#   MACOS_CERTIFICATES_PASSWORD its password
+#   MACOS_SIGN_APP              "Developer ID Application: Isaac Joseph (TEAMID)"
+#   MACOS_SIGN_INSTALLER        "Developer ID Installer: Isaac Joseph (TEAMID)"
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarization
+
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    # The oldest supported Ubuntu, so the binaries run on older glibc too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libxi-dev libgl-dev libcurl4-openssl-dev
+      - name: Build and package
+        run: scripts/package.sh release dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Inno Setup and Ninja
+        run: choco install innosetup ninja -y --no-progress
+      - name: Build and package
+        shell: pwsh
+        run: scripts/package.ps1 -Preset release -OutputDirectory dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.exe
+            dist/*.zip
+
+  macos:
+    runs-on: macos-latest
+    env:
+      # One build for Apple silicon and Intel Macs.
+      CMAKE_OSX_ARCHITECTURES: arm64;x86_64
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      # Step conditions can't read secrets directly; these say whether they exist.
+      HAS_CERTS: ${{ secrets.MACOS_CERTIFICATES_P12 != '' }}
+      HAS_NOTARY: ${{ secrets.APPLE_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Import signing certificates
+        if: env.HAS_CERTS == 'true'
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATES_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATES_PASSWORD }}
+        run: |
+          echo "$P12" | base64 --decode > certs.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import certs.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          rm certs.p12
+      - name: Store notarization credentials
+        if: env.HAS_NOTARY == 'true'
+        run: |
+          xcrun notarytool store-credentials lithium --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_PASSWORD }}"
+          echo "LITHIUM_NOTARY_PROFILE=lithium" >> "$GITHUB_ENV"
+      - name: Build and package
+        env:
+          LITHIUM_SIGN_APP: ${{ secrets.MACOS_SIGN_APP }}
+          LITHIUM_SIGN_INSTALLER: ${{ secrets.MACOS_SIGN_INSTALLER }}
+        run: scripts/package.sh release dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            dist/*.pkg
+            dist/*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* --repo "${{ github.repository }}" \
+            --draft --title "Lithium Drums ${GITHUB_REF_NAME#v}" --generate-notes
