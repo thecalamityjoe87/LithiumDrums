@@ -425,6 +425,8 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
     entries.clear();
     hovered = -1;
     drumPicture = {};
+    flashLevel = 0.0f;
+    flashImage = {};
     overlay = {};
     view = View::none;
     kit = std::move (k);
@@ -665,8 +667,8 @@ void MicsModule::buildKitPicture()
             if (juce::isPositiveAndBelow (piece, (int) kit->pieces.size()))
                 kitPicture.pieceRects[(size_t) piece] = rect.translated (-crop.getX(), -crop.getY()).toFloat();
 
-            if (slot.has_value())
-                kitPicture.hitLayers.push_back ({ piece, rect.translated (-crop.getX(), -crop.getY()), layer });
+            kitPicture.hitLayers.push_back ({ slot.has_value(), piece, slot.has_value() && piece < 0 ? 0.3f : 1.0f,
+                                              rect.translated (-crop.getX(), -crop.getY()), layer, {} });
         }
     }
 
@@ -690,6 +692,16 @@ void MicsModule::timerCallback()
 
     if (! isShowing())
         return;
+
+    // The hit flash fading out.
+    if (flashLevel > 0.0f)
+    {
+        flashLevel = (float) juce::jmax (0.0, 1.0 - (juce::Time::getMillisecondCounterHiRes() - flashStartMs) / kitart::flashDurationMs);
+        repaint (flashArea.getSmallestIntegerContainer().expanded (2));
+
+        if (flashLevel <= 0.0f)
+            startTimerHz (30);
+    }
 
     auto changed = false;
 
@@ -1079,6 +1091,7 @@ void MicsModule::paintDrumView (juce::Graphics& g)
         drawPickup (g, middleOf (room.tips), head, spread, colour, levelOf (roomEntry));
 
     drawPicture (g, drumPicture.scaled, drumPicture.area, true);
+    drawFlash (g);
 
     if (closeEntry.available && ! closeMic.tips.empty())
     {
@@ -1225,6 +1238,8 @@ void MicsModule::paintMicView (juce::Graphics& g)
     if (kitPicture.scaled.isValid())
         g.drawImage (kitPicture.scaled, kitPicture.area);   // straight on the card, no frame
 
+    drawFlash (g);
+
     // Only the drum whose knob is under the mouse (or being turned) gets its
     // cone of light from the mics: cones to every drum at once bury the kit. Drums with no place on the stage (extras beyond its
     // slots) only have their knob.
@@ -1366,6 +1381,9 @@ int MicsModule::drumAt (juce::Point<float> p) const
 
     for (auto it = kitPicture.hitLayers.rbegin(); it != kitPicture.hitLayers.rend(); ++it)
     {
+        if (! it->slot)
+            continue;   // stands and pedals: a click goes through them, as on the stage
+
         const auto local = pixel - it->rect.getPosition();
 
         if (it->image.getBounds().contains (local) && it->image.getPixelAt (local.x, local.y).getAlpha() >= hitAlphaThreshold)
@@ -1383,7 +1401,80 @@ void MicsModule::mouseDown (const juce::MouseEvent& e)
         return;
 
     if (const auto piece = drumAt (e.position); piece >= 0)
+    {
         onStrike (piece);
+        startFlash (piece);
+    }
+}
+
+void MicsModule::startFlash (int piece)
+{
+    if (flashLevel > 0.0f)
+        repaint (flashArea.getSmallestIntegerContainer().expanded (2));   // the last one, cut short
+
+    flashImage = {};
+
+    if (view == View::drum && piece == drumPicture.piece)
+    {
+        flashImage = kitart::makeFlashImage (drumPicture.scaled);
+        flashArea = drumPicture.area;
+    }
+    else if (view == View::mic && kitPicture.full.isValid())
+    {
+        auto& layers = kitPicture.hitLayers;
+        const auto it = std::find_if (layers.begin(), layers.end(), [piece] (const auto& l) { return l.slot && l.piece == piece; });
+
+        if (it == layers.end() || ! it->image.isValid())
+            return;
+
+        if (! it->flash.isValid())
+        {
+            // The flash, with whatever is drawn in front of the drum taken out
+            // of it, so a cymbal over a tom doesn't light up with the tom.
+            juce::Image cover (juce::Image::ARGB, it->image.getWidth(), it->image.getHeight(), true);
+
+            {
+                juce::Graphics g (cover);
+
+                for (auto front = std::next (it); front != layers.end(); ++front)
+                {
+                    g.setOpacity (front->opacity);
+                    g.drawImageAt (front->image, front->rect.getX() - it->rect.getX(), front->rect.getY() - it->rect.getY());
+                }
+            }
+
+            it->flash = kitart::makeFlashImage (it->image);
+            const juce::Image::BitmapData flash (it->flash, juce::Image::BitmapData::readWrite);
+            const juce::Image::BitmapData covered (cover, juce::Image::BitmapData::readOnly);
+
+            for (int y = 0; y < flash.height; ++y)
+                for (int x = 0; x < flash.width; ++x)
+                    if (const auto a = covered.getPixelColour (x, y).getFloatAlpha(); a > 0.0f)
+                        flash.setPixelColour (x, y, flash.getPixelColour (x, y).withMultipliedAlpha (1.0f - a));
+        }
+
+        const auto scale = kitPicture.area.getWidth() / (float) kitPicture.full.getWidth();
+        flashImage = it->flash;
+        flashArea = it->rect.toFloat() * scale + kitPicture.area.getPosition();
+    }
+
+    if (! flashImage.isValid())
+        return;
+
+    flashStartMs = juce::Time::getMillisecondCounterHiRes();
+    flashLevel = 1.0f;
+    startTimerHz (60);   // the stage's rate, for a smooth fade; back to 30 once it's over
+    repaint (flashArea.getSmallestIntegerContainer().expanded (2));
+}
+
+void MicsModule::drawFlash (juce::Graphics& g) const
+{
+    if (flashLevel <= 0.0f || ! flashImage.isValid())
+        return;
+
+    g.setOpacity (flashLevel * 0.8f);
+    g.drawImage (flashImage, flashArea);
+    g.setOpacity (1.0f);
 }
 
 void MicsModule::mouseMove (const juce::MouseEvent& e)

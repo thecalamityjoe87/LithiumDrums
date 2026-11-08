@@ -1,6 +1,7 @@
 #include "KitArt.h"
 
 #include "LithiumAssets.h"
+#include "Theme.h"
 
 #include <map>
 
@@ -72,6 +73,29 @@ juce::Image slotPicture (const juce::String& kitId, const juce::String& name)
         return image;
 
     return load ("slot-" + name + ".png");
+}
+
+juce::Image makeFlashImage (const juce::Image& src)
+{
+    if (! src.isValid())
+        return {};
+
+    auto out = src.createCopy();
+    const juce::Image::BitmapData data (out, juce::Image::BitmapData::readWrite);
+    const auto tint = juce::Colours::white.interpolatedWith (theme::colours::accent, 0.35f);
+
+    for (int y = 0; y < data.height; ++y)
+    {
+        for (int x = 0; x < data.width; ++x)
+        {
+            const auto c = data.getPixelColour (x, y);
+
+            if (c.getAlpha() > 0)
+                data.setPixelColour (x, y, c.interpolatedWith (tint.withAlpha (c.getAlpha()), 0.6f));
+        }
+    }
+
+    return out;
 }
 
 } // namespace lithium::kitart

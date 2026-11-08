@@ -29,4 +29,9 @@ juce::Image stageLayer (const juce::String& kitId, const juce::String& renderKey
 /** A slot card's picture ("kick", "splash", ...) in a kit's finish, or the default. */
 juce::Image slotPicture (const juce::String& kitId, const juce::String& name);
 
+/** The hit flash, as on the Kit tab's stage: a brightened copy of a drum's
+    picture, drawn over it at 0.8 opacity and faded out over flashDurationMs. */
+juce::Image makeFlashImage (const juce::Image&);
+inline constexpr double flashDurationMs = 240.0;
+
 } // namespace lithium::kitart

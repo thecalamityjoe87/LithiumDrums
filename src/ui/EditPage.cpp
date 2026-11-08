@@ -255,12 +255,12 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     picture->onClick = playShown;
     // The Mics card: its drum is the one shown, so it plays as Strike does;
     // another drum on the kit (overheads and room views) plays as on the stage.
-    mics.onStrike = [this, playShown] (int p)
+    mics.onStrike = [this, playShown] (int drum)
     {
-        if (p == piece)
+        if (drum == piece)
             playShown();
         else
-            processor.audition (p, LithiumDrumsProcessor::auditionVelocity);
+            processor.audition (drum, LithiumDrumsProcessor::auditionVelocity);
     };
     picture->setMouseCursor (juce::MouseCursor::PointingHandCursor);
 

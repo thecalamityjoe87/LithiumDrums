@@ -92,17 +92,25 @@ private:
         juce::Rectangle<float> area;
         std::vector<juce::Rectangle<float>> pieceRects;    // per drum, in `full`'s pixels; empty if it has no place on the stage
 
-        /** A drum slot's layer, for finding what a click lands on: by its
-            pixels' alpha, front to back, as on the Kit tab's stage. */
+        /** A layer of the picture, for finding what a click lands on (by
+            its pixels' alpha, front to back, as on the Kit tab's stage) and
+            for flashing a drum that's hit. */
         struct HitLayer
         {
-            int piece = -1;                    // -1: a slot with no drum (it still hides what's behind it)
+            bool slot = false;                 // a drum slot's layer; the others (stands, pedals) can't be clicked
+            int piece = -1;                    // -1: no drum (a slot without one still hides what's behind it)
+            float opacity = 1.0f;              // as drawn into the picture
             juce::Rectangle<int> rect;         // in `full`'s pixels
             juce::Image image;                 // shared with the image cache, not a copy
+            juce::Image flash;                 // its hit flash, minus what's in front of it; made on its first hit
         };
 
         std::vector<HitLayer> hitLayers;       // back to front
     };
+
+    /** Lights a drum up as it's clicked, as on the Kit tab's stage (see kitart::makeFlashImage). */
+    void startFlash (int piece);
+    void drawFlash (juce::Graphics&) const;
 
     /** A mic render (assets/mic-renders) placed on the card, and where its
         mics' fronts land, which is where their pickup lines start. */
@@ -169,6 +177,12 @@ private:
     int hovered = -1;                          // the mic view's entry whose knob is under the mouse or being turned
     DrumPicture drumPicture;
     KitPicture kitPicture;
+
+    // The flash under way: its picture, where it's drawn on the card, and how bright it is now (0: none).
+    juce::Image flashImage;
+    juce::Rectangle<float> flashArea;
+    double flashStartMs = 0.0;
+    float flashLevel = 0.0f;
     juce::Image cleanBase;                     // the base stage layer without its floor shadow (see buildKitPicture())
 
     // Geometry, worked out in resized() so the knobs and the picture agree.

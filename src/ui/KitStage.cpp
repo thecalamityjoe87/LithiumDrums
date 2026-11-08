@@ -9,7 +9,8 @@ namespace lithium
 
 namespace
 {
-    constexpr double flashDurationMs = 240.0;
+    using kitart::flashDurationMs;
+    using kitart::makeFlashImage;
     constexpr int hitAlphaThreshold = 48;     // pixels fainter than this (soft shadows, antialiasing) don't count
 
     juce::Image loadPng (const juce::String& name)
@@ -21,27 +22,6 @@ namespace
 
         jassertfalse;   // a render (room, or a layer named in layout.json) has no matching PNG in the binary data
         return {};
-    }
-
-    // A brightened copy of a piece, faded in over it when it is hit.
-    juce::Image makeFlashImage (const juce::Image& src)
-    {
-        auto out = src.createCopy();
-        const juce::Image::BitmapData data (out, juce::Image::BitmapData::readWrite);
-        const auto tint = juce::Colours::white.interpolatedWith (theme::colours::accent, 0.35f);
-
-        for (int y = 0; y < data.height; ++y)
-        {
-            for (int x = 0; x < data.width; ++x)
-            {
-                const auto c = data.getPixelColour (x, y);
-
-                if (c.getAlpha() > 0)
-                    data.setPixelColour (x, y, c.interpolatedWith (tint.withAlpha (c.getAlpha()), 0.6f));
-            }
-        }
-
-        return out;
     }
 
     // A soft glow following the piece's alpha edge: its alpha mask, blurred
