@@ -36,6 +36,13 @@ namespace
         return juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("payload");
     }
 
+    /** A path as people write it: ~/.local/share/... for anything in the home folder. */
+    juce::String displayPath (const juce::File& f)
+    {
+        const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+        return f.isAChildOf (home) ? "~/" + f.getRelativePathFrom (home) : f.getFullPathName();
+    }
+
     juce::StringArray defaultComponents()
     {
         juce::StringArray ids;
@@ -107,6 +114,102 @@ namespace
     };
 
     //==========================================================================
+    /** A question over the installer, drawn like the plugin's own prompts
+        (src/ui/InfoPanels.cpp, PromptPanel): the window dims, and a card
+        holds the title, the message, and Cancel plus the action button,
+        in the warning colour when it's destructive. Escape or a click
+        outside the card cancels; Return confirms. */
+    class ConfirmOverlay final : public juce::Component
+    {
+    public:
+        ConfirmOverlay()
+        {
+            cancelButton.onClick = [this] { finish (false); };
+            confirmButton.onClick = [this] { finish (true); };
+            confirmButton.setColour (juce::TextButton::textColourOffId, theme::colours::background);
+            addAndMakeVisible (cancelButton);
+            addAndMakeVisible (confirmButton);
+            setWantsKeyboardFocus (true);
+        }
+
+        void show (juce::String newTitle, juce::String newMessage, const juce::String& confirmText,
+                   bool destructive, std::function<void()> onConfirm)
+        {
+            title = std::move (newTitle);
+            message = std::move (newMessage);
+            confirmed = std::move (onConfirm);
+            confirmButton.setButtonText (confirmText);
+            confirmButton.setColour (juce::TextButton::buttonColourId, destructive ? theme::colours::warning : theme::colours::accent);
+            setVisible (true);
+            toFront (true);
+            grabKeyboardFocus();
+            repaint();
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            using namespace theme;
+            g.fillAll (colours::background.withAlpha (0.78f));
+
+            const auto card = cardBounds().toFloat();
+            g.setColour (colours::panel);
+            g.fillRoundedRectangle (card, 10.0f);
+            g.setColour (colours::borderStrong);
+            g.drawRoundedRectangle (card.reduced (0.5f), 10.0f, 1.0f);
+
+            g.setColour (colours::text);
+            drawTrackedText (g, title.toUpperCase(), label (20.0f, Weight::bold), 0.12f,
+                             card.reduced (28.0f, 0.0f).withTrimmedTop (24.0f).withHeight (28.0f), juce::Justification::centredLeft);
+
+            g.setColour (colours::textMuted);
+            g.setFont (body (type::body));
+            g.drawFittedText (message, cardBounds().reduced (28, 0).withTrimmedTop (70).withTrimmedBottom (64),
+                              juce::Justification::topLeft, 4, 1.0f);
+        }
+
+        void resized() override
+        {
+            auto buttons = cardBounds().reduced (28, 18).removeFromBottom (30);
+            cancelButton.setBounds (buttons.removeFromRight (96));
+            buttons.removeFromRight (theme::space::sm);
+            confirmButton.setBounds (buttons.removeFromRight (96));
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (! cardBounds().contains (e.getPosition()))
+                finish (false);
+        }
+
+        bool keyPressed (const juce::KeyPress& key) override
+        {
+            if (key == juce::KeyPress::escapeKey || key == juce::KeyPress::returnKey)
+            {
+                finish (key == juce::KeyPress::returnKey);
+                return true;
+            }
+
+            return false;
+        }
+
+    private:
+        juce::Rectangle<int> cardBounds() const { return getLocalBounds().withSizeKeepingCentre (460, 236); }
+
+        void finish (bool ok)
+        {
+            setVisible (false);
+
+            // Moved out first: the callback may show another question.
+            if (auto callback = std::exchange (confirmed, nullptr); ok && callback != nullptr)
+                callback();
+        }
+
+        juce::String title, message;
+        std::function<void()> confirmed;
+        juce::TextButton cancelButton { "Cancel" }, confirmButton;
+    };
+
+    //==========================================================================
     class InstallerView final : public juce::Component, private juce::Timer
     {
     public:
@@ -142,6 +245,8 @@ namespace
 
             for (auto* b : { &installButton, &removeButton, &openButton, &closeButton })
                 addChildComponent (b);
+
+            addChildComponent (confirm);   // added last, so it sits on top
 
             if (const auto error = installation.checkPayload(); error.isNotEmpty())
                 setStatus (error, true);
@@ -211,6 +316,7 @@ namespace
 
         void resized() override
         {
+            confirm.setBounds (getLocalBounds());
             auto area = getLocalBounds().withTrimmedTop (headerHeight).reduced (28, 20);
 
             introArea = area.removeFromTop (44);
@@ -289,15 +395,10 @@ namespace
 
         void confirmRemove()
         {
-            auto options = juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::QuestionIcon, "Remove Lithium Drums?",
-                "This removes the plugins, the app and its menu entry. Your kits, presets and settings stay in "
-                + Installation::dataHome().getChildFile ("Lithium Drums").getFullPathName() + ".", "Remove", "Cancel", this);
-
-            juce::AlertWindow::showAsync (options, [safe = juce::Component::SafePointer (this)] (int result)
-            {
-                if (safe != nullptr && result == 1)
-                    safe->start (false);
-            });
+            confirm.show ("Remove Lithium Drums?",
+                          "This removes the plugins, the app and its menu entry. Your kits, presets and settings stay in "
+                              + displayPath (Installation::dataHome().getChildFile ("Lithium Drums")) + ".",
+                          "Remove", true, [this] { start (false); });
         }
 
         // Runs the install or removal on a worker thread so the window keeps
@@ -400,7 +501,7 @@ namespace
                 statusIsError = false;
                 refreshExisting();
                 setStatus ("Lithium Drums is removed. Your kits, presets and settings are still in "
-                           + Installation::dataHome().getChildFile ("Lithium Drums").getFullPathName() + ".", false);
+                           + displayPath (Installation::dataHome().getChildFile ("Lithium Drums")) + ".", false);
             }
         }
 
@@ -414,6 +515,7 @@ namespace
         juce::HyperlinkButton licenseLink { "View licence", {} };
         juce::TextButton installButton { "Install" }, removeButton { "Remove" }, openButton { "Open Lithium Drums" }, closeButton { "Close" };
 
+        ConfirmOverlay confirm;
         juce::Rectangle<int> introArea, noteArea, licenseArea, progressArea, statusArea;
         juce::String status;
         bool statusIsError = false, working = false, installing = true, installedStandalone = false;
