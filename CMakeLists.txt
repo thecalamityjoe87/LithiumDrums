@@ -149,6 +149,14 @@ file(GLOB_RECURSE lithium_render_files CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/renders/*.webp"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/renders/*.json")
 
+# Without them the plugin still builds, but draws no kit at all, so a missing
+# or uncommitted assets/renders/ stops the build here instead.
+if(NOT lithium_render_files)
+    message(FATAL_ERROR
+        "assets/renders/ is empty or missing: the plugin's kit pictures are embedded from there. "
+        "Commit it, or run scripts/make-webp.sh to rebuild it from assets/render-sources/.")
+endif()
+
 # The fonts on their own, so the Linux installer can use them without
 # carrying the kit renders.
 juce_add_binary_data(LithiumFonts
