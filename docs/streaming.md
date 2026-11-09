@@ -90,9 +90,11 @@ kit loads: DRSKit's slots take 39 MB and MuldjordKit's 45 MB.
 One disk thread per process (`DiskStreamer`) serves every streaming kit of
 every plugin instance. It loops over the slots, reads the next chunk for every
 slot whose ring has room (the voices with the least audio buffered go first),
-and sleeps for 2 ms when there is nothing to do. The audio thread never wakes
-it, because signalling another thread isn't real-time safe on every platform.
-Polling every 2 ms is far quicker than any preload runs out.
+and sleeps when there is nothing to do: 2 ms while voices are streaming, 10 ms
+while none are. The audio thread never wakes it, because signalling another
+thread isn't real-time safe on every platform. Even the 10 ms nap is far
+quicker than any preload runs out: the smallest (8192 frames) lasts over 40 ms
+even for a 96 kHz kit pitched an octave up.
 
 The audio thread and the disk thread share each slot without locks:
 

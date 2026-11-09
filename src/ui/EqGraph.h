@@ -61,7 +61,7 @@ private:
     };
 
     void timerCallback() override;
-    void updateSpectrum();
+    bool updateSpectrum();   // true if what it draws has changed
     void paintSpectrum (juce::Graphics&, juce::Rectangle<float> plot) const;
     EqSettings readSettings() const;
     juce::Rectangle<float> getPlotArea() const;

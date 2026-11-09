@@ -343,20 +343,27 @@ void DiskStreamer::run()
 {
     while (! threadShouldExit())
     {
-        bool busy = false, idle = false;
+        bool busy = false, streaming = false, idle = false;
 
         {
             std::scoped_lock lock (mutex);
             idle = sources.empty();
 
             for (auto* s : sources)
+            {
                 busy = s->service() || busy;
+                streaming = streaming || s->hasActiveStreams();
+            }
         }
 
-        // Straight round again while there's reading to do; otherwise a short
-        // nap. With no streaming kit at all, a long one (add() wakes it).
+        // Straight round again while there's reading to do; a short nap
+        // while voices are streaming. With a kit loaded but nothing playing,
+        // a longer one: a new hit plays from its preload meanwhile, and the
+        // smallest (8192 frames) lasts over 40 ms even for a 96 kHz kit
+        // pitched an octave up. With no streaming kit at all, a long one
+        // (add() wakes it).
         if (! busy)
-            wait (idle ? 1000 : 2);
+            wait (idle ? 1000 : streaming ? 2 : 10);
     }
 }
 

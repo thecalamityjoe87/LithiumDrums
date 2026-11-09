@@ -51,7 +51,7 @@ void EqGraph::setSpectrum (SpectrumTap* tap)
                                                               juce::dsp::WindowingFunction<float>::hann, false);
 }
 
-void EqGraph::updateSpectrum()
+bool EqGraph::updateSpectrum()
 {
     // Only while it's on screen, for a drum's or mic's channel: the audio
     // thread copies nothing otherwise.
@@ -61,30 +61,55 @@ void EqGraph::updateSpectrum()
 
     if (! wanted)
     {
+        // One last repaint to take the old spectrum off (if there was one).
+        const auto hadSpectrum = ! levelsDb[0].empty();
+
         for (auto& l : levelsDb)
             l.clear();
 
-        return;
+        return hadSpectrum;
     }
 
     // A Hann window's sum turns an FFT magnitude back into the sine's amplitude.
     const auto windowSum = std::accumulate (window.begin(), window.end(), 0.0f);
     constexpr float floorDb = -100.0f, fallDbPerFrame = 1.5f;   // peaks jump up, then sink back slowly
+    auto changed = false;
 
     for (size_t p = 0; p < (size_t) SpectrumTap::numPoints; ++p)
     {
         const auto point = (SpectrumTap::Point) p;
         auto& levels = levelsDb[p];
-        levels.resize ((size_t) fftSize / 2, floorDb);
+
+        if (levels.empty())
+        {
+            levels.assign ((size_t) fftSize / 2, floorDb);
+            changed = true;   // the spectrum's first frame
+        }
+
         const auto written = spectrum->getWrittenCount (point);
-        const auto fresh = written != lastWritten[p] && spectrum->read (point, fftBuffer.data(), fftSize);
+        auto fresh = written != lastWritten[p] && spectrum->read (point, fftBuffer.data(), fftSize);
         lastWritten[p] = written;
 
-        // Nothing new (a silent channel isn't processed): just let it sink.
+        // An idle drum's channel is still processed, so the tap gets
+        // silence: no need for an FFT to know that's all floor.
+        if (fresh)
+        {
+            const auto range = juce::FloatVectorOperations::findMinAndMax (fftBuffer.data(), fftSize);
+            fresh = ! juce::exactlyEqual (range.getStart(), 0.0f) || ! juce::exactlyEqual (range.getEnd(), 0.0f);
+        }
+
+        // Nothing new: just let it sink. Once everything is on the floor
+        // nothing changes, and the graph stops repainting.
         if (! fresh)
         {
             for (auto& l : levels)
-                l = std::max (floorDb, l - fallDbPerFrame);
+            {
+                if (l > floorDb)
+                {
+                    l = std::max (floorDb, l - fallDbPerFrame);
+                    changed = true;
+                }
+            }
 
             continue;
         }
@@ -98,9 +123,13 @@ void EqGraph::updateSpectrum()
         for (size_t bin = 0; bin < levels.size(); ++bin)
         {
             const auto db = juce::Decibels::gainToDecibels (fftBuffer[bin] * 2.0f / windowSum, floorDb);
-            levels[bin] = std::max (db, levels[bin] - fallDbPerFrame);
+            const auto level = std::max (db, levels[bin] - fallDbPerFrame);
+            changed = changed || ! juce::exactlyEqual (level, levels[bin]);
+            levels[bin] = level;
         }
     }
+
+    return changed;
 }
 
 void EqGraph::paintSpectrum (juce::Graphics& g, juce::Rectangle<float> plot) const
@@ -189,13 +218,10 @@ EqSettings EqGraph::readSettings() const
 
 void EqGraph::timerCallback()
 {
-    if (spectrum != nullptr)
-    {
-        updateSpectrum();
-
-        if (! levelsDb[0].empty())
-            repaint();
-    }
+    // The spectrum repaints only while it moves: a silent channel's has
+    // sunk to the floor and stays there.
+    if (spectrum != nullptr && updateSpectrum())
+        repaint();
 
     const auto now = readSettings();
     const auto a = asArray (now), b = asArray (shown);

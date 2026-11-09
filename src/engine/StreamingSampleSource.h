@@ -117,6 +117,11 @@ public:
         urgent first. Returns true if it read anything. */
     bool service();
 
+    /** Whether any voice is streaming from disk right now. (The count can be
+        shared with other sources of the same plugin instance, so this may
+        also say yes for theirs; it errs on the side of reading sooner.) */
+    bool hasActiveStreams() const noexcept   { return stats->activeStreams.load (std::memory_order_relaxed) > 0; }
+
 private:
     struct Slot
     {
@@ -185,7 +190,8 @@ private:
     It loops over the registered sources and lets each read ahead, then
     sleeps for a couple of milliseconds when there's nothing to do. The audio
     thread never wakes it (signalling a thread isn't real-time safe on every
-    platform); polling every 2 ms is far quicker than any preload runs out. */
+    platform); polling every 2 ms while voices stream, and every 10 ms while
+    none do, is far quicker than any preload runs out. */
 class DiskStreamer final : private juce::Thread
 {
 public:
