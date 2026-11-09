@@ -21,6 +21,11 @@ MainView::MainView (LithiumDrumsProcessor& p)
     header.onShowAbout = [this] { showPanel (&aboutPanel); };
     header.onShowSettings = [this] { showPanel (&settingsPanel); };
     header.onShowBrowser = [this] { showPanel (&browser); };
+    header.onShowKit = [this] (const juce::String& kitName)
+    {
+        browser.showKit (kitName);
+        showPanel (&browser);
+    };
     header.onShowMidi = [this] { showPanel (&midiPanel); };
     header.onPrompt = [this] (PromptPanel::Request r) { showPrompt (std::move (r)); };
     prompt.onFinished = [this] { prompt.setVisible (false); };

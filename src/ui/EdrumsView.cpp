@@ -471,7 +471,7 @@ EdrumsView::EdrumsView (LithiumDrumsProcessor& p) : processor (p), thresholds (s
     pause.onClick = [this] { monitor->paused = pause.getToggleState(); };
     clear.onClick = [this] { monitor->clear(); };
 
-    for (auto* c : std::initializer_list<juce::Component*> { monitor.get(), &pause, &clear })
+    for (auto* c : std::initializer_list<juce::Component*> { monitor.get(), &pause, &clear, &hatHelp, &padsHelp, &monitorHelp })
         addAndMakeVisible (c);
 
     refresh();
@@ -805,6 +805,16 @@ void EdrumsView::resized()
     area.removeFromLeft (space::lg);
     monitorCard = area;
 
+    // Each card's "?" in its top-right corner, level with the title.
+    const auto helpSpot = [] (juce::Rectangle<int> card)
+    {
+        return card.reduced (space::lg - 2, 0).removeFromTop (cardHeader).translated (0, 2)
+                   .removeFromRight (HelpButton::size).withSizeKeepingCentre (HelpButton::size, HelpButton::size);
+    };
+    hatHelp.setBounds (helpSpot (hatCard));
+    padsHelp.setBounds (helpSpot (padsCard));
+    monitorHelp.setBounds (helpSpot (monitorCard).translated (space::lg - space::md, 0));
+
     // The pedal card: the settings in a column on the left, the openness
     // steps upright down the right, like the pedal's travel.
     {
@@ -867,6 +877,7 @@ void EdrumsView::resized()
     // The monitor card.
     {
         auto header = monitorCard.reduced (space::md - 2, 0).removeFromTop (cardHeader).withSizeKeepingCentre (monitorCard.getWidth() - 2 * space::md + 4, 22).translated (0, 2);
+        header.removeFromRight (HelpButton::size + 4);   // the "?" keeps the corner
         clear.setBounds (header.removeFromRight (60));
         header.removeFromRight (space::xs);
         pause.setBounds (header.removeFromRight (60));

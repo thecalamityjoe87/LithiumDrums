@@ -100,7 +100,7 @@ namespace
     juce::String subtitleFor (const kitlibrary::Entry& e, const kitlibrary::Pack* pack)
     {
         if (e.summary.isPreset)
-            return "Preset of " + e.credits().basedOn;
+            return "Kit preset of " + e.credits().basedOn;
 
         return pack != nullptr ? pack->name : juce::String ("Kit");
     }
@@ -310,7 +310,7 @@ public:
             right = drawBadge (g, "SA", right, top.getCentreY(), colours::groupCymbals);
 
         if (entry.summary.isPreset)
-            right = drawBadge (g, "PRESET", right, top.getCentreY(), colours::groupToms);
+            right = drawBadge (g, "KIT PRESET", right, top.getCentreY(), colours::groupToms);
 
         if (loaded)
         {
@@ -834,6 +834,27 @@ void KitBrowser::refresh()
             selected = (int) i;
 
     reselectName = {};
+
+    // Asked to show a kit (a preset needs it): just its pack, with it selected.
+    if (kitToShow.isNotEmpty())
+    {
+        for (size_t i = 0; i < library.kits.size(); ++i)
+        {
+            if (library.kits[i].credits().name == kitToShow)
+            {
+                selected = (int) i;
+                packFilter = library.kits[i].pack;
+                typeFilter = TypeFilter::all;
+                allButton.setToggleState (true, juce::dontSendNotification);
+                search.clear();
+                packList->setSelected (packFilter);
+                break;
+            }
+        }
+
+        kitToShow = {};
+    }
+
     applyFilter();
     updateInstallStatus();
     search.grabKeyboardFocus();
@@ -855,7 +876,7 @@ bool KitBrowser::passesFilter (const kitlibrary::Entry& e) const
     const auto& c = e.credits();
     const auto haystack = c.name + " " + c.basedOn + " " + c.author + " " + c.description + " " + c.licenseName + " "
                           + e.summary.tags.joinIntoString (" ") + " " + (pack != nullptr ? pack->name : juce::String())
-                          + (e.summary.isPreset ? " preset" : " kit");
+                          + (e.summary.isPreset ? " kit preset" : " kit");
 
     for (const auto& word : juce::StringArray::fromTokens (search.getText(), true))
         if (! haystack.containsIgnoreCase (word))
@@ -1086,7 +1107,7 @@ void KitBrowser::layoutContent (juce::Rectangle<int> area)
 
     for (auto* b : { &presetsButton, &kitsButton, &allButton })
     {
-        b->setBounds (filters.removeFromRight (84));
+        b->setBounds (filters.removeFromRight (b == &presetsButton ? 108 : 84));   // "Kit presets" is the longest label
         filters.removeFromRight (6);
     }
 

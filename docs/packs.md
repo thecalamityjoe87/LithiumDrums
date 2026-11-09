@@ -19,7 +19,7 @@ LithiumImport --install drumgizmo-drskit      # or --install all
 
 `assets/packs/catalog.json` is built into the plugin. Each pack has its id
 (the id of the content pack the import writes, which is how the app knows it's
-installed), its name, author, licence and description, the kits and presets it
+installed), its name, author, licence and description, the kits and kit presets it
 becomes (for the greyed cards), its downloads, and how much it takes on disk
 unpacked:
 

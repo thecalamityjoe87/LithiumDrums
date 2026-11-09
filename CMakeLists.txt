@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(LithiumDrums VERSION 0.9.3 LANGUAGES C CXX)
+project(LithiumDrums VERSION 0.9.4 LANGUAGES C CXX)
 
 if(APPLE)
     # JUCE's macOS sources are Objective-C++.
@@ -185,6 +185,7 @@ juce_add_binary_data(LithiumAssets
         assets/midi-maps/alesis.json
         assets/midi-maps/drumit-five.json
         assets/midi-maps/efnote.json
+        assets/midi-maps/hxm-m019.json
         assets/midi-maps/lemon-t950.json
         assets/midi-maps/millenium-mps1000.json
         assets/midi-maps/yamaha-dtx402.json

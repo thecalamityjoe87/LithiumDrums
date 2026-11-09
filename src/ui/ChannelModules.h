@@ -9,22 +9,39 @@ namespace lithium
 /** A titled card holding one group of controls. The Edit page and the
     Mixer's inspector are both built from these. A module can carry an On
     button and a Reset button in its header. */
-class Module : public juce::Component
+class Module : public juce::Component, private juce::ComponentListener
 {
 public:
     explicit Module (juce::String title);
+    ~Module() override;
 
     void setTitle (juce::String t)           { title = std::move (t); repaint(); }
     void paint (juce::Graphics&) override;
+
+    /** Gives the card a "?" in its header's top-right corner (right of its On
+        and Reset buttons), which explains the card to new users. */
+    void setHelp (const juce::String& heading, const juce::StringArray& paragraphs);
+
+    /** How much of the header's right end the "?" takes (0 without one), for
+        things laid over the header from outside. */
+    int getHelpWidth() const;
 
 protected:
     /** The area under the header. */
     juce::Rectangle<int> getContentArea() const;
 
-    /** Puts the On (and Reset) buttons at the right of the header. */
+    /** Puts the On (and Reset) buttons at the right of the header, left of the "?". */
     void layoutHeaderButtons (juce::Component* on, juce::Component* reset);
 
     juce::String title;
+
+private:
+    // The "?" is placed whenever the card's size changes, whatever the
+    // subclass's resized() does, so every card gets it the same way.
+    void componentMovedOrResized (juce::Component&, bool moved, bool resized) override;
+    juce::Rectangle<int> headerRow() const;
+
+    std::unique_ptr<HelpButton> help;
 };
 
 /** The channel's EQ: the curve with its band nodes, and a knob per setting. */

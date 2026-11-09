@@ -415,8 +415,8 @@
     {
       "name": "Stone Hall",
       "group": "Rock",
-      "kit": "tchimera-open-kick",
-      "description": "Seventies hard rock in a big hall: the open kick booming, maple toms tuned down and left to ring, a cracking snare, all on hot tape.",
+      "kit": "tchimera",
+      "description": "Seventies hard rock in a big hall: a punchy kick, maple toms tuned down and left to ring, a cracking snare, all on hot tape.",
       "makeup": "master_tape_output",
       "pieces": {
         "all": { "room_send": -12 },

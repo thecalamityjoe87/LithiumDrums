@@ -199,4 +199,43 @@ private:
     float shownDb = 0.0f;
 };
 
+//==============================================================================
+/** Draws the help mark: a "?" in a ring, the "?" centred by its ink. (Not an
+    "i": the header's "i" button is the About panel.) */
+void drawHelpMark (juce::Graphics&, juce::Rectangle<float> ring, bool highlighted);
+
+/** What a help mark opens: a heading and a few short paragraphs, in a
+    call-out pointing at the mark. */
+class HelpPopover final : public juce::Component
+{
+public:
+    HelpPopover (const juce::String& heading, const juce::StringArray& paragraphs);
+
+    void paint (juce::Graphics&) override;
+
+    /** Opens one in a call-out pointing at `target` (in `from`'s coordinates). */
+    static void show (juce::Component& from, juce::Rectangle<int> target, const juce::String& heading, const juce::StringArray& paragraphs);
+
+private:
+    static constexpr int padding = 16;
+    juce::TextLayout layout;
+};
+
+/** A "?" button that explains what it sits beside, for new users: a card's
+    controls, say. Clicking it opens a HelpPopover. */
+class HelpButton final : public juce::Button
+{
+public:
+    HelpButton (juce::String heading, juce::StringArray paragraphs);
+
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    void clicked() override;
+
+    static constexpr int size = 20;     // the button; the ring in it is 14 px
+
+private:
+    juce::String heading;
+    juce::StringArray paragraphs;
+};
+
 } // namespace lithium

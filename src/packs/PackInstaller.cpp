@@ -122,6 +122,15 @@ const CatalogPack* findPack (const juce::String& id)
     return nullptr;
 }
 
+const CatalogPack* findPackWithKit (const juce::String& kitName)
+{
+    for (const auto& p : catalog())
+        if (p.type == CatalogPack::Type::kits && (p.kits.contains (kitName) || p.presets.contains (kitName)))
+            return &p;
+
+    return nullptr;
+}
+
 juce::String formatSize (std::int64_t bytes)
 {
     const auto mb = (double) bytes / 1.0e6;   // decimal, as download sites quote sizes

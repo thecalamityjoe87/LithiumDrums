@@ -398,6 +398,7 @@ MixerPage::MixerPage (LithiumDrumsProcessor& p)
     }
 
     channelsView.setTooltip ("The mixer's channels: one per drum, then the overhead and room mics");
+    addAndMakeVisible (stripsHelp);
     trimsView.setTooltip ("Trim the close mics: how loud and where each one sits in the drum channels it feeds");
     channelsView.setToggleState (true, juce::dontSendNotification);
     channelsView.onClick = [this] { showingTrims = false; rebuildStrips(); };
@@ -605,6 +606,8 @@ void MixerPage::resized()
     // The card's title on the left, and the Channels / Close mics switch on the right, above the strips it changes.
     auto inner = bankCard.reduced (cardPadding);
     bankHeader = inner.removeFromTop (size::buttonCompact);
+    stripsHelp.setBounds (bankHeader.removeFromRight (HelpButton::size).withSizeKeepingCentre (HelpButton::size, HelpButton::size));
+    bankHeader.removeFromRight (6);   // the "?" keeps the corner
     auto views = bankHeader.removeFromRight (160);
     channelsView.setBounds (views.removeFromLeft (80));
     trimsView.setBounds (views);

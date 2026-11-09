@@ -9,7 +9,7 @@ namespace lithium
 {
 
 /** The kit browser: every installed kit and kit preset as a card, grouped
-    by content pack, with search, a kits/presets filter, and a details pane
+    by content pack, with search, a kits/kit presets filter, and a details pane
     with the selected kit's credits. Opened from the header's Browse button.
 
     Packs in the LithiumPacks catalog that aren't installed are there too,
@@ -29,6 +29,10 @@ public:
 
     /** Re-reads the kits folder and selects the loaded kit. */
     void refresh();
+
+    /** Makes the next refresh() open on this kit (by name; installed or
+        not) in its pack, with the search and filters cleared. */
+    void showKit (const juce::String& kitName)    { kitToShow = kitName; }
 
     void paint (juce::Graphics&) override;
     bool keyPressed (const juce::KeyPress&) override;
@@ -63,7 +67,7 @@ private:
     std::map<int, const packs::CatalogPack*> missingPacks;
 
     juce::TextEditor search;
-    juce::TextButton allButton { "All" }, kitsButton { "Kits" }, presetsButton { "Presets" };
+    juce::TextButton allButton { "All" }, kitsButton { "Kits" }, presetsButton { "Kit presets" };
     std::unique_ptr<PackList> packList;
     juce::Viewport gridView;
     std::unique_ptr<Grid> grid;
@@ -76,6 +80,7 @@ private:
     TypeFilter typeFilter = TypeFilter::all;
     int selected = -1;                               // index into library.kits
     juce::String reselectName;                       // a kit to select after the next refresh
+    juce::String kitToShow;                          // see showKit()
     int columns = 3;
 };
 

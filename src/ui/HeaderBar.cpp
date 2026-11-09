@@ -406,6 +406,7 @@ void HeaderBar::showPresetMenu()
     callbacks.rename = [safe] { if (safe != nullptr) safe->renamePreset(); };
     callbacks.remove = [safe] { if (safe != nullptr) safe->deletePreset(); };
     callbacks.browse = [safe] { if (safe != nullptr && safe->onShowBrowser) safe->onShowBrowser(); };
+    callbacks.showKit = [safe] (const juce::String& kitName) { if (safe != nullptr && safe->onShowKit) safe->onShowKit (kitName); };
 
     // In a call-out pointing at the box; the call-out owns the panel and
     // deletes it when it closes (a click outside, Escape, or a choice).
@@ -424,10 +425,15 @@ void HeaderBar::loadPreset (const juce::File& file)
 
 void HeaderBar::stepPreset (int delta)
 {
-    const auto all = presets::scan();
+    // Only presets whose kit is installed: the others can't load.
+    const auto kits = kitlibrary::scan (processor.getKitsFolder());
+    auto all = presets::scan();
+    const auto any = ! all.empty();
+    std::erase_if (all, [&] (const auto& e) { return ! presets::isKitInstalled (presets::readKit (e.file), kits); });
 
     if (all.empty())
-        return report ("No presets yet", "Save the current sound with Save as... in the preset menu, and it will be here to step through.");
+        return any ? report ("No presets to step through", "None of the presets' kits are installed yet. Download a kit in Browse, and its presets will be here.")
+                   : report ("No presets yet", "Save the current sound with Save as... in the preset menu, and it will be here to step through.");
 
     const auto current = processor.getPresetFile();
     int index = -1;

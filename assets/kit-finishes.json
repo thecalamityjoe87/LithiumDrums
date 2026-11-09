@@ -1,5 +1,5 @@
 {
-  "comment": "Each kit's finish on the stage and slot cards (blender-kit.py kit=<id>). Colours are linear RGB. shell and snare: style lacquer | pearl | stain | sparkle | metal, color, and color2 (the pattern's other colour). hoops: chrome | black | brass, or a material like shell. kickHoop: the kick's wooden hoops, like shell (default: the shell's). lugs: chrome | black | brass. heads, reso: colours of the batter heads and the kick's front head. Kits not listed keep the default red; presets use their base kit's finish.",
+  "comment": "Each kit's finish on the stage and slot cards (blender-kit.py kit=<id>). Colours are linear RGB. shell and snare: style lacquer | pearl | stain | sparkle | metal, color, and color2 (the pattern's other colour). hoops: chrome | black | brass, or a material like shell. kickHoop: the kick's wooden hoops, like shell (default: the shell's). lugs: chrome | black | brass. ropeNet: { color }: the kick and toms are rope-tensioned, with a net of cord over the shell and no lugs. heads, reso: colours of the batter heads and the kick's front head. Kits not listed keep the default red; presets use their base kit's finish.",
   "aliases": {
     "virtuosity-snares-off": "virtuosity",
     "basalt-amber-rods": "basalt-amber"
@@ -18,17 +18,18 @@
       "reso": [0.012, 0.012, 0.014]
     },
     "salamander": {
-      "comment": "Green stained shells with dark wooden hoops, from the session photo; a natural wood snare, a white front head.",
-      "shell": { "style": "stain", "color": [0.012, 0.09, 0.02], "color2": [0.06, 0.24, 0.05] },
+      "comment": "Green stained shells in a matte finish with dark wooden hoops, from the session photo; a natural wood snare (also matte), a white front head. The kick and toms are rope-tensioned: a net of white cord, no lugs.",
+      "shell": { "style": "stain", "color": [0.012, 0.09, 0.02], "color2": [0.06, 0.24, 0.05], "rough": 0.62, "coat": 0.0 },
       "hoops": { "style": "lacquer", "color": [0.14, 0.045, 0.015], "rough": 0.45 },
       "kickHoop": { "style": "lacquer", "color": [0.14, 0.045, 0.015], "rough": 0.45 },
-      "snare": { "style": "stain", "color": [0.22, 0.09, 0.03], "color2": [0.45, 0.22, 0.08] },
+      "snare": { "style": "stain", "color": [0.22, 0.09, 0.03], "color2": [0.45, 0.22, 0.08], "rough": 0.62, "coat": 0.0 },
+      "ropeNet": { "color": [0.62, 0.59, 0.5] },
       "reso": [0.82, 0.8, 0.75]
     },
     "naked-drums": {
-      "comment": "Cherry kick and toms, a silver sparkle snare (the user's description of the recorded kit).",
-      "shell": { "style": "stain", "color": [0.1, 0.003, 0.004], "color2": [0.26, 0.015, 0.012] },
-      "snare": { "style": "sparkle", "color": [0.3, 0.3, 0.32], "color2": [0.92, 0.92, 0.94] },
+      "comment": "Natural maple, the kick and toms matte and the snare satin (Virtuosity's old colours, swapped once a photo of the Virtuosity kit turned up).",
+      "shell": { "style": "stain", "color": [0.4, 0.2, 0.07], "color2": [0.7, 0.45, 0.2], "rough": 0.62, "coat": 0.0 },
+      "snare": { "style": "stain", "color": [0.4, 0.2, 0.07], "color2": [0.7, 0.45, 0.2], "rough": 0.5, "coat": 0.3 },
       "reso": [0.012, 0.012, 0.014]
     },
     "crocellkit-full": {
@@ -54,9 +55,9 @@
       "reso": [0.75, 0.72, 0.62]
     },
     "virtuosity": {
-      "comment": "Proposed: natural maple under a satin finish.",
-      "shell": { "style": "stain", "color": [0.4, 0.2, 0.07], "color2": [0.7, 0.45, 0.2], "rough": 0.5, "coat": 0.3 },
-      "snare": { "style": "stain", "color": [0.4, 0.2, 0.07], "color2": [0.7, 0.45, 0.2], "rough": 0.5, "coat": 0.3 },
+      "comment": "Deep cherry kick and toms in a matte finish, a silver snare, a white front head (from a photo of the Virtuosity kit).",
+      "shell": { "style": "stain", "color": [0.035, 0.001, 0.0014], "color2": [0.091, 0.0052, 0.0042], "rough": 0.62, "coat": 0.0 },
+      "snare": { "style": "metal", "color": [0.92, 0.92, 0.94], "rough": 0.45 },
       "reso": [0.82, 0.8, 0.75]
     },
     "basalt-onyx": {

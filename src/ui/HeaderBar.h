@@ -27,6 +27,7 @@ public:
 
     std::function<void (Tab)> onTabChanged;
     std::function<void()> onShowAbout, onShowSettings, onShowBrowser, onShowMidi;
+    std::function<void (const juce::String& kitName)> onShowKit;   // the kit browser, on a kit that isn't installed
     std::function<void (PromptPanel::Request)> onPrompt;   // asks something (a preset's name), or reports a problem
     void setTab (Tab);
 

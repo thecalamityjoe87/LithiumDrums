@@ -131,13 +131,23 @@ Library scan (const juce::File& kitsFolder)
 
 juce::File resolveSavedKit (const juce::String& savedPath, const juce::String& savedId, const juce::File& kitsFolder)
 {
+    // The saved path usually still holds the kit; then the kits folder needn't be read.
     const auto saved = savedPath.isNotEmpty() && juce::File::isAbsolutePath (savedPath) ? juce::File (savedPath) : juce::File();
 
     if (saved != juce::File() && saved.getChildFile ("kit.json").existsAsFile()
         && (savedId.isEmpty() || readKitId (saved) == savedId))
         return saved;
 
-    const auto library = scan (kitsFolder);
+    return resolveSavedKit (savedPath, savedId, scan (kitsFolder));
+}
+
+juce::File resolveSavedKit (const juce::String& savedPath, const juce::String& savedId, const Library& library)
+{
+    const auto saved = savedPath.isNotEmpty() && juce::File::isAbsolutePath (savedPath) ? juce::File (savedPath) : juce::File();
+
+    if (saved != juce::File() && saved.getChildFile ("kit.json").existsAsFile()
+        && (savedId.isEmpty() || readKitId (saved) == savedId))
+        return saved;
 
     if (const auto* byId = library.findById (savedId); byId != nullptr && savedId.isNotEmpty())
         return byId->folder;

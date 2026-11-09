@@ -48,6 +48,9 @@ struct CatalogPack
 const std::vector<CatalogPack>& catalog();
 const CatalogPack* findPack (const juce::String& id);
 
+/** The kit pack that installs a kit or kit preset of this name, if any. */
+const CatalogPack* findPackWithKit (const juce::String& kitName);
+
 /** "2.8 GB", "3 MB". */
 juce::String formatSize (std::int64_t bytes);
 

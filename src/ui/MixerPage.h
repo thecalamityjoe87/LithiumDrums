@@ -120,6 +120,14 @@ private:
     std::shared_ptr<const KitInfo> shownKit;
     MixerInspector inspector;
     juce::TextButton channelsView { "Channels" }, trimsView { "Close mics" };
+    HelpButton stripsHelp { "Channel strips", {
+        "One strip per drum, then the overhead and room mics, the Room, Plate and Delay returns, and the master. "
+        "Click a drum's or mic's strip to show its EQ and Channel cards above; click a return to open its effect "
+        "on the FX page.",
+        "The fader sets the channel's level; M mutes it and S solos it. EQ, CMP, TRN and SAT switch its EQ, "
+        "compressor, transient shaper and saturation on and off. The EQ is set above, the others on the Edit page.",
+        "Close mics shows the close mic trims instead: how loud each close mic is, and where it sits, in the drum "
+        "channels it feeds." } };
     bool showingTrims = false;
     std::array<bool, 2> shownEmulation {};   // overheads, room: whether their emulated strips were shown
     juce::Viewport stripView;

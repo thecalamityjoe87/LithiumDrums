@@ -284,6 +284,33 @@ EditPage::EditPage (LithiumDrumsProcessor& p)
     dynamics.setBipolar (true);
     mics.onOpenMic = [this] (int m) { showMic (m); };
 
+    // What each card does, behind its "?", for new users.
+    velocityModule.setHelp ("Velocity", {
+        "How loud this drum is, and how much its level follows how hard you hit it.",
+        "Volume: the drum's level everywhere it's heard: in its own mics, the overheads and the room.",
+        "Dynamics: turn it up for a bigger difference between soft and hard hits, or down to even them out. "
+        "The hardest hits stay as they are." });
+    pitchModule.setHelp ("Pitch", {
+        "Tune: raises or lowers the drum's pitch, up to 12 semitones (an octave) either way. "
+        "Down makes a drum deeper and longer, up makes it tighter and higher.",
+        "Bend: starts each hit higher or lower than its pitch and glides it back, like the pitch drop of a "
+        "hard-hit tom. Bend time: how long the glide takes." });
+    toneModule.setHelp ("Tone", {
+        "Low cut takes away the low end below the frequency you set: boom and rumble. "
+        "High cut takes away the top above it: sizzle and air.",
+        "Both work on every mic of the drum, so they change it in the overheads and room too. "
+        "Turned all the way open, they do nothing." });
+    envelopeModule.setHelp ("Envelope", {
+        "The shape of each hit over time, drawn in the graph.",
+        "Attack fades the start of the hit in, softening the stick. Hold is how long the hit then plays untouched. "
+        "Decay shortens the ring after that, like putting a gel or a towel on the drum; at Natural it rings out "
+        "as it was recorded." });
+    zonesModule.setHelp ("Zones", {
+        "Each drum was recorded at several strengths, from soft to hard. The map shows which recording plays "
+        "at each velocity (how hard a hit is).",
+        "Click the map to hear that velocity. Crossfade blends neighbouring recordings, so there's no jump in "
+        "the sound from one to the next." });
+
     velocityModule.addAndMakeVisible (volume);
     velocityModule.addAndMakeVisible (dynamics);
     pitchModule.addAndMakeVisible (tune);
@@ -716,7 +743,7 @@ void EditPage::paintOverChildren (juce::Graphics& g)
     {
         g.setColour (colours::text);
         g.setFont (mono (11.0f));
-        g.drawText ("LAST HIT  " + lastHitText, zonesModule.getBounds().reduced (12, 0).withHeight (32).translated (0, 1),
+        g.drawText ("LAST HIT  " + lastHitText, zonesModule.getBounds().reduced (12, 0).withTrimmedRight (zonesModule.getHelpWidth()).withHeight (32).translated (0, 1),
                     juce::Justification::centredRight, false);
     }
 
@@ -807,7 +834,7 @@ void EditPage::resized()
     auto row = juce::Rectangle<int> (margin, topHeight + gap, getWidth() - 2 * margin, rowOneHeight);
 
     // (How loud the drum is in each mic is set in the Mixer's Mics card.)
-    auto column = row.removeFromRight (156);
+    auto column = row.removeFromRight (196);   // room for the title, On and "?" in each header; the Envelope card gives it up
     transient.setBounds (column.removeFromTop ((column.getHeight() - gap) / 2));
     column.removeFromTop (gap);
     saturation.setBounds (column);
@@ -861,7 +888,7 @@ void EditPage::resized()
     zoneMap.setBounds (zonesModule.getLocalBounds().reduced (8, 0).withTrimmedTop (30).withTrimmedBottom (6));
 
     // The crossfade switch in the zones header, left of the last hit.
-    crossfade.setBounds (zonesModule.getBounds().getRight() - 12 - 280 - 106, zonesModule.getY() + 4, 106, 24);
+    crossfade.setBounds (zonesModule.getBounds().getRight() - 12 - zonesModule.getHelpWidth() - 280 - 106, zonesModule.getY() + 4, 106, 24);
 }
 
 } // namespace lithium

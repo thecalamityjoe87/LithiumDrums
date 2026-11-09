@@ -13,6 +13,36 @@ namespace
 //==============================================================================
 Module::Module (juce::String t) : title (std::move (t)) {}
 
+Module::~Module()
+{
+    removeComponentListener (this);
+}
+
+void Module::setHelp (const juce::String& heading, const juce::StringArray& paragraphs)
+{
+    help = std::make_unique<HelpButton> (heading, paragraphs);
+    addAndMakeVisible (*help);
+    addComponentListener (this);
+    componentMovedOrResized (*this, false, true);
+}
+
+int Module::getHelpWidth() const
+{
+    return help != nullptr ? HelpButton::size + 4 : 0;
+}
+
+juce::Rectangle<int> Module::headerRow() const
+{
+    return getLocalBounds().reduced (padding - 2, 0).removeFromTop (moduleHeaderHeight).withSizeKeepingCentre (getWidth() - 2 * padding + 4, 20).translated (0, 2);
+}
+
+void Module::componentMovedOrResized (juce::Component&, bool, bool resized)
+{
+    // The "?" sits in the header's top-right corner, its ring level with the title.
+    if (resized && help != nullptr)
+        help->setBounds (headerRow().removeFromRight (HelpButton::size).withSizeKeepingCentre (HelpButton::size, HelpButton::size));
+}
+
 void Module::paint (juce::Graphics& g)
 {
     using namespace theme;
@@ -36,7 +66,8 @@ juce::Rectangle<int> Module::getContentArea() const
 
 void Module::layoutHeaderButtons (juce::Component* on, juce::Component* reset)
 {
-    auto row = getLocalBounds().reduced (padding - 2, 0).removeFromTop (moduleHeaderHeight).withSizeKeepingCentre (getWidth() - 2 * padding + 4, 20).translated (0, 2);
+    auto row = headerRow();
+    row.removeFromRight (getHelpWidth());   // the "?" keeps the corner
 
     if (reset != nullptr)
     {
@@ -51,6 +82,14 @@ void Module::layoutHeaderButtons (juce::Component* on, juce::Component* reset)
 //==============================================================================
 EqModule::EqModule (juce::AudioProcessorValueTreeState& s) : Module ("EQ"), state (s), graph (s)
 {
+    setHelp ("EQ", {
+        "Shapes the tone with five bands. HPF cuts everything below its frequency. Low and High lift or cut "
+        "the bottom and the top. Mid 1 and Mid 2 boost or cut around their frequency, and Q sets how narrow.",
+        "Drag a dot on the curve to move its band (that switches the EQ on), double-click a dot to flatten it, "
+        "and scroll on a Mid dot to change its width. On the Mixer, the shading behind the curve is the "
+        "channel's sound before the EQ (faint) and after it.",
+        "On switches the EQ in and out; Reset flattens it." });
+
     for (auto* k : { &lowGain, &mid1Gain, &mid2Gain, &highGain })
         k->setBipolar (true);
 
@@ -214,6 +253,12 @@ private:
 CompModule::CompModule (juce::AudioProcessorValueTreeState& s)
     : Module ("Compressor"), state (s), graph (std::make_unique<TransferGraph> (s))
 {
+    setHelp ("Compressor", {
+        "Evens out the level, and can add punch. Hits louder than Threshold are turned down, and Ratio sets by "
+        "how much. The meter shows how far it's turning down. Switch it on with On; Reset puts every setting back.",
+        "Attack: how quickly it reacts (slower lets the stick's crack through). Release: how quickly it lets go. "
+        "Makeup turns the result back up. Mix blends in the uncompressed sound, for parallel compression." });
+
     for (auto* k : { &threshold, &ratio, &attack, &release, &makeup, &mix })
     {
         k->setArcColour (theme::colours::groupCymbals);
@@ -280,6 +325,17 @@ TwoKnobModule::TwoKnobModule (juce::AudioProcessorValueTreeState& s, Kind k)
       first (k == Kind::transient ? "Attack" : "Drive"),
       second (k == Kind::transient ? "Sustain" : "Mix")
 {
+    if (kind == Kind::transient)
+        setHelp ("Transient", {
+            "Shapes the punch and the ring of this channel. Switch it on with On.",
+            "Attack: turn it up for a sharper, punchier hit, or down to soften it. "
+            "Sustain: turn it up to bring out the ring, or down for a tighter, drier drum." });
+    else
+        setHelp ("Saturation", {
+            "Adds warmth and grit by rounding off the loudest peaks, like driving tape or a preamp. "
+            "Switch it on with On.",
+            "Drive: how hard the sound is pushed. Mix: how much of the saturated sound is blended with the clean one." });
+
     const auto colour = kind == Kind::transient ? theme::colours::groupHats : theme::colours::groupKick;
     first.setArcColour (colour);
     second.setArcColour (colour);
@@ -311,6 +367,13 @@ void TwoKnobModule::resized()
 RoutingModule::RoutingModule (juce::AudioProcessorValueTreeState& s)
     : Module ("Channel"), state (s)
 {
+    setHelp ("Channel", {
+        "Where this channel sits in the mix. Its level is the fader on its strip below.",
+        "Pan: from left to right. Width: how wide a stereo channel sounds, from mono (0%) to extra wide (200%).",
+        "Room, Plate and Delay send some of the channel to those effects; click a name to open the effect on the "
+        "FX page. Pre sends before the fader, so the sends don't follow it.",
+        "Output: the main mix, or an aux out of its own for mixing in your DAW. An aux out skips the master effects." });
+
     pan.setBipolar (true);
     output.setTooltip ("The main mix, or an aux out for mixing in the host");
 

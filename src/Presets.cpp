@@ -1,5 +1,7 @@
 #include "Presets.h"
 
+#include "KitLibrary.h"
+
 namespace lithium::presets
 {
 
@@ -91,6 +93,26 @@ juce::Result read (const juce::File& file, Contents& result)
         return juce::Result::fail ("\"" + nameOf (file) + "\" is missing its kit or settings.");
 
     return juce::Result::ok();
+}
+
+KitRef readKit (const juce::File& file)
+{
+    // true: parse only the outer element's attributes, not the parameters inside.
+    const auto xml = juce::XmlDocument (file).getDocumentElement (true);
+
+    if (xml == nullptr || ! xml->hasTagName (rootType.toString()))
+        return {};
+
+    return { xml->getStringAttribute (kitIdId), xml->getStringAttribute (kitPathId), xml->getStringAttribute (kitNameId) };
+}
+
+bool isKitInstalled (const KitRef& kit, const kitlibrary::Library& library)
+{
+    if (kit.id.isEmpty() && kit.path.isEmpty())
+        return false;
+
+    const auto folder = kitlibrary::resolveSavedKit (kit.path, kit.id, library);
+    return folder != juce::File() && folder.getChildFile ("kit.json").existsAsFile();
 }
 
 juce::Result write (const juce::File& file, const Contents& contents)

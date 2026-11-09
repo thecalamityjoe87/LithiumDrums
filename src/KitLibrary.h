@@ -59,6 +59,10 @@ namespace kitlibrary
         a folder of the same name. */
     juce::File resolveSavedKit (const juce::String& savedPath, const juce::String& savedId, const juce::File& kitsFolder);
 
+    /** The same, in a library that's already scanned (to check many saved
+        kits without reading the kits folder for each). */
+    juce::File resolveSavedKit (const juce::String& savedPath, const juce::String& savedId, const Library&);
+
     /** The kit a new instance starts with: DRSKit if it's installed,
         otherwise the first kit found. */
     juce::File findDefaultKit (const juce::File& kitsFolder);

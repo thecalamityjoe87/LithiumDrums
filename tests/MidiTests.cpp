@@ -233,7 +233,7 @@ public:
         beginTest ("The factory maps parse, and survive a round trip through JSON");
         {
             const auto maps = MidiMap::factoryMaps();
-            expectEquals ((int) maps.size(), 10);
+            expectEquals ((int) maps.size(), 11);
             expectEquals (maps.front().id, juce::String ("lithium-standard"));
 
             for (const auto& m : maps)
@@ -1098,8 +1098,10 @@ public:
             expect (old.controllers.positionVelocity == std::array<float, numPositionSources> {});
             expect (! old.toJson().contains ("\"velocity\""), "neutral settings aren't written out");
 
+            // The HXM M-019 map was set up on a real module, ride curve included.
             for (const auto& m : MidiMap::factoryMaps())
-                expect (m.velocity.isNeutral(), m.name);
+                if (m.id != "hxm-m019")
+                    expect (m.velocity.isNeutral(), m.name);
 
             MidiRig rig;
             const auto table = resolveMidiMap (old, rig.info);

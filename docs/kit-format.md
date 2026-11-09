@@ -316,7 +316,7 @@ values on top of the preset's changes; they get the changes added when they
 are loaded (`params::addKitStarts`), so they play as they did.
 
 The credits and licence are always the base kit's: the About dialog and the
-kit browser show them for the preset, with "Preset of DRSKit Full". A preset of
+kit browser show them for the preset, with "Kit preset of DRSKit Full". A preset of
 a share-alike kit is an adaptation of it too, so it belongs in the same pack.
 
 ## Piece swapping

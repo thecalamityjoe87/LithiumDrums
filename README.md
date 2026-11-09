@@ -6,7 +6,7 @@
 
 ![The Kit page: a drum kit on stage in a studio room, with the selected piece and the groove player in the corners](docs/images/kit.jpg)
 
-VST3, CLAP, AU and a standalone app · Linux, Windows and macOS · Version 0.9.3 · Free software, [GNU AGPLv3](LICENSE)
+VST3, CLAP, AU and a standalone app · Linux, Windows and macOS · Version 0.9.4 · Free software, [GNU AGPLv3](LICENSE)
 
 By Isaac Joseph ([Calamity Audio](https://github.com/thecalamityjoe87)).
 
@@ -66,7 +66,7 @@ For electronic kits, the hi-hat follows the pedal continuously, with chicks and 
 
 ### Find and download kits
 
-![The kit browser: content packs on the left, kit and preset cards in the middle, and the selected kit's details and credits on the right](docs/images/browse.png)
+![The kit browser: content packs on the left, kit and kit preset cards in the middle, and the selected kit's details and credits on the right](docs/images/browse.png)
 
 The kit browser shows every kit and kit preset, searchable by name, style or tag, with each one's credits. Libraries you haven't downloaded yet are there too, greyed out, with a Download button.
 
@@ -165,7 +165,7 @@ Each system gets a graphical installer that shows the two ways to use Lithium Dr
 
 Running the Linux installer again offers Update and Remove; Remove deletes only what it installed (it keeps a list in `~/.local/share/lithium-drums/install.json`), never kits, presets or settings. It also runs from a terminal: `./"Install Lithium Drums" --install` (or `--remove`).
 
-`.github/workflows/release.yml` builds all three on GitHub's machines: run it from the Actions tab, or push a version tag (`v0.9.3`) to get a draft release with the installers attached. Unsigned, Windows shows a SmartScreen warning and macOS an "unidentified developer" one; the workflow's comments list the secrets that turn on macOS signing and notarization (an Apple Developer account).
+`.github/workflows/release.yml` builds all three on GitHub's machines: run it from the Actions tab, or push a version tag (`v0.9.4`) to get a draft release with the installers attached. Unsigned, Windows shows a SmartScreen warning and macOS an "unidentified developer" one; the workflow's comments list the secrets that turn on macOS signing and notarization (an Apple Developer account).
 
 The icon and the installers' artwork (`assets/icon/`) are drawn from the same code as the header's logo (`src/ui/Logo.cpp`); after changing it, run `scripts/make-icons.sh` (needs ImageMagick).
 

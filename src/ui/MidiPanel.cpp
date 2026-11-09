@@ -453,6 +453,9 @@ MidiPanel::MidiPanel (LithiumDrumsProcessor& p) : OverlayPanel ("MIDI Mapping", 
     addAndMakeVisible (keyboard);
 
     mapBox.setTooltip ("The MIDI map: which note plays what. E-kit maps follow the hi-hat pedal and positional sensing.");
+
+    for (auto* h : { &mapHelp, &inputHelp, &velocityHelp })
+        addAndMakeVisible (h);
     mapBox.onChange = [this] { chooseMap (mapBox.getSelectedId() - 1); };
 
     saveButton.setTooltip ("Save this map under a name, to use it in other projects");
@@ -588,7 +591,8 @@ void MidiPanel::showEdrums (bool show)
     setTitle (show ? "E-Drums" : "MIDI Mapping");
     edrums.setVisible (show);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &viewport, &keyboard, &invertButton, &curveEditor, &curvePresets, &globalVelocity })
+    for (auto* c : std::initializer_list<juce::Component*> { &viewport, &keyboard, &invertButton, &curveEditor, &curvePresets, &globalVelocity,
+                                                             &inputHelp, &velocityHelp })
         c->setVisible (! show);
 
     for (auto& c : controllers)
@@ -1172,7 +1176,9 @@ void MidiPanel::layoutContent (juce::Rectangle<int> area)
     area.removeFromTop (16);
 
     mapBox.setBounds (toolbar.removeFromLeft (260));
-    toolbar.removeFromLeft (10);
+    toolbar.removeFromLeft (4);
+    mapHelp.setBounds (toolbar.removeFromLeft (HelpButton::size).withSizeKeepingCentre (HelpButton::size, HelpButton::size));
+    toolbar.removeFromLeft (6);
     modifiedTag = toolbar.removeFromLeft (80);
     mappingView.setBounds (toolbar.removeFromLeft (96));
     edrumsView.setBounds (toolbar.removeFromLeft (96));
@@ -1210,6 +1216,7 @@ void MidiPanel::layoutContent (juce::Rectangle<int> area)
         card.removeFromLeft (18);
 
         velocityTitle = card.removeFromTop (24);
+        velocityHelp.setBounds (velocityTitle.removeFromRight (HelpButton::size).withSizeKeepingCentre (HelpButton::size, HelpButton::size));
         card.removeFromTop (8);
         auto row = card.removeFromTop (theme::size::button);
         presetsLabel = row.removeFromLeft (46);
@@ -1224,6 +1231,7 @@ void MidiPanel::layoutContent (juce::Rectangle<int> area)
     }
 
     auto monitor = monitorArea.reduced (18, 16);
+    inputHelp.setBounds (monitor.withHeight (22).removeFromRight (HelpButton::size).withSizeKeepingCentre (HelpButton::size, HelpButton::size));
     lastNoteArea = monitor.removeFromTop (92);
     monitor.removeFromTop (14);
 

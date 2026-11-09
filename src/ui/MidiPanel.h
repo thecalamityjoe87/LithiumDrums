@@ -88,6 +88,31 @@ private:
     juce::Rectangle<int> modifiedTag;
     juce::TextButton mappingView { "Mapping" }, edrumsView { "E-Drums" };
     EdrumsView edrums;
+
+    // Help for new users: what a map is (beside the map menu), and the Input
+    // and Velocity cards (in their top-right corners).
+    HelpButton mapHelp { "MIDI maps", {
+        "A MIDI map says which drum each MIDI note plays. Pick your e-kit's map from this menu, General MIDI for "
+        "MIDI files and keyboards, or Lithium Standard, which plays the same on every kit.",
+        "The list shows every sound of the loaded kit with the notes that play it. Click Learn on a row, then hit a "
+        "pad or click a key, to give it that note; click a note to take it away. PEDAL and POSITION make a hit follow "
+        "the hi-hat pedal or where the pad was struck. The slider at the left of a row makes that sound hit harder "
+        "or softer.",
+        "The keyboard on the right shows what each note plays; click a key to hear it, further right for harder.",
+        "Save as... keeps your changes as a map of your own, Revert throws them away, and Set as default makes new "
+        "instances start with this map." } };
+    HelpButton inputHelp { "Input", {
+        "The last note that came in and what it played, so you can check each pad.",
+        "Below it, the controllers an e-kit sends: the hi-hat pedal, and where each pad was struck. Pick the "
+        "controller (CC) your module sends for each; its bar moves when it arrives. Invert is for pedals that send "
+        "0 when closed. The E-Drums tab has the full setup for these." } };
+    HelpButton velocityHelp { "Velocity", {
+        "Changes how hard your hits come in, to suit your pads, before they pick a sound.",
+        "The curve is for the drum last clicked in the list: velocity in across, velocity out up. Drag a dot to "
+        "move it, click to add one, and double-click one to remove it. Curve offers Softer and Harder to start from.",
+        "Global works on every drum: towards Softer the hardest hits play quieter, towards Harder the softest hits "
+        "play louder.",
+        "Only MIDI notes go through these: hits from your e-kit or DAW, and clicks on the keyboard here." } };
     bool showingEdrums = false;
     double deleteArmedUntil = 0.0, defaultSavedUntil = 0.0;
 

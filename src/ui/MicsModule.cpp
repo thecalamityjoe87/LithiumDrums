@@ -361,6 +361,15 @@ namespace
 //==============================================================================
 MicsModule::MicsModule (juce::AudioProcessorValueTreeState& s) : Module ("Mics"), state (s)
 {
+    setHelp ("Mics", {
+        "How loud this drum is in each mic: its own close mic, the overheads above the kit and the room mics "
+        "further away. Reset puts them all back to 100%.",
+        "More close mic sounds tight and direct. More overheads and room sound bigger and more natural, with the "
+        "space around the kit.",
+        "Edit overheads and Edit room open those mics' own channel. When a kit wasn't recorded with overheads or a "
+        "room, Emulate builds them from the mics it has. With the overheads or room chosen in the drum menu, this "
+        "card shows how loud every drum is in them." });
+
     reset.setTooltip ("Put these levels back to 100%");
     reset.onClick = [this] { resetLevels(); };
     addAndMakeVisible (reset);

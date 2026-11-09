@@ -13,6 +13,7 @@ notes arrive):
 | Alesis | The factory note map of Alesis Nitro, Nitro Mesh, Turbo and Surge kits. |
 | 2BOX DrumIt Five MkII | Its factory notes (the manual's channel overview), with cymbal 1 as the crash, 2 as the ride and 3 as a second crash. Set the module's PED to CC4. |
 | EFNOTE 3 / 5 | Their factory notes (EFNOTE's Reference Guide): Roland-like, with the hi-hat pedal on CC4. |
+| HXM M-019 | Its notes, set up by playing a real M-019 into the MIDI monitor. The hi-hat follows the pedal (CC4), and the ride has a gentler velocity curve. |
 | Lemon T-950 | Its notes in USB mode, from a note chart rather than Lemon's own documentation. The chart gave 51 and 59 to two pads each; 51 plays the ride bow and 59 its edge, and crash 2's edge and the ride bell are left for Learn. |
 | Millenium MPS-1000 / 600 / 850 | The MPS-1000's and MPS-600's factory notes (their manuals' MIDI note lists, which agree), including the half-open hat (23), the hi-hat edges (26, 24, 22) and the pedal splash (21). The MPS-850's manual doesn't list its notes, so for it they're inferred from the other two; the MPS-450 and 150 appear to share the layout too. |
 | Yamaha DTX402 / 432 / 452 | Their factory notes (Yamaha's MIDI Reference). Their hi-hat controller is a switch, so the hats play as the module sends them. |
@@ -20,9 +21,9 @@ notes arrive):
 Each of these comes from the maker's own documentation. Some modules aren't
 here because their makers don't publish a default map: the Yamaha DTX-PRO,
 DTX6 and DTX8/10 set notes per kit (their pedal is CC4 and their snare and
-ride positions are CC16 and CC17, as in the Roland map). (The Lemon T-950 map is the
-exception to the rule above: Lemon publishes no MIDI documentation, so it
-comes from a note chart; check it with the monitor.) For those, start from General MIDI or the closest map and use
+ride positions are CC16 and CC17, as in the Roland map). (The Lemon T-950 and HXM M-019 maps are the
+exceptions to the rule above: Lemon publishes no MIDI documentation, so its map
+comes from a note chart, and the M-019's was set up on a real module with the monitor; check them with the monitor.) For those, start from General MIDI or the closest map and use
 Learn, with the MIDI monitor to see what the module sends.
 
 The Roland notes come from Roland's published TD-27 default note map, and the
@@ -102,7 +103,7 @@ each kit, they show dimmed in the MIDI panel, and learning a note for an
 articulation takes its spare note away. They never follow the pedal or a
 position.
 
-`LithiumDrumsTests --midi-audit` checks every installed kit and preset against
+`LithiumDrumsTests --midi-audit` checks every installed kit and kit preset against
 every built-in map: how much each map plays, which pieces are only on spare
 notes, that nothing is unreachable, and that every articulation makes a sound.
 

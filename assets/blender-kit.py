@@ -152,6 +152,11 @@ if 'heads' in KIT_FINISH:
     M['head'] = mat('head_k', tuple(KIT_FINISH['heads']), rough=0.75)
 if 'reso' in KIT_FINISH:
     M['reso'] = mat('reso_k', tuple(KIT_FINISH['reso']), rough=0.55, coat=0.15)
+# A rope-tensioned kit: the kick and toms have a net of cord over the shell
+# instead of lugs (the snare keeps its lugs).
+ROPE_NET = 'ropeNet' in KIT_FINISH
+if ROPE_NET:
+    M['rope_net'] = mat('rope_net', tuple(KIT_FINISH['ropeNet']['color']), rough=0.85)
 
 def smooth(o):
     for p in o.data.polygons: p.use_smooth = True
@@ -202,8 +207,51 @@ def empty(name, loc, rot):
 # little low, as on most ported front heads (drum-local x, y on the head).
 PORT_R, PORT_AT = 0.075, (0.15, -0.05)
 
+def rope_net(name, e, r, d, n, turn, hoop_r, hoop_z, hoop_top):
+    """A rope drum's net, as on the Salamander kit: n columns of ties round
+    the shell, a row near each hoop. Each tie is an X of cord: two legs up
+    over the hoop, two short legs in toward the middle of the shell, where
+    they stop, so an open band runs round the middle between the two rows.
+    Each cord follows the shell's curve (hoop_r: the hoop's outer radius;
+    hoop_z and hoop_top: its middle and its top edge, measured out from the
+    shell's end)."""
+    rr = r + 0.0025                                      # a cord lies on the shell
+    tie_in, leg_in = 0.28 * d, 0.14 * d                  # how far in from the end the ties sit, and the inner legs reach past them
+    def at(phase, z, radius=rr):
+        a = 2 * math.pi * (phase + turn) / n
+        return (radius * math.cos(a), radius * math.sin(a), z)
+    def along(p0, z0, p1, z1, steps=14):
+        return [at(p0 + (p1 - p0) * t / steps, z0 + (z1 - z0) * t / steps) for t in range(steps + 1)]
+    cords, ties = [], []
+    for k in range(n):
+        c = k + 0.5                                      # this column of ties
+        for side in (1, -1):
+            z_end, z_tie = side * d / 2, side * (d / 2 - tie_in)
+            ties.append((c, z_tie))
+            for dp in (-0.35, 0.35):
+                # Up: from over the hoop, down the shell to the tie.
+                hook = [at(c + dp, side * (d / 2 + hoop_top + 0.002), r + 0.004), at(c + dp, side * (d / 2 + hoop_z), hoop_r + 0.002)]
+                cords.append(hook + along(c + dp, z_end - side * 0.01, c, z_tie))
+                # In: a short leg toward the middle, ending in the open band.
+                cords.append(along(c, z_tie, c + dp * 0.9, z_tie - side * leg_in, steps=8))
+    cu = bpy.data.curves.new(name + '_net', 'CURVE'); cu.dimensions = '3D'
+    cu.bevel_depth = 0.0018; cu.bevel_resolution = 2
+    for pts in cords:
+        sp = cu.splines.new('POLY'); sp.points.add(len(pts) - 1)
+        for p, co in zip(sp.points, pts): p.co = (*co, 1.0)
+    ob = bpy.data.objects.new(name + '_net', cu); scn.collection.objects.link(ob)
+    # As a mesh, like everything else (the render modes only show and hide meshes).
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    bpy.data.objects.remove(ob)
+    net = bpy.data.objects.new(name + '_net', me); scn.collection.objects.link(net); smooth(net)
+    place(net, e, name, 'rope_net')
+    # The tie at each X: a few turns of cord binding its legs together.
+    for ph, z in ties:
+        blob((0.0045, 0.0045, 0.009), at(ph, z, rr + 0.001), m='rope_net', parent=e, cname=name)
+
 def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=False, wood_hoop=False, lug_turn=0.5):
     # lug_turn: where the lugs start, in lug spacings from the drum's local x axis.
+    roped = ROPE_NET and shell != 'snare_shell'   # a rope drum: a net instead of lugs
     e = empty(name, loc, rot)
     sh = cyl(r, d, (0, 0, 0), m=shell, parent=e, cname=name, verts=128, fill='NOTHING')
     sol = sh.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.006
@@ -223,7 +271,12 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=Fal
             torus(r + 0.013, 0.003, (0, 0, z - side * 0.006), m='chrome', parent=e, cname=name)
         else:
             torus(r + 0.004, 0.0055, (0, 0, z + side * 0.004), scale=(1, 1, 1.9), m='hoop', parent=e, cname=name)
-    for i in range(lugs):
+    if roped:
+        if wood_hoop:
+            rope_net(name, e, r, d, lugs, lug_turn, r + 0.016, -0.006, 0.009)       # the wooden hoop and its chrome band
+        else:
+            rope_net(name, e, r, d, lugs, lug_turn, r + 0.0095, 0.004, 0.0145)
+    for i in range(0 if roped else lugs):
         a = 2 * math.pi * (i + lug_turn) / lugs
         cx, cy = math.cos(a), math.sin(a)
         if rows == 1:
@@ -252,7 +305,7 @@ def drum(name, r, d, loc, rot, lugs, rows=1, shell='shell', reso=False, port=Fal
         # Each lug is bolted through the shell: a hex nut and the bolt's end
         # on the inside wall, top and bottom of the lug.
         hl = d * 0.22
-        for i in range(lugs):
+        for i in range(0 if roped else lugs):
             ang = 2 * math.pi * (i + lug_turn) / lugs
             cx, cy = math.cos(ang), math.sin(ang)
             # A close pair of bolts (3 cm apart) at each end of the lug.

@@ -1,5 +1,6 @@
 #include "Controls.h"
 
+#include "ModelPicker.h"
 #include "Theme.h"
 
 namespace lithium
@@ -525,6 +526,74 @@ void ReductionMeter::paint (juce::Graphics& g)
     const auto h = bounds.getHeight() * juce::jlimit (0.0f, 1.0f, shownDb / rangeDb);
     g.setColour (groupCymbals.withMultipliedAlpha (0.9f));
     g.fillRect (bounds.withHeight (h));
+}
+
+//==============================================================================
+void drawHelpMark (juce::Graphics& g, juce::Rectangle<float> ring, bool highlighted)
+{
+    using namespace theme;
+
+    g.setColour (highlighted ? colours::accent : colours::textMuted);
+    g.drawEllipse (ring.reduced (0.75f), 1.3f);
+
+    // Centred by its ink, not its text box: a font's box has room for
+    // ascenders and descenders, which would leave the mark sitting high.
+    juce::GlyphArrangement mark;
+    mark.addLineOfText (body (10.5f, Weight::bold), "?", 0.0f, 0.0f);
+    const auto ink = mark.getBoundingBox (0, -1, true);
+    mark.moveRangeOfGlyphs (0, -1, ring.getCentreX() - ink.getCentreX(), ring.getCentreY() - ink.getCentreY());
+    mark.draw (g);
+}
+
+//==============================================================================
+HelpPopover::HelpPopover (const juce::String& heading, const juce::StringArray& paragraphs)
+{
+    using namespace theme;
+    constexpr int width = 340;
+
+    juce::AttributedString text;
+    text.append (heading, body (14.5f, Weight::semibold), colours::text);
+
+    for (const auto& p : paragraphs)
+    {
+        text.append ("\n", body (14.5f), colours::text);
+        text.append ("\n", body (6.0f), colours::text);     // a short gap between paragraphs
+        text.append (p, body (type::small), colours::text.withAlpha (0.88f));
+    }
+
+    text.setWordWrap (juce::AttributedString::byWord);
+    layout.createLayout (text, (float) (width - 2 * padding));
+    setSize (width, juce::roundToInt (layout.getHeight()) + 2 * padding);
+}
+
+void HelpPopover::paint (juce::Graphics& g)
+{
+    layout.draw (g, getLocalBounds().reduced (padding).toFloat());
+}
+
+void HelpPopover::show (juce::Component& from, juce::Rectangle<int> target, const juce::String& heading, const juce::StringArray& paragraphs)
+{
+    // The call-out owns the popover and deletes it when it closes (a click elsewhere, or Escape).
+    if (auto* parent = findOverlayParent (from))
+        juce::CallOutBox::launchAsynchronously (std::make_unique<HelpPopover> (heading, paragraphs), parent->getLocalArea (&from, target), parent);
+}
+
+//==============================================================================
+HelpButton::HelpButton (juce::String h, juce::StringArray p) : juce::Button ("Help: " + h), heading (std::move (h)), paragraphs (std::move (p))
+{
+    setTooltip ("What " + heading + " does");
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    setWantsKeyboardFocus (false);
+}
+
+void HelpButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    drawHelpMark (g, getLocalBounds().toFloat().withSizeKeepingCentre (14.0f, 14.0f), highlighted || down);
+}
+
+void HelpButton::clicked()
+{
+    HelpPopover::show (*this, getLocalBounds(), heading, paragraphs);
 }
 
 } // namespace lithium

@@ -568,6 +568,7 @@ std::vector<MidiMap> MidiMap::factoryMaps()
     return { lithiumStandard(), kitDefault(), generalMidi(), rolandVDrums(), alesis(),
              builtIn (LithiumAssets::drumitfive_json, LithiumAssets::drumitfive_jsonSize),
              builtIn (LithiumAssets::efnote_json, LithiumAssets::efnote_jsonSize),
+             builtIn (LithiumAssets::hxmm019_json, LithiumAssets::hxmm019_jsonSize),
              builtIn (LithiumAssets::lemont950_json, LithiumAssets::lemont950_jsonSize),
              builtIn (LithiumAssets::milleniummps1000_json, LithiumAssets::milleniummps1000_jsonSize),
              builtIn (LithiumAssets::yamahadtx402_json, LithiumAssets::yamahadtx402_jsonSize) };

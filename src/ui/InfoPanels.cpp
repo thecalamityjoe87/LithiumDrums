@@ -564,7 +564,7 @@ void AboutPanel::refresh()
 
         const auto& c = k.credits();
         add (std::make_unique<CreditRow> (CreditRow::Content {
-            c.name, c.author, c.basedOn.isNotEmpty() ? "Preset of " + c.basedOn : juce::String(),
+            c.name, c.author, c.basedOn.isNotEmpty() ? "Kit preset of " + c.basedOn : juce::String(),
             c.credits.isNotEmpty() ? c.credits : c.description, c.licenseName, c.licenseUrl, c.sourceUrl, c.licenseFile }));
     }
 

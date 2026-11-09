@@ -22,6 +22,11 @@
 // the group. They're built from recipes by tools/presetgen. The file is XML,
 // so it can be read and diffed by hand.
 
+namespace lithium::kitlibrary
+{
+struct Library;
+}
+
 namespace lithium::presets
 {
 
@@ -55,6 +60,21 @@ struct Contents
 
 juce::Result read (const juce::File&, Contents&);
 juce::Result write (const juce::File&, const Contents&);
+
+/** The kit a preset plays, as saved in it. */
+struct KitRef
+{
+    juce::String id, path, name;
+};
+
+/** Reads just the kit a preset plays (only the file's outer element, so it's
+    quick enough to call for every preset when listing them). Empty if the
+    file isn't a preset. */
+KitRef readKit (const juce::File&);
+
+/** Whether the kit a preset plays is installed, found the way loading the
+    preset finds it. */
+bool isKitInstalled (const KitRef&, const kitlibrary::Library&);
 
 /** The preset's name: its file name. */
 juce::String nameOf (const juce::File&);
