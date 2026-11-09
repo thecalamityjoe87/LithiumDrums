@@ -47,6 +47,12 @@ public:
         in a new kit while we still point into the old one). */
     void show (std::shared_ptr<const KitInfo>, params::ChannelId);
 
+    /** Lights a drum up as it plays, as the Kit tab's stage does: for every
+        hit (a click here, Strike, MIDI from an e-kit or the host, a groove).
+        A drum the card doesn't show is ignored. Several can be lit at once,
+        each fading on its own (see kitart::makeFlashImage). */
+    void flash (int piece);
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseEnter (const juce::MouseEvent&) override;
@@ -108,8 +114,6 @@ private:
         std::vector<HitLayer> hitLayers;       // back to front
     };
 
-    /** Lights a drum up as it's clicked, as on the Kit tab's stage (see kitart::makeFlashImage). */
-    void startFlash (int piece);
     void drawFlash (juce::Graphics&) const;
 
     /** A mic render (assets/renders/mics) placed on the card, and where its
@@ -179,10 +183,18 @@ private:
     KitPicture kitPicture;
 
     // The flash under way: its picture, where it's drawn on the card, and how bright it is now (0: none).
-    juce::Image flashImage;
-    juce::Rectangle<float> flashArea;
-    double flashStartMs = 0.0;
-    float flashLevel = 0.0f;
+    // The drums lit up by their last hit, fading out (one each).
+    struct Flash
+    {
+        int piece = -1;
+        juce::Image image;                 // the drum's flash (shared, not a copy)
+        juce::Rectangle<float> area;
+        double startMs = 0.0;
+        float level = 1.0f;
+    };
+
+    std::vector<Flash> flashes;
+    juce::Image drumFlash;                 // the drum view's flash, made on its first hit and kept until the picture changes
     juce::Image cleanBase;                     // the base stage layer without its floor shadow (see buildKitPicture())
 
     // Geometry, worked out in resized() so the knobs and the picture agree.

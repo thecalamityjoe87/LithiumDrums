@@ -51,6 +51,7 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void selectedPieceChanged (int) override;
     void timerCallback() override;
+    void flashPlayedDrums();
     void updateKitInfo();
     void rebuildMenu();                     // the drum menu: the drums, then the mic channels
     void showPiece (int);
@@ -68,6 +69,8 @@ private:
     int piece = -1, articulation = 0;
     int micChannel = -1;                       // the mic slot shown instead of a drum, or -1
     std::uint32_t seenHits = 0;
+    std::vector<std::uint32_t> micsSeenHits;   // every drum's hit count, for lighting it up on the Mics card
+    const KitInfo* micsSeenKit = nullptr;      // the kit those counts belong to
     juce::String lastHitText;
 
     // Piece card

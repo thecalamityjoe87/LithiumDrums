@@ -434,8 +434,8 @@ void MicsModule::show (std::shared_ptr<const KitInfo> k, params::ChannelId chann
     entries.clear();
     hovered = -1;
     drumPicture = {};
-    flashLevel = 0.0f;
-    flashImage = {};
+    flashes.clear();
+    drumFlash = {};
     overlay = {};
     view = View::none;
     kit = std::move (k);
@@ -702,13 +702,20 @@ void MicsModule::timerCallback()
     if (! isShowing())
         return;
 
-    // The hit flash fading out.
-    if (flashLevel > 0.0f)
+    // The hit flashes fading out.
+    if (! flashes.empty())
     {
-        flashLevel = (float) juce::jmax (0.0, 1.0 - (juce::Time::getMillisecondCounterHiRes() - flashStartMs) / kitart::flashDurationMs);
-        repaint (flashArea.getSmallestIntegerContainer().expanded (2));
+        const auto now = juce::Time::getMillisecondCounterHiRes();
 
-        if (flashLevel <= 0.0f)
+        for (auto& f : flashes)
+        {
+            f.level = (float) juce::jmax (0.0, 1.0 - (now - f.startMs) / kitart::flashDurationMs);
+            repaint (f.area.getSmallestIntegerContainer().expanded (2));
+        }
+
+        std::erase_if (flashes, [] (const Flash& f) { return f.level <= 0.0f; });
+
+        if (flashes.empty())
             startTimerHz (30);
     }
 
@@ -826,6 +833,7 @@ void MicsModule::resized()
         const auto box = juce::Rectangle<float> (c.getX() + c.getWidth() * 0.47f - size.x * 0.5f, boxTop, size.x, size.y);
         drumPicture.area = placePicture (drumPicture.full, box, plate);
         drumPicture.scaled = scaledFor (drumPicture.full, drumPicture.area);
+        drumFlash = {};          // made again from the new size on the next hit
         const auto aimShare = aimOnPicture (role);
         drumPicture.aim = drumPicture.area.getRelativePoint (aimShare.x, aimShare.y);
         const auto& drum = drumPicture.area;
@@ -1412,20 +1420,21 @@ void MicsModule::mouseDown (const juce::MouseEvent& e)
     if (const auto piece = drumAt (e.position); piece >= 0)
     {
         onStrike (piece);
-        startFlash (piece);
+        flash (piece);
     }
 }
 
-void MicsModule::startFlash (int piece)
+void MicsModule::flash (int piece)
 {
-    if (flashLevel > 0.0f)
-        repaint (flashArea.getSmallestIntegerContainer().expanded (2));   // the last one, cut short
+    juce::Image flashImage;
+    juce::Rectangle<float> flashArea;
 
-    flashImage = {};
-
-    if (view == View::drum && piece == drumPicture.piece)
+    if (view == View::drum && piece == drumPicture.piece && drumPicture.scaled.isValid())
     {
-        flashImage = kitart::makeFlashImage (drumPicture.scaled);
+        if (! drumFlash.isValid())
+            drumFlash = kitart::makeFlashImage (drumPicture.scaled);
+
+        flashImage = drumFlash;
         flashArea = drumPicture.area;
     }
     else if (view == View::mic && kitPicture.full.isValid())
@@ -1470,19 +1479,29 @@ void MicsModule::startFlash (int piece)
     if (! flashImage.isValid())
         return;
 
-    flashStartMs = juce::Time::getMillisecondCounterHiRes();
-    flashLevel = 1.0f;
-    startTimerHz (60);   // the stage's rate, for a smooth fade; back to 30 once it's over
+    // A drum hit again while it's still lit starts its fade over.
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+    const auto it = std::find_if (flashes.begin(), flashes.end(), [piece] (const Flash& f) { return f.piece == piece; });
+
+    if (it != flashes.end())
+        *it = { piece, flashImage, flashArea, now, 1.0f };
+    else
+        flashes.push_back ({ piece, flashImage, flashArea, now, 1.0f });
+
+    if (flashes.size() == 1)
+        startTimerHz (60);   // the stage's rate, for a smooth fade; back to 30 once they're over
+
     repaint (flashArea.getSmallestIntegerContainer().expanded (2));
 }
 
 void MicsModule::drawFlash (juce::Graphics& g) const
 {
-    if (flashLevel <= 0.0f || ! flashImage.isValid())
-        return;
+    for (const auto& f : flashes)
+    {
+        g.setOpacity (f.level * 0.8f);
+        g.drawImage (f.image, f.area);
+    }
 
-    g.setOpacity (flashLevel * 0.8f);
-    g.drawImage (flashImage, flashArea);
     g.setOpacity (1.0f);
 }
 

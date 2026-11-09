@@ -635,11 +635,45 @@ void EditPage::showArticulation (int a)
     repaint();
 }
 
+void EditPage::flashPlayedDrums()
+{
+    // Every drum that played since the last tick lights up on the Mics card,
+    // whatever played it (MIDI, a groove, Strike), as on the Kit tab's stage.
+    // The card ignores drums it doesn't show.
+    const auto& hits = processor.getFeedback().pieceHits;
+    const auto count = shownKit != nullptr ? std::min (shownKit->pieces.size(), hits.size()) : size_t (0);
+
+    if (shownKit.get() != micsSeenKit || micsSeenHits.size() != count)
+    {
+        // A new kit: start counting from now, so nothing lights up for hits from before.
+        micsSeenKit = shownKit.get();
+        micsSeenHits.resize (count);
+
+        for (size_t i = 0; i < count; ++i)
+            micsSeenHits[i] = hits[i].load (std::memory_order_relaxed);
+
+        return;
+    }
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (const auto h = hits[i].load (std::memory_order_relaxed); h != micsSeenHits[i])
+        {
+            micsSeenHits[i] = h;
+
+            if (mics.isShowing())
+                mics.flash ((int) i);
+        }
+    }
+}
+
 void EditPage::timerCallback()
 {
     // An emulated pair switched on or off changes the drum menu.
     if (shownKit != nullptr)
         updateKitInfo();
+
+    flashPlayedDrums();
 
     if (micChannel >= 0)
     {
