@@ -49,6 +49,31 @@ namespace
         return root.getChildFile (parts.joinIntoString ("/"));
     }
 
+    /** True for the hidden files macOS leaves in archives made on a Mac, which
+        a kit or groove pack never needs: "Icon\r" (a folder's custom icon),
+        .DS_Store, "._" resource forks and the __MACOSX folder. "Icon\r" also
+        can't be created on Windows at all, since a file name there can't hold
+        a control character, so it has to be skipped rather than written. Any
+        other name with a control character in it is skipped for that reason. */
+    bool isMacMetadata (const juce::String& entryName)
+    {
+        juce::StringArray parts;
+        parts.addTokens (entryName.replaceCharacter ('\\', '/'), "/", {});
+        parts.removeEmptyStrings();
+
+        for (const auto& part : parts)
+        {
+            if (part == "__MACOSX" || part == ".DS_Store" || part.startsWith ("._"))
+                return true;
+
+            for (auto p = part.getCharPointer(); ! p.isEmpty(); ++p)
+                if (*p < 0x20 || *p == 0x7f)
+                    return true;
+        }
+
+        return false;
+    }
+
     /** Copies `length` bytes (or until the stream ends, if negative) into a
         file. reportProgress gets the bytes written so far. */
     juce::Result writeFile (juce::InputStream& in, std::int64_t length, const juce::File& dest,
@@ -206,7 +231,7 @@ namespace
                 continue;
             }
 
-            const auto dest = safeDestination (root, name);
+            const auto dest = isMacMetadata (name) ? juce::File() : safeDestination (root, name);
 
             if (type == '5')
             {
@@ -226,7 +251,7 @@ namespace
                 continue;
             }
 
-            // Links, devices, and anything that would land outside the destination: skipped.
+            // Links, devices, macOS metadata, and anything that would land outside the destination: skipped.
             if (! skip (size + padding (size)))
                 return juce::Result::fail ("The tar archive ends early");
         }
@@ -366,8 +391,7 @@ namespace
         {
             const auto dest = safeDestination (root, e.name);
 
-            // macOS adds resource forks under __MACOSX; they're of no use here.
-            if (dest == juce::File() || e.isLink || e.name.startsWith ("__MACOSX/"))
+            if (dest == juce::File() || e.isLink || isMacMetadata (e.name))
             {
                 done += e.compressedSize;
                 continue;
@@ -647,12 +671,22 @@ namespace
                     continue;
                 }
 
+                juce::SubregionStream file (&stream, stream.getPosition(), size, false);
+
+                if (isMacMetadata (name))
+                {
+                    // Decoded and dropped: the folder's next file follows it in the stream.
+                    juce::HeapBlock<char> rest (chunkSize);
+
+                    while (file.read (rest, chunkSize) > 0) {}
+
+                    continue;
+                }
+
                 const auto dest = safeDestination (root, name);
 
                 if (dest == juce::File())
                     return juce::Result::fail ("An entry would land outside the folder: " + name);
-
-                juce::SubregionStream file (&stream, stream.getPosition(), size, false);
 
                 if (const auto r = writeFile (file, size, dest, [&] (std::int64_t) { return ! progress || progress (fraction()); }); r.failed())
                     return r;
@@ -660,7 +694,7 @@ namespace
 
             for (auto i = db.FolderToFile[f]; i < db.FolderToFile[f + 1]; ++i)
                 if (SzArEx_IsDir (&db, i))
-                    if (const auto dest = safeDestination (root, fileName (db, i)); dest != juce::File())
+                    if (const auto dest = safeDestination (root, fileName (db, i)); dest != juce::File() && ! isMacMetadata (fileName (db, i)))
                         dest.createDirectory();
         }
 
@@ -672,7 +706,7 @@ namespace
 
             const auto dest = safeDestination (root, fileName (db, i));
 
-            if (dest == juce::File())
+            if (dest == juce::File() || isMacMetadata (fileName (db, i)))
                 continue;
 
             if (SzArEx_IsDir (&db, i))

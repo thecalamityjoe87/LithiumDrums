@@ -204,6 +204,25 @@ public:
             expect (packs::extract (write ("garbage.zip", garbage.data(), garbage.size()), root.getChildFile ("garbage")).failed());
         }
 
+        beginTest ("Zip: macOS metadata (Icon\\r, .DS_Store, ._ forks, __MACOSX) is skipped");
+        {
+            // The Groove MIDI Dataset's zip has an empty "Icon\r" in every folder, which Windows can't create.
+            const auto zip = makeStoredZip ({ { "groove/Icon\r", "" },
+                                              { "groove/drummer1/Icon\r", "" },
+                                              { "groove/.DS_Store", "x" },
+                                              { "groove/._beat.mid", "x" },
+                                              { "__MACOSX/groove/._beat.mid", "x" },
+                                              { "groove/drummer1/beat.mid", "midi" } }, false);
+            const auto dest = root.getChildFile ("mac");
+            const auto r = packs::extract (write ("mac.zip", zip.getData(), zip.getSize()), dest);
+            expect (r.wasOk(), r.getErrorMessage());
+            expectEquals (dest.getChildFile ("groove/drummer1/beat.mid").loadFileAsString(), juce::String ("midi"));
+            expect (! dest.getChildFile ("groove/Icon\r").exists());
+            expect (! dest.getChildFile ("groove/.DS_Store").exists());
+            expect (! dest.getChildFile ("groove/._beat.mid").exists());
+            expect (! dest.getChildFile ("__MACOSX").exists());
+        }
+
         beginTest ("Tar: long names, folders, and no climbing out or links");
         {
             const auto tar = makeTar();
