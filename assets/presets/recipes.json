@@ -415,12 +415,12 @@
     {
       "name": "Stone Hall",
       "group": "Rock",
-      "kit": "tchimera",
-      "description": "Seventies hard rock in a big hall: a punchy kick, maple toms tuned down and left to ring, a cracking snare, all on hot tape.",
+      "kit": "tchimera-open-kick",
+      "description": "Seventies hard rock in a big hall: the open kick tuned down and tightened, maple toms tuned down and left to ring, a cracking snare, all on hot tape.",
       "makeup": "master_tape_output",
       "pieces": {
         "all": { "room_send": -12 },
-        "kick": { "tune": -0.5, "eq_low_freq": 60, "eq_low_gain": 3, "eq_mid1_freq": 300, "eq_mid1_gain": -3, "eq_mid2_freq": 2500, "eq_mid2_gain": 1.5, "comp_on": true, "comp_threshold": -18, "comp_ratio": 3, "comp_attack": 25, "comp_release": 150, "room_send": -14 },
+        "kick": { "volume": -1.5, "tune": -3.5, "eq_hpf": 35, "eq_low_freq": 70, "eq_low_gain": 1.5, "eq_mid1_freq": 380, "eq_mid1_gain": -5, "eq_mid1_q": 1.4, "eq_mid2_freq": 3000, "eq_mid2_gain": 3, "comp_on": true, "comp_threshold": -18, "comp_ratio": 3, "comp_attack": 25, "comp_release": 150, "sat_on": true, "sat_drive": 6, "sat_mix": 50, "room_send": -14 },
         "snare": { "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 2, "eq_mid2_freq": 4000, "eq_mid2_gain": 2, "comp_on": true, "comp_threshold": -20, "comp_ratio": 3, "comp_attack": 12, "comp_release": 120, "comp_makeup": 2, "room_send": -8 },
         "toms": { "tune": -1, "eq_low_freq": 100, "eq_low_gain": 2, "eq_mid1_freq": 450, "eq_mid1_gain": -3, "room_send": -8 },
         "hihat": { "volume": -2, "eq_hpf": 250 },

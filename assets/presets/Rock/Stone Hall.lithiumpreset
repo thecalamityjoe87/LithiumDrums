@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<LithiumPreset formatVersion="2" kitId="tchimera" kitPath="" kitName="Tchimera Drum Kit"
-               description="Seventies hard rock in a big hall: a punchy kick, maple toms tuned down and left to ring, a cracking snare, all on hot tape.">
+<LithiumPreset formatVersion="2" kitId="tchimera-open-kick" kitPath="" kitName="Tchimera Open Kick"
+               description="Seventies hard rock in a big hall: the open kick tuned down and tightened, maple toms tuned down and left to ring, a cracking snare, all on hot tape.">
   <swaps/>
   <LithiumDrums>
     <PARAM id="delay_feedback" value="35.0"/>
@@ -47,12 +47,12 @@
     <PARAM id="master_limit_release" value="60.0"/>
     <PARAM id="master_tape_drive" value="8.0"/>
     <PARAM id="master_tape_on" value="1.0"/>
-    <PARAM id="master_tape_output" value="4.700000762939453"/>
+    <PARAM id="master_tape_output" value="4.5"/>
     <PARAM id="master_tape_tone" value="5.0"/>
     <PARAM id="master_trans_attack" value="0.0"/>
     <PARAM id="master_trans_on" value="0.0"/>
     <PARAM id="master_trans_sustain" value="0.0"/>
-    <PARAM id="master_volume" value="2.299999237060547"/>
+    <PARAM id="master_volume" value="2.900001525878906"/>
     <PARAM id="mic10_comp_attack" value="10.00000190734863"/>
     <PARAM id="mic10_comp_makeup" value="0.0"/>
     <PARAM id="mic10_comp_mix" value="100.0"/>
@@ -897,7 +897,7 @@
     <PARAM id="mic_emulate_room" value="0.0"/>
     <PARAM id="mic_emulated_room" value="0.0"/>
     <PARAM id="piece10_attack" value="0.1000000014901161"/>
-    <PARAM id="piece10_choke_note" value="88.0"/>
+    <PARAM id="piece10_choke_note" value="86.0"/>
     <PARAM id="piece10_comp_attack" value="10.00000190734863"/>
     <PARAM id="piece10_comp_makeup" value="0.0"/>
     <PARAM id="piece10_comp_mix" value="100.0"/>
@@ -943,10 +943,10 @@
     <PARAM id="piece10_trans_on" value="0.0"/>
     <PARAM id="piece10_trans_sustain" value="0.0"/>
     <PARAM id="piece10_tune" value="0.0"/>
-    <PARAM id="piece10_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece10_volume" value="-1.399997711181641"/>
     <PARAM id="piece10_width" value="100.0"/>
     <PARAM id="piece11_attack" value="0.1000000014901161"/>
-    <PARAM id="piece11_choke_note" value="90.0"/>
+    <PARAM id="piece11_choke_note" value="88.0"/>
     <PARAM id="piece11_comp_attack" value="10.00000190734863"/>
     <PARAM id="piece11_comp_makeup" value="0.0"/>
     <PARAM id="piece11_comp_mix" value="100.0"/>
@@ -992,10 +992,10 @@
     <PARAM id="piece11_trans_on" value="0.0"/>
     <PARAM id="piece11_trans_sustain" value="0.0"/>
     <PARAM id="piece11_tune" value="0.0"/>
-    <PARAM id="piece11_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece11_volume" value="-1.399997711181641"/>
     <PARAM id="piece11_width" value="100.0"/>
     <PARAM id="piece12_attack" value="0.1000000014901161"/>
-    <PARAM id="piece12_choke_note" value="-1.0"/>
+    <PARAM id="piece12_choke_note" value="90.0"/>
     <PARAM id="piece12_comp_attack" value="10.00000190734863"/>
     <PARAM id="piece12_comp_makeup" value="0.0"/>
     <PARAM id="piece12_comp_mix" value="100.0"/>
@@ -1008,7 +1008,7 @@
     <PARAM id="piece12_dynamics" value="0.0"/>
     <PARAM id="piece12_eq_high_freq" value="8000.0"/>
     <PARAM id="piece12_eq_high_gain" value="0.0"/>
-    <PARAM id="piece12_eq_hpf" value="20.0"/>
+    <PARAM id="piece12_eq_hpf" value="179.9999389648438"/>
     <PARAM id="piece12_eq_low_freq" value="100.0"/>
     <PARAM id="piece12_eq_low_gain" value="0.0"/>
     <PARAM id="piece12_eq_mid1_freq" value="400.0"/>
@@ -1026,7 +1026,7 @@
     <PARAM id="piece12_pitch_env" value="0.0"/>
     <PARAM id="piece12_pitch_env_time" value="60.0"/>
     <PARAM id="piece12_reverb_send" value="-60.0"/>
-    <PARAM id="piece12_room_send" value="-60.0"/>
+    <PARAM id="piece12_room_send" value="-12.0"/>
     <PARAM id="piece12_sat_drive" value="6.0"/>
     <PARAM id="piece12_sat_mix" value="100.0"/>
     <PARAM id="piece12_sat_on" value="0.0"/>
@@ -1041,7 +1041,7 @@
     <PARAM id="piece12_trans_on" value="0.0"/>
     <PARAM id="piece12_trans_sustain" value="0.0"/>
     <PARAM id="piece12_tune" value="0.0"/>
-    <PARAM id="piece12_volume" value="0.0"/>
+    <PARAM id="piece12_volume" value="-1.399997711181641"/>
     <PARAM id="piece12_width" value="100.0"/>
     <PARAM id="piece13_attack" value="0.1000000014901161"/>
     <PARAM id="piece13_choke_note" value="-1.0"/>
@@ -1400,14 +1400,14 @@
     <PARAM id="piece1_dynamics" value="0.0"/>
     <PARAM id="piece1_eq_high_freq" value="8000.0"/>
     <PARAM id="piece1_eq_high_gain" value="0.0"/>
-    <PARAM id="piece1_eq_hpf" value="20.0"/>
-    <PARAM id="piece1_eq_low_freq" value="59.99999237060547"/>
-    <PARAM id="piece1_eq_low_gain" value="3.0"/>
-    <PARAM id="piece1_eq_mid1_freq" value="299.9999389648438"/>
-    <PARAM id="piece1_eq_mid1_gain" value="-3.0"/>
-    <PARAM id="piece1_eq_mid1_q" value="1.0"/>
-    <PARAM id="piece1_eq_mid2_freq" value="2500.000244140625"/>
-    <PARAM id="piece1_eq_mid2_gain" value="1.5"/>
+    <PARAM id="piece1_eq_hpf" value="35.0"/>
+    <PARAM id="piece1_eq_low_freq" value="69.99998474121094"/>
+    <PARAM id="piece1_eq_low_gain" value="1.5"/>
+    <PARAM id="piece1_eq_mid1_freq" value="379.9999694824219"/>
+    <PARAM id="piece1_eq_mid1_gain" value="-5.0"/>
+    <PARAM id="piece1_eq_mid1_q" value="1.399999976158142"/>
+    <PARAM id="piece1_eq_mid2_freq" value="3000.000244140625"/>
+    <PARAM id="piece1_eq_mid2_gain" value="3.0"/>
     <PARAM id="piece1_eq_mid2_q" value="1.0"/>
     <PARAM id="piece1_eq_on" value="1.0"/>
     <PARAM id="piece1_fader" value="0.0"/>
@@ -1420,8 +1420,8 @@
     <PARAM id="piece1_reverb_send" value="-60.0"/>
     <PARAM id="piece1_room_send" value="-14.0"/>
     <PARAM id="piece1_sat_drive" value="6.0"/>
-    <PARAM id="piece1_sat_mix" value="100.0"/>
-    <PARAM id="piece1_sat_on" value="0.0"/>
+    <PARAM id="piece1_sat_mix" value="50.0"/>
+    <PARAM id="piece1_sat_on" value="1.0"/>
     <PARAM id="piece1_send_close" value="100.0"/>
     <PARAM id="piece1_send_overheads" value="100.0"/>
     <PARAM id="piece1_send_pre" value="0.0"/>
@@ -1432,8 +1432,8 @@
     <PARAM id="piece1_trans_attack" value="0.0"/>
     <PARAM id="piece1_trans_on" value="0.0"/>
     <PARAM id="piece1_trans_sustain" value="0.0"/>
-    <PARAM id="piece1_tune" value="-0.5"/>
-    <PARAM id="piece1_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece1_tune" value="-3.5"/>
+    <PARAM id="piece1_volume" value="-2.899997711181641"/>
     <PARAM id="piece1_width" value="100.0"/>
     <PARAM id="piece20_attack" value="0.1000000014901161"/>
     <PARAM id="piece20_choke_note" value="-1.0"/>
@@ -1682,26 +1682,26 @@
     <PARAM id="piece24_width" value="100.0"/>
     <PARAM id="piece2_attack" value="0.1000000014901161"/>
     <PARAM id="piece2_choke_note" value="-1.0"/>
-    <PARAM id="piece2_comp_attack" value="11.99999904632568"/>
-    <PARAM id="piece2_comp_makeup" value="2.0"/>
+    <PARAM id="piece2_comp_attack" value="25.0000057220459"/>
+    <PARAM id="piece2_comp_makeup" value="0.0"/>
     <PARAM id="piece2_comp_mix" value="100.0"/>
     <PARAM id="piece2_comp_on" value="1.0"/>
     <PARAM id="piece2_comp_ratio" value="3.0"/>
-    <PARAM id="piece2_comp_release" value="120.0"/>
-    <PARAM id="piece2_comp_threshold" value="-20.0"/>
+    <PARAM id="piece2_comp_release" value="150.0"/>
+    <PARAM id="piece2_comp_threshold" value="-18.0"/>
     <PARAM id="piece2_decay" value="100.0"/>
     <PARAM id="piece2_delay_send" value="-60.0"/>
     <PARAM id="piece2_dynamics" value="0.0"/>
     <PARAM id="piece2_eq_high_freq" value="8000.0"/>
     <PARAM id="piece2_eq_high_gain" value="0.0"/>
-    <PARAM id="piece2_eq_hpf" value="80.0"/>
-    <PARAM id="piece2_eq_low_freq" value="200.0000152587891"/>
-    <PARAM id="piece2_eq_low_gain" value="2.0"/>
-    <PARAM id="piece2_eq_mid1_freq" value="400.0"/>
-    <PARAM id="piece2_eq_mid1_gain" value="0.0"/>
-    <PARAM id="piece2_eq_mid1_q" value="1.0"/>
-    <PARAM id="piece2_eq_mid2_freq" value="3999.999267578125"/>
-    <PARAM id="piece2_eq_mid2_gain" value="2.0"/>
+    <PARAM id="piece2_eq_hpf" value="35.0"/>
+    <PARAM id="piece2_eq_low_freq" value="69.99998474121094"/>
+    <PARAM id="piece2_eq_low_gain" value="1.5"/>
+    <PARAM id="piece2_eq_mid1_freq" value="379.9999694824219"/>
+    <PARAM id="piece2_eq_mid1_gain" value="-5.0"/>
+    <PARAM id="piece2_eq_mid1_q" value="1.399999976158142"/>
+    <PARAM id="piece2_eq_mid2_freq" value="3000.000244140625"/>
+    <PARAM id="piece2_eq_mid2_gain" value="3.0"/>
     <PARAM id="piece2_eq_mid2_q" value="1.0"/>
     <PARAM id="piece2_eq_on" value="1.0"/>
     <PARAM id="piece2_fader" value="0.0"/>
@@ -1712,10 +1712,10 @@
     <PARAM id="piece2_pitch_env" value="0.0"/>
     <PARAM id="piece2_pitch_env_time" value="60.0"/>
     <PARAM id="piece2_reverb_send" value="-60.0"/>
-    <PARAM id="piece2_room_send" value="-8.0"/>
+    <PARAM id="piece2_room_send" value="-14.0"/>
     <PARAM id="piece2_sat_drive" value="6.0"/>
-    <PARAM id="piece2_sat_mix" value="100.0"/>
-    <PARAM id="piece2_sat_on" value="0.0"/>
+    <PARAM id="piece2_sat_mix" value="50.0"/>
+    <PARAM id="piece2_sat_on" value="1.0"/>
     <PARAM id="piece2_send_close" value="100.0"/>
     <PARAM id="piece2_send_overheads" value="100.0"/>
     <PARAM id="piece2_send_pre" value="0.0"/>
@@ -1726,31 +1726,31 @@
     <PARAM id="piece2_trans_attack" value="0.0"/>
     <PARAM id="piece2_trans_on" value="0.0"/>
     <PARAM id="piece2_trans_sustain" value="0.0"/>
-    <PARAM id="piece2_tune" value="0.0"/>
-    <PARAM id="piece2_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece2_tune" value="-3.5"/>
+    <PARAM id="piece2_volume" value="-2.899997711181641"/>
     <PARAM id="piece2_width" value="100.0"/>
     <PARAM id="piece3_attack" value="0.1000000014901161"/>
     <PARAM id="piece3_choke_note" value="-1.0"/>
-    <PARAM id="piece3_comp_attack" value="10.00000190734863"/>
-    <PARAM id="piece3_comp_makeup" value="0.0"/>
+    <PARAM id="piece3_comp_attack" value="11.99999904632568"/>
+    <PARAM id="piece3_comp_makeup" value="2.0"/>
     <PARAM id="piece3_comp_mix" value="100.0"/>
-    <PARAM id="piece3_comp_on" value="0.0"/>
-    <PARAM id="piece3_comp_ratio" value="4.0"/>
+    <PARAM id="piece3_comp_on" value="1.0"/>
+    <PARAM id="piece3_comp_ratio" value="3.0"/>
     <PARAM id="piece3_comp_release" value="120.0"/>
-    <PARAM id="piece3_comp_threshold" value="-18.0"/>
+    <PARAM id="piece3_comp_threshold" value="-20.0"/>
     <PARAM id="piece3_decay" value="100.0"/>
     <PARAM id="piece3_delay_send" value="-60.0"/>
     <PARAM id="piece3_dynamics" value="0.0"/>
     <PARAM id="piece3_eq_high_freq" value="8000.0"/>
     <PARAM id="piece3_eq_high_gain" value="0.0"/>
-    <PARAM id="piece3_eq_hpf" value="250.0000152587891"/>
-    <PARAM id="piece3_eq_low_freq" value="100.0"/>
-    <PARAM id="piece3_eq_low_gain" value="0.0"/>
+    <PARAM id="piece3_eq_hpf" value="80.0"/>
+    <PARAM id="piece3_eq_low_freq" value="200.0000152587891"/>
+    <PARAM id="piece3_eq_low_gain" value="2.0"/>
     <PARAM id="piece3_eq_mid1_freq" value="400.0"/>
     <PARAM id="piece3_eq_mid1_gain" value="0.0"/>
     <PARAM id="piece3_eq_mid1_q" value="1.0"/>
-    <PARAM id="piece3_eq_mid2_freq" value="2500.000244140625"/>
-    <PARAM id="piece3_eq_mid2_gain" value="0.0"/>
+    <PARAM id="piece3_eq_mid2_freq" value="3999.999267578125"/>
+    <PARAM id="piece3_eq_mid2_gain" value="2.0"/>
     <PARAM id="piece3_eq_mid2_q" value="1.0"/>
     <PARAM id="piece3_eq_on" value="1.0"/>
     <PARAM id="piece3_fader" value="0.0"/>
@@ -1761,7 +1761,7 @@
     <PARAM id="piece3_pitch_env" value="0.0"/>
     <PARAM id="piece3_pitch_env_time" value="60.0"/>
     <PARAM id="piece3_reverb_send" value="-60.0"/>
-    <PARAM id="piece3_room_send" value="-12.0"/>
+    <PARAM id="piece3_room_send" value="-8.0"/>
     <PARAM id="piece3_sat_drive" value="6.0"/>
     <PARAM id="piece3_sat_mix" value="100.0"/>
     <PARAM id="piece3_sat_on" value="0.0"/>
@@ -1776,7 +1776,7 @@
     <PARAM id="piece3_trans_on" value="0.0"/>
     <PARAM id="piece3_trans_sustain" value="0.0"/>
     <PARAM id="piece3_tune" value="0.0"/>
-    <PARAM id="piece3_volume" value="-2.700000762939453"/>
+    <PARAM id="piece3_volume" value="-1.399997711181641"/>
     <PARAM id="piece3_width" value="100.0"/>
     <PARAM id="piece4_attack" value="0.1000000014901161"/>
     <PARAM id="piece4_choke_note" value="-1.0"/>
@@ -1792,11 +1792,11 @@
     <PARAM id="piece4_dynamics" value="0.0"/>
     <PARAM id="piece4_eq_high_freq" value="8000.0"/>
     <PARAM id="piece4_eq_high_gain" value="0.0"/>
-    <PARAM id="piece4_eq_hpf" value="20.0"/>
+    <PARAM id="piece4_eq_hpf" value="250.0000152587891"/>
     <PARAM id="piece4_eq_low_freq" value="100.0"/>
-    <PARAM id="piece4_eq_low_gain" value="2.0"/>
-    <PARAM id="piece4_eq_mid1_freq" value="450.0000305175781"/>
-    <PARAM id="piece4_eq_mid1_gain" value="-3.0"/>
+    <PARAM id="piece4_eq_low_gain" value="0.0"/>
+    <PARAM id="piece4_eq_mid1_freq" value="400.0"/>
+    <PARAM id="piece4_eq_mid1_gain" value="0.0"/>
     <PARAM id="piece4_eq_mid1_q" value="1.0"/>
     <PARAM id="piece4_eq_mid2_freq" value="2500.000244140625"/>
     <PARAM id="piece4_eq_mid2_gain" value="0.0"/>
@@ -1810,7 +1810,7 @@
     <PARAM id="piece4_pitch_env" value="0.0"/>
     <PARAM id="piece4_pitch_env_time" value="60.0"/>
     <PARAM id="piece4_reverb_send" value="-60.0"/>
-    <PARAM id="piece4_room_send" value="-8.0"/>
+    <PARAM id="piece4_room_send" value="-12.0"/>
     <PARAM id="piece4_sat_drive" value="6.0"/>
     <PARAM id="piece4_sat_mix" value="100.0"/>
     <PARAM id="piece4_sat_on" value="0.0"/>
@@ -1824,8 +1824,8 @@
     <PARAM id="piece4_trans_attack" value="0.0"/>
     <PARAM id="piece4_trans_on" value="0.0"/>
     <PARAM id="piece4_trans_sustain" value="0.0"/>
-    <PARAM id="piece4_tune" value="-1.0"/>
-    <PARAM id="piece4_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece4_tune" value="0.0"/>
+    <PARAM id="piece4_volume" value="-3.399997711181641"/>
     <PARAM id="piece4_width" value="100.0"/>
     <PARAM id="piece5_attack" value="0.1000000014901161"/>
     <PARAM id="piece5_choke_note" value="-1.0"/>
@@ -1874,7 +1874,7 @@
     <PARAM id="piece5_trans_on" value="0.0"/>
     <PARAM id="piece5_trans_sustain" value="0.0"/>
     <PARAM id="piece5_tune" value="-1.0"/>
-    <PARAM id="piece5_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece5_volume" value="-1.399997711181641"/>
     <PARAM id="piece5_width" value="100.0"/>
     <PARAM id="piece6_attack" value="0.1000000014901161"/>
     <PARAM id="piece6_choke_note" value="-1.0"/>
@@ -1923,7 +1923,7 @@
     <PARAM id="piece6_trans_on" value="0.0"/>
     <PARAM id="piece6_trans_sustain" value="0.0"/>
     <PARAM id="piece6_tune" value="-1.0"/>
-    <PARAM id="piece6_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece6_volume" value="-1.399997711181641"/>
     <PARAM id="piece6_width" value="100.0"/>
     <PARAM id="piece7_attack" value="0.1000000014901161"/>
     <PARAM id="piece7_choke_note" value="-1.0"/>
@@ -1972,10 +1972,10 @@
     <PARAM id="piece7_trans_on" value="0.0"/>
     <PARAM id="piece7_trans_sustain" value="0.0"/>
     <PARAM id="piece7_tune" value="-1.0"/>
-    <PARAM id="piece7_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece7_volume" value="-1.399997711181641"/>
     <PARAM id="piece7_width" value="100.0"/>
     <PARAM id="piece8_attack" value="0.1000000014901161"/>
-    <PARAM id="piece8_choke_note" value="85.0"/>
+    <PARAM id="piece8_choke_note" value="-1.0"/>
     <PARAM id="piece8_comp_attack" value="10.00000190734863"/>
     <PARAM id="piece8_comp_makeup" value="0.0"/>
     <PARAM id="piece8_comp_mix" value="100.0"/>
@@ -1988,11 +1988,11 @@
     <PARAM id="piece8_dynamics" value="0.0"/>
     <PARAM id="piece8_eq_high_freq" value="8000.0"/>
     <PARAM id="piece8_eq_high_gain" value="0.0"/>
-    <PARAM id="piece8_eq_hpf" value="179.9999389648438"/>
+    <PARAM id="piece8_eq_hpf" value="20.0"/>
     <PARAM id="piece8_eq_low_freq" value="100.0"/>
-    <PARAM id="piece8_eq_low_gain" value="0.0"/>
-    <PARAM id="piece8_eq_mid1_freq" value="400.0"/>
-    <PARAM id="piece8_eq_mid1_gain" value="0.0"/>
+    <PARAM id="piece8_eq_low_gain" value="2.0"/>
+    <PARAM id="piece8_eq_mid1_freq" value="450.0000305175781"/>
+    <PARAM id="piece8_eq_mid1_gain" value="-3.0"/>
     <PARAM id="piece8_eq_mid1_q" value="1.0"/>
     <PARAM id="piece8_eq_mid2_freq" value="2500.000244140625"/>
     <PARAM id="piece8_eq_mid2_gain" value="0.0"/>
@@ -2006,7 +2006,7 @@
     <PARAM id="piece8_pitch_env" value="0.0"/>
     <PARAM id="piece8_pitch_env_time" value="60.0"/>
     <PARAM id="piece8_reverb_send" value="-60.0"/>
-    <PARAM id="piece8_room_send" value="-12.0"/>
+    <PARAM id="piece8_room_send" value="-8.0"/>
     <PARAM id="piece8_sat_drive" value="6.0"/>
     <PARAM id="piece8_sat_mix" value="100.0"/>
     <PARAM id="piece8_sat_on" value="0.0"/>
@@ -2020,11 +2020,11 @@
     <PARAM id="piece8_trans_attack" value="0.0"/>
     <PARAM id="piece8_trans_on" value="0.0"/>
     <PARAM id="piece8_trans_sustain" value="0.0"/>
-    <PARAM id="piece8_tune" value="0.0"/>
-    <PARAM id="piece8_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece8_tune" value="-1.0"/>
+    <PARAM id="piece8_volume" value="-1.399997711181641"/>
     <PARAM id="piece8_width" value="100.0"/>
     <PARAM id="piece9_attack" value="0.1000000014901161"/>
-    <PARAM id="piece9_choke_note" value="86.0"/>
+    <PARAM id="piece9_choke_note" value="85.0"/>
     <PARAM id="piece9_comp_attack" value="10.00000190734863"/>
     <PARAM id="piece9_comp_makeup" value="0.0"/>
     <PARAM id="piece9_comp_mix" value="100.0"/>
@@ -2070,7 +2070,7 @@
     <PARAM id="piece9_trans_on" value="0.0"/>
     <PARAM id="piece9_trans_sustain" value="0.0"/>
     <PARAM id="piece9_tune" value="0.0"/>
-    <PARAM id="piece9_volume" value="-0.7000007629394531"/>
+    <PARAM id="piece9_volume" value="-1.399997711181641"/>
     <PARAM id="piece9_width" value="100.0"/>
     <PARAM id="reverb_damping" value="6999.99951171875"/>
     <PARAM id="reverb_decay" value="1.399999856948853"/>
