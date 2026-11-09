@@ -61,18 +61,18 @@ juce::String finishFor (const juce::String& kitId)
 
 juce::Image stageLayer (const juce::String& kitId, const juce::String& renderKey)
 {
-    if (const auto image = load ("finish-" + finishFor (kitId) + "-" + renderKey + ".png"); image.isValid())
+    if (const auto image = load ("finish-" + finishFor (kitId) + "-" + renderKey + ".webp"); image.isValid())
         return image;
 
-    return load (renderKey + ".png");
+    return load (renderKey + ".webp");
 }
 
 juce::Image slotPicture (const juce::String& kitId, const juce::String& name)
 {
-    if (const auto image = load ("finish-" + finishFor (kitId) + "-slot-" + name + ".png"); image.isValid())
+    if (const auto image = load ("finish-" + finishFor (kitId) + "-slot-" + name + ".webp"); image.isValid())
         return image;
 
-    return load ("slot-" + name + ".png");
+    return load ("slot-" + name + ".webp");
 }
 
 juce::Image makeFlashImage (const juce::Image& src)

@@ -13,14 +13,14 @@ namespace
     using kitart::makeFlashImage;
     constexpr int hitAlphaThreshold = 48;     // pixels fainter than this (soft shadows, antialiasing) don't count
 
-    juce::Image loadPng (const juce::String& name)
+    juce::Image loadRender (const juce::String& name)
     {
         int size = 0;
 
-        if (const auto* data = LithiumAssets::getNamedResource ((name + "_png").toRawUTF8(), size))
+        if (const auto* data = LithiumAssets::getNamedResource ((name + "_webp").toRawUTF8(), size))
             return juce::ImageFileFormat::loadFrom (data, (size_t) size);
 
-        jassertfalse;   // a render (room, or a layer named in layout.json) has no matching PNG in the binary data
+        jassertfalse;   // a render (room, or a layer named in layout.json) has no matching render in the binary data
         return {};
     }
 
@@ -79,7 +79,7 @@ void KitStage::loadRenders()
     const auto json = juce::JSON::parse (juce::String::fromUTF8 (LithiumAssets::layout_json, LithiumAssets::layout_jsonSize));
     renderScale = (float) (double) json["renderScale"];
     glowPadding = juce::roundToInt (24.0f * renderScale);
-    room = loadPng ("room");   // painted by tools/roomgen through the same camera as the kit
+    room = loadRender ("room");   // painted by tools/roomgen through the same camera as the kit
 
     const auto* order = json["drawOrderBackToFront"].getArray();
     jassert (order != nullptr && renderScale > 0.0f);
@@ -92,7 +92,7 @@ void KitStage::loadRenders()
         Layer layer;
         layer.slot = slotFromRenderKey (name.toStdString());
         layer.renderKey = name;
-        layer.image = loadPng (name);
+        layer.image = loadRender (name);
         layer.renderRect = { (int) rect["x"], (int) rect["y"], (int) rect["w"], (int) rect["h"] };
 
         // The PNG's own size is the truth; the layout rect just positions it.
@@ -139,7 +139,7 @@ void KitStage::showFinishes()
                                               : ownKit;
         // Kits without a finish of their own (and pieces a finish doesn't
         // cover, like the cymbals) use the default.
-        const auto own = kitart::load ("finish-" + kitart::finishFor (kitId) + "-" + l.renderKey + ".png");
+        const auto own = kitart::load ("finish-" + kitart::finishFor (kitId) + "-" + l.renderKey + ".webp");
         const auto finish = own.isValid() && own.getBounds() == l.renderRect.withZeroOrigin() ? kitart::finishFor (kitId) : juce::String();
         auto look = l.looks.find (finish);
 

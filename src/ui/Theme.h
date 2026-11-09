@@ -70,7 +70,7 @@ inline juce::Colour groupColour (PieceGroup g)
 inline constexpr int windowWidth = 1280;
 inline constexpr int windowHeight = 800;
 inline constexpr int headerHeight = 56;
-inline constexpr int stageHeight = 744;   // the rendered stage fills the Kit tab (assets/kit-renders)
+inline constexpr int stageHeight = 744;   // the rendered stage fills the Kit tab (assets/renders/stage)
 inline constexpr float cornerRadius = 6.0f;
 
 /** The spacing scale: every margin, padding and gap is one of these. */

@@ -188,20 +188,33 @@ The tests use a small synthesized kit that the build generates, so they don't ne
 
 ### Re-rendering the kit images
 
-`assets/blender-kit.py` built the renders in `assets/kit-renders/`: the stage's layers, and each piece on its own for the Kit tab's slot cards. To render the kit in another finish (the `finish` argument is the shell colour in linear RGB), run it with Blender in both modes, then crop the results into place:
+The pictures of the kit live in two trees with the same folders: `assets/render-sources/` holds the PNG originals, and `assets/renders/` the WebP copies (quality 90, about an eighth of the size) that the plugin embeds.
+
+| Folder | What's in it |
+|---|---|
+| `stage/` | the stage's layers (one per piece, plus `base` for stands and floor), the studio room behind them, and `layout.json` (where each layer sits) |
+| `finishes/<kit id>/` | a kit's own finish of its drums, cropped to the same rectangles as the stage layers |
+| `slots/` | every slot card's picture: `slot-<piece>` in the default finish and `finish-<kit id>-slot-<piece>` in each kit's finish |
+| `mics/` | the mic renders for the Edit page's Mics card, and `mics.json` |
+
+The embedded resources are found by file name alone, so every name has to be unique across the folders (hence the `slot-` and `finish-<kit id>-` prefixes). After changing anything in `render-sources/`, run `scripts/make-webp.sh` (needs ImageMagick) to update `renders/`; both trees are committed, so the build needs neither Blender nor ImageMagick.
+
+`assets/blender-kit.py` built the stage layers and the slot pictures. To render the kit in another finish (the `finish` argument is the shell colour in linear RGB), run it with Blender in both modes, then crop the results into place and make the WebP copies:
 
 ```
 blender -b -P assets/blender-kit.py -- mode=layers scale=0.75 samples=128 finish=0.05,0.1,0.3
 blender -b -P assets/blender-kit.py -- mode=pieces scale=2.25 samples=128 finish=0.05,0.1,0.3
 python3 assets/crop-layers.py
+scripts/make-webp.sh
 ```
 
-Each kit's drums also come in its own finish (`assets/kit-finishes.json`), so a kit with swapped-in pieces shows each piece in the finish of the kit it came from. To render one, add `kit=<kit id> only=kick,tom1,tom2,floor,snare out=<folder>` to both Blender commands, then run `python3 assets/crop-layers.py --finish <kit id> <folder>`. Kits not listed keep the default red. To redo just one drum, add `border=auto`: Blender renders only the part of the frame that drum covers, which is much faster, and the crop is the same.
+Each kit's drums also come in its own finish (`assets/kit-finishes.json`), so a kit with swapped-in pieces shows each piece in the finish of the kit it came from. To render one, add `kit=<kit id> only=kick,tom1,tom2,floor,snare out=<folder>` to both Blender commands, then run `python3 assets/crop-layers.py --finish <kit id> <folder>` and `scripts/make-webp.sh`. Kits not listed keep the default red. To redo just one drum, add `border=auto`: Blender renders only the part of the frame that drum covers, which is much faster, and the crop is the same.
 
-Scale 0.75 gives the 1.5× renders the UI expects. The build never runs Blender. Some distro Blender packages are built without OpenImageDenoise, so the renders come out grainy; use `samples=512` there instead.
+Scale 0.75 gives the 1.5× renders the UI expects. Some distro Blender packages are built without OpenImageDenoise, so the renders come out grainy; use `samples=512` there instead. The mic renders come from `assets/blender-mics.py`, which writes to `render-sources/mics/`.
 
 The studio room behind the kit doesn't need Blender. `tools/roomgen/RoomGenerator.cpp` paints it through the same camera, so if you move the camera in the Blender script, move it there too. To repaint it (`--preview` also composites the kit over it, for checking):
 
 ```
-build/release/LithiumRoomGen_artefacts/Release/LithiumRoomGen assets/kit-renders --preview room-preview.jpg
+build/release/LithiumRoomGen_artefacts/Release/LithiumRoomGen assets/render-sources/stage --preview room-preview.jpg
+scripts/make-webp.sh
 ```

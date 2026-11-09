@@ -65,7 +65,7 @@ constexpr std::optional<PieceRole> roleFromKey (std::string_view key) noexcept
 }
 
 //==============================================================================
-// The eleven pieces in the pre-rendered kit (assets/kit-renders). A loaded
+// The eleven pieces in the pre-rendered kit (assets/renders/stage). A loaded
 // kit's pieces are assigned to these slots by role: the first kick to the kick
 // slot, the first two rack toms to tom1 and tom2, the first two crashes (not
 // counting splashes) to crash and crash2, the first splash to splash, and so on.
@@ -75,7 +75,7 @@ inline constexpr int numStageSlots = 11;
 struct SlotInfo
 {
     StageSlot slot;
-    std::string_view renderKey;  // file name in assets/kit-renders, and the key in layout.json
+    std::string_view renderKey;  // file name in assets/renders/stage, and the key in layout.json
     PieceRole role;
     int nth;                     // which piece of that role (0 = the first)
 };

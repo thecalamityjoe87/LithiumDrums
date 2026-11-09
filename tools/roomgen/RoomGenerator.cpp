@@ -1,6 +1,9 @@
 // LithiumRoomGen: paints the studio room that the kit renders sit in.
 //
-//   LithiumRoomGen <kit-renders-folder> [--preview <file.jpg>]
+//   LithiumRoomGen <stage-renders-folder> [--preview <file.jpg>]
+//
+// The folder is assets/render-sources/stage (the PNG originals); run
+// scripts/make-webp.sh afterwards to update the embedded WebP.
 //
 // It writes room.png into the folder, the same size as base.png. Every pixel
 // is ray-cast through the same camera as assets/blender-kit.py, so the floor
@@ -528,7 +531,7 @@ int main (int argc, char* argv[])
 {
     if (argc != 2 && ! (argc == 4 && juce::String (argv[2]) == "--preview"))
     {
-        std::cerr << "usage: LithiumRoomGen <kit-renders-folder> [--preview <file.jpg>]" << std::endl;
+        std::cerr << "usage: LithiumRoomGen <stage-renders-folder> [--preview <file.jpg>]" << std::endl;
         return 1;
     }
 

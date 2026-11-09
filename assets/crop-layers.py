@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""Crops the full-frame layer renders from blender-kit.py into kit-renders/.
+"""Crops the full-frame layer renders from blender-kit.py into render-sources/.
 
     blender -b -P assets/blender-kit.py -- mode=layers scale=0.75 samples=128
     blender -b -P assets/blender-kit.py -- mode=pieces scale=2.25 samples=128
     python3 assets/crop-layers.py
+    scripts/make-webp.sh
+
+The PNGs it writes are the originals: the stage layers and layout.json go in
+render-sources/stage/, the slot cards' pictures in render-sources/slots/, and
+a kit's finish in render-sources/finishes/<kit id>/ (its slot pictures in
+slots/ with the rest). scripts/make-webp.sh then makes the WebP copies in
+renders/ that the plugin embeds.
 
 Each piece is cropped to the bounding box of its visible pixels, and its rect
-is written to kit-renders/layout.json. base.png (stands, hardware and floor
-shadow) stays full-frame. Needs Pillow (pip install pillow).
+is written to layout.json. base.png (stands, hardware and floor shadow) stays
+full-frame. Needs Pillow (pip install pillow).
 """
 
 import json
@@ -90,14 +97,16 @@ FINISH_DRUMS = ['kick', 'tom1', 'tom2', 'floor', 'snare']
 
 if len(sys.argv) == 4 and sys.argv[1] == '--finish':
     kit, src = sys.argv[2], sys.argv[3]
-    dst = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kit-renders')
-    rects = json.load(open(os.path.join(dst, 'layout.json')))['pieces']
+    sources = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'render-sources')
+    finish_dir = os.path.join(sources, 'finishes', kit)
+    os.makedirs(finish_dir, exist_ok=True)
+    rects = json.load(open(os.path.join(sources, 'stage', 'layout.json')))['pieces']
     for name in FINISH_DRUMS:
         r = rects[name]
         Image.open(os.path.join(src, 'layers', name + '.png')).convert('RGBA') \
              .crop((r['x'], r['y'], r['x'] + r['w'], r['y'] + r['h'])) \
-             .save(os.path.join(dst, 'finish-%s-%s.png' % (kit, name)), optimize=True)
-        crop_piece(os.path.join(src, 'pieces'), name).save(os.path.join(dst, 'finish-%s-slot-%s.png' % (kit, name)), optimize=True)
+             .save(os.path.join(finish_dir, 'finish-%s-%s.png' % (kit, name)), optimize=True)
+        crop_piece(os.path.join(src, 'pieces'), name).save(os.path.join(sources, 'slots', 'finish-%s-slot-%s.png' % (kit, name)), optimize=True)
     print('Wrote the', kit, 'finish')
     sys.exit(0)
 
@@ -111,7 +120,8 @@ if len(sys.argv) == 4 and sys.argv[1] == '--pieces':
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, 'layers')
-DST = os.path.join(HERE, 'kit-renders')
+DST = os.path.join(HERE, 'render-sources', 'stage')
+SLOTS_DST = os.path.join(HERE, 'render-sources', 'slots')
 STAGE_1X = (1280, 744)
 DRAW_ORDER = ['base', 'china', 'ride', 'crash2', 'crash', 'hihat', 'splash', 'floor', 'kick', 'tom2', 'tom1', 'snare']
 
@@ -141,7 +151,7 @@ layout = {
 # alone, cropped to its pixels.
 PIECES_SRC = os.path.join(HERE, 'pieces')
 
-# They're named slot-<piece>.png, as the build embeds files by name and
+# They're named slot-<piece>.png, as the build embeds files by name alone and
 # kick.png is already the stage layer.
 if os.path.isdir(PIECES_SRC) and '--layers-only' not in sys.argv:
     for name in DRAW_ORDER[1:] + ['cowbell', 'chimes', 'gong', 'tambourine', 'maraca', 'shaker', 'claves', 'belltree', 'bucket', 'stack', 'snap', 'clap', 'stomp', 'stickclick', 'cajon', 'conga-small', 'conga-large']:   # and the pieces that aren't on the stage
@@ -149,7 +159,7 @@ if os.path.isdir(PIECES_SRC) and '--layers-only' not in sys.argv:
             print('No piece render for', name, '(slot-' + name + '.png left as it was)')
             continue
 
-        crop_piece(PIECES_SRC, name).save(os.path.join(DST, 'slot-' + name + '.png'), optimize=True)
+        crop_piece(PIECES_SRC, name).save(os.path.join(SLOTS_DST, 'slot-' + name + '.png'), optimize=True)
 
 with open(os.path.join(DST, 'layout.json'), 'w') as f:
     json.dump(layout, f, indent=2)

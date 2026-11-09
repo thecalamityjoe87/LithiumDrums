@@ -14,7 +14,7 @@ namespace lithium
 /** The pre-rendered drum kit: click a piece to select and audition it.
 
     Each of the nine stage slots is its own transparent PNG (see
-    assets/kit-renders), drawn back to front over the studio room backdrop.
+    assets/renders/stage), drawn back to front over the studio room backdrop.
     The loaded kit's pieces are assigned to slots by role; a slot without a
     piece is drawn dimmed and can't be clicked. Clicks are hit-tested against
     the pixels' alpha, front to back, so a click on a transparent part of one

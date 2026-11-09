@@ -709,27 +709,27 @@ public:
         // The pieces as the installed kits name them. Cobblestone plays hand
         // percussion from drum slots, so a role alone would show a kick for a cajon.
         const Case cases[] {
-            { "cajon", "Cajon", PieceRole::kick, "slot-cajon.png" },
-            { "cajon_slap", "Cajon Slap", PieceRole::snare, "slot-cajon.png" },
-            { "conga_small", "Small Conga", PieceRole::tom, "slot-conga-small.png" },
-            { "conga_large", "Large Conga", PieceRole::floorTom, "slot-conga-large.png" },
-            { "tambourine", "Tambourine", PieceRole::hihat, "slot-tambourine.png" },
-            { "tambourine", "Tambourine", PieceRole::other, "slot-tambourine.png" },
-            { "bell_tree", "Bell Tree", PieceRole::other, "slot-belltree.png" },
-            { "bellchime", "Bell Chime", PieceRole::other, "slot-chimes.png" },
-            { "bucket", "Bucket", PieceRole::other, "slot-bucket.png" },
-            { "clap", "Hand Clap", PieceRole::other, "slot-clap.png" },
-            { "claps", "Hand Claps", PieceRole::other, "slot-clap.png" },
-            { "claves", "Claves", PieceRole::other, "slot-claves.png" },
-            { "cowbell", "Cowbell", PieceRole::other, "slot-cowbell.png" },
-            { "gong", "Gong", PieceRole::other, "slot-gong.png" },
-            { "maraca", "Maraca", PieceRole::other, "slot-maraca.png" },
-            { "shaker", "Shaker", PieceRole::other, "slot-shaker.png" },
-            { "shakers", "Shakers", PieceRole::other, "slot-shaker.png" },
-            { "snaps", "Finger Snaps", PieceRole::other, "slot-snap.png" },
-            { "stack", "Stack", PieceRole::other, "slot-stack.png" },
-            { "stick", "Stick Click", PieceRole::other, "slot-stickclick.png" },
-            { "stomp", "Foot Stomp", PieceRole::other, "slot-stomp.png" },
+            { "cajon", "Cajon", PieceRole::kick, "slot-cajon.webp" },
+            { "cajon_slap", "Cajon Slap", PieceRole::snare, "slot-cajon.webp" },
+            { "conga_small", "Small Conga", PieceRole::tom, "slot-conga-small.webp" },
+            { "conga_large", "Large Conga", PieceRole::floorTom, "slot-conga-large.webp" },
+            { "tambourine", "Tambourine", PieceRole::hihat, "slot-tambourine.webp" },
+            { "tambourine", "Tambourine", PieceRole::other, "slot-tambourine.webp" },
+            { "bell_tree", "Bell Tree", PieceRole::other, "slot-belltree.webp" },
+            { "bellchime", "Bell Chime", PieceRole::other, "slot-chimes.webp" },
+            { "bucket", "Bucket", PieceRole::other, "slot-bucket.webp" },
+            { "clap", "Hand Clap", PieceRole::other, "slot-clap.webp" },
+            { "claps", "Hand Claps", PieceRole::other, "slot-clap.webp" },
+            { "claves", "Claves", PieceRole::other, "slot-claves.webp" },
+            { "cowbell", "Cowbell", PieceRole::other, "slot-cowbell.webp" },
+            { "gong", "Gong", PieceRole::other, "slot-gong.webp" },
+            { "maraca", "Maraca", PieceRole::other, "slot-maraca.webp" },
+            { "shaker", "Shaker", PieceRole::other, "slot-shaker.webp" },
+            { "shakers", "Shakers", PieceRole::other, "slot-shaker.webp" },
+            { "snaps", "Finger Snaps", PieceRole::other, "slot-snap.webp" },
+            { "stack", "Stack", PieceRole::other, "slot-stack.webp" },
+            { "stick", "Stick Click", PieceRole::other, "slot-stickclick.webp" },
+            { "stomp", "Foot Stomp", PieceRole::other, "slot-stomp.webp" },
         };
 
         const auto pictureOf = [] (const char* pieceId, const char* pieceName, PieceRole role)
@@ -753,8 +753,8 @@ public:
 
         beginTest ("Plain drums keep their own pictures, and unknown percussion has none");
 
-        expect (pictureOf ("kick", "Kick", PieceRole::kick) == kitart::load ("slot-kick.png"));
-        expect (pictureOf ("snare", "Snare", PieceRole::snare) == kitart::load ("slot-snare.png"));
+        expect (pictureOf ("kick", "Kick", PieceRole::kick) == kitart::load ("slot-kick.webp"));
+        expect (pictureOf ("snare", "Snare", PieceRole::snare) == kitart::load ("slot-snare.webp"));
         expect (! pictureOf ("triangle", "Triangle", PieceRole::other).isValid());
     }
 };

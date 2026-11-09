@@ -539,7 +539,7 @@ void EditPage::showMic (int m)
 
     // The mics' render: the overheads hanging (just their lower part, the
     // mics and plugs, not the long cables), the room pair on their stands.
-    auto image = kitart::load (mic.role == MicRole::room ? "mics-room.png" : mic.role == MicRole::overheads ? "mics-overheads.png" : "mics-close.png");
+    auto image = kitart::load (mic.role == MicRole::room ? "mics-room.webp" : mic.role == MicRole::overheads ? "mics-overheads.webp" : "mics-close.webp");
 
     if (mic.role == MicRole::overheads && image.isValid())
     {

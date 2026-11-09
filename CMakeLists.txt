@@ -141,9 +141,13 @@ target_sources(LithiumDrums PRIVATE
 
 target_include_directories(LithiumDrums PRIVATE src)
 
-# Each kit's own finish of the drums (assets/kit-finishes.json): stage layers
-# and slot pictures, finish-<kit id>-*.png. Picked up as they're added.
-file(GLOB lithium_finish_images CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/kit-renders/finish-*.png")
+# The rendered kit, room, slot pictures and mics (assets/renders/, WebP made
+# from the PNG originals in assets/render-sources/ by scripts/make-webp.sh),
+# picked up as they're added. The code finds them by file name alone, so
+# every file name under assets/renders/ must be unique.
+file(GLOB_RECURSE lithium_render_files CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/renders/*.webp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/renders/*.json")
 
 # The fonts on their own, so the Linux installer can use them without
 # carrying the kit renders.
@@ -165,56 +169,8 @@ juce_add_binary_data(LithiumAssets
     NAMESPACE   LithiumAssets
     HEADER_NAME LithiumAssets.h
     SOURCES
-        assets/kit-renders/layout.json
-        assets/kit-renders/room.png
-        assets/kit-renders/base.png
-        assets/kit-renders/kick.png
-        assets/kit-renders/snare.png
-        assets/kit-renders/hihat.png
-        assets/kit-renders/tom1.png
-        assets/kit-renders/tom2.png
-        assets/kit-renders/floor.png
-        assets/kit-renders/crash.png
-        assets/kit-renders/crash2.png
-        assets/kit-renders/ride.png
-        assets/kit-renders/china.png
-        assets/kit-renders/splash.png
-        assets/kit-renders/slot-kick.png
-        assets/kit-renders/slot-snare.png
-        assets/kit-renders/slot-hihat.png
-        assets/kit-renders/slot-tom1.png
-        assets/kit-renders/slot-tom2.png
-        assets/kit-renders/slot-floor.png
-        assets/kit-renders/slot-crash.png
-        assets/kit-renders/slot-crash2.png
-        assets/kit-renders/slot-ride.png
-        assets/kit-renders/slot-china.png
-        assets/kit-renders/slot-cowbell.png
-        assets/kit-renders/slot-chimes.png
-        assets/kit-renders/slot-gong.png
-        assets/kit-renders/slot-splash.png
-        assets/kit-renders/slot-tambourine.png
-        assets/kit-renders/slot-maraca.png
-        assets/kit-renders/slot-shaker.png
-        assets/kit-renders/slot-claves.png
-        assets/kit-renders/slot-belltree.png
-        assets/kit-renders/slot-bucket.png
-        assets/kit-renders/slot-stack.png
-        assets/kit-renders/slot-snap.png
-        assets/kit-renders/slot-clap.png
-        assets/kit-renders/slot-stomp.png
-        assets/kit-renders/slot-stickclick.png
-        assets/kit-renders/slot-cajon.png
-        assets/kit-renders/slot-conga-small.png
-        assets/kit-renders/slot-conga-large.png
-        assets/mic-renders/mics.json
-        assets/mic-renders/mics-close.png
-        assets/mic-renders/mics-kick.png
-        assets/mic-renders/mics-cymbal.png
-        assets/mic-renders/mics-overheads.png
-        assets/mic-renders/mics-room.png
         assets/kit-finishes.json
-        ${lithium_finish_images}
+        ${lithium_render_files}
         assets/midi-maps/lithium-standard.json
         assets/midi-maps/general-midi.json
         assets/midi-maps/roland-vdrums.json
@@ -347,8 +303,9 @@ add_custom_target(LithiumTestKit DEPENDS "${LITHIUM_TEST_KIT_DIR}/kit.json")
 # ---------------------------------------------------------------------------
 # Room backdrop
 
-# Paints assets/kit-renders/room.png. Like the Blender renders, its output is
-# committed, so the build only compiles the tool; run it by hand after editing it.
+# Paints assets/render-sources/stage/room.png (then scripts/make-webp.sh makes
+# the embedded WebP). Like the Blender renders, its output is committed, so the
+# build only compiles the tool; run it by hand after editing it.
 juce_add_console_app(LithiumRoomGen PRODUCT_NAME "LithiumRoomGen")
 target_sources(LithiumRoomGen PRIVATE tools/roomgen/RoomGenerator.cpp)
 target_compile_definitions(LithiumRoomGen PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)

@@ -120,7 +120,7 @@ namespace
     }
 
 
-    /** A mic render (assets/mic-renders, made by assets/blender-mics.py)
+    /** A mic render (assets/renders/mics, made by assets/blender-mics.py)
         and the points mics.json gives for it, as shares of its width and
         height: each mic's front (where its pickup line starts), the stand's
         foot on the floor, and the close mic's clip (which sits on the rim). */
@@ -306,7 +306,7 @@ namespace
     {
         static const auto bounds = []
         {
-            const auto base = kitart::load ("base.png");
+            const auto base = kitart::load ("base.webp");
 
             if (! base.isValid())
                 return juce::Rectangle<int>();
@@ -654,12 +654,12 @@ void MicsModule::buildKitPicture()
             // Made once per card (it's the same for every kit), held by the card
             // rather than a static, so it's gone before JUCE shuts down.
             if (! slot.has_value() && ! cleanBase.isValid())
-                cleanBase = withoutShadow (kitart::load (name + ".png"));
+                cleanBase = withoutShadow (kitart::load (name + ".webp"));
 
             auto layer = slot.has_value() ? kitart::stageLayer (kitId, name) : cleanBase;
 
             if (! layer.isValid() || layer.getBounds() != rect.withZeroOrigin())
-                layer = kitart::load (name + ".png");
+                layer = kitart::load (name + ".webp");
 
             g.setOpacity (slot.has_value() && piece < 0 ? 0.3f : 1.0f);
             g.drawImageAt (layer, rect.getX() - crop.getX(), rect.getY() - crop.getY());
@@ -742,7 +742,7 @@ MicsModule::PlacedMics MicsModule::placeMics (const juce::String& name, float sc
 {
     const auto& art = micArt (name.toRawUTF8());
     PlacedMics placed;
-    placed.image = kitart::load (name + ".png");
+    placed.image = kitart::load (name + ".webp");
 
     if (! placed.image.isValid())
         return placed;

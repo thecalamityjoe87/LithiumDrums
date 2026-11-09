@@ -28,7 +28,7 @@ namespace
         return nullptr;
     }
 
-    /** The rendered picture of a piece (assets/kit-renders/slot-*.png: each
+    /** The rendered picture of a piece (assets/renders/slots/slot-*.webp: each
         piece of the stage kit rendered alone, plus the percussion that isn't
         on the stage). The nth rack tom or crash alternates between the
         stage's two, so neighbouring cards differ. Null for percussion there's
@@ -251,7 +251,7 @@ public:
             // keep their real sizes: a splash looks smaller than a crash, a
             // ride a little bigger (clamped to the card). Everything else
             // fills the picture area.
-            if (const auto crash = kitart::load ("slot-crash.png"); isCymbal (role) && crash.isValid())
+            if (const auto crash = kitart::load ("slot-crash.webp"); isCymbal (role) && crash.isValid())
             {
                 const auto scale = std::min (iconArea.getWidth() / (float) crash.getWidth(), iconArea.getHeight() / (float) crash.getHeight());
                 const auto size = juce::Rectangle<float> ((float) picture.getWidth() * scale, (float) picture.getHeight() * scale);

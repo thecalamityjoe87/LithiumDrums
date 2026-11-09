@@ -9,7 +9,7 @@ namespace lithium
 /** The Mixer inspector's Mics card: how loud drums are in the kit's close,
     overhead and room mics (each drum's send_close, send_overheads and
     send_room), drawn with the renders: the drum's (the Kit tab's slot
-    picture, in the kit's finish) and the mics' (assets/mic-renders).
+    picture, in the kit's finish) and the mics' (assets/renders/mics).
 
      - A drum's channel shows that drum with its close mic clipped to its
        rim (the kick's on a low stand), the overheads hanging above it and
@@ -112,7 +112,7 @@ private:
     void startFlash (int piece);
     void drawFlash (juce::Graphics&) const;
 
-    /** A mic render (assets/mic-renders) placed on the card, and where its
+    /** A mic render (assets/renders/mics) placed on the card, and where its
         mics' fronts land, which is where their pickup lines start. */
     struct PlacedMics
     {

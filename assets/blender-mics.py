@@ -13,7 +13,8 @@
 #
 #   blender -b -P assets/blender-mics.py -- [out=<folder>] [samples=128] [px=900] [only=<render>]
 #
-# Without out=, it writes assets/mic-renders/ (embedded by CMakeLists.txt).
+# Without out=, it writes the PNG originals to assets/render-sources/mics/;
+# scripts/make-webp.sh then makes the WebP copies the plugin embeds.
 #
 # The mics are generic shapes, not copies of any make or model:
 #   close        a drum mic: short gunmetal body, dark mesh grille (snare, toms, hats, cymbals)
@@ -28,7 +29,7 @@ import bpy, math, sys, os, json
 from mathutils import Vector
 
 args = dict(a.split('=') for a in sys.argv[sys.argv.index('--') + 1:] if '=' in a) if '--' in sys.argv else {}
-OUT = args.get('out', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mic-renders'))
+OUT = args.get('out', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'render-sources', 'mics'))
 SAMPLES = int(args.get('samples', '128'))
 PX = int(args.get('px', '900'))          # the longer side of each render
 ONLY = args.get('only')                  # one mic's name, to redo just that one
