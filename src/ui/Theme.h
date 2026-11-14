@@ -68,6 +68,9 @@ namespace colours
     inline const juce::Colour faderCapRibs        { 0x61000000 };
     inline const juce::Colour faderCapShadow      { 0x8c000000 };
 
+    // The box behind a mixer strip's dB readout, as Lithium Studio's.
+    inline const juce::Colour readoutBox          { 0xff0a0e12 };
+
     // The soft glow around knob value arcs and fader cap lines, as an alpha.
     inline constexpr float controlGlow = 0.3f;
 }

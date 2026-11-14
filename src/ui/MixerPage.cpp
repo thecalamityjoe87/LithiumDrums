@@ -33,7 +33,7 @@ namespace
     constexpr int faderTravel = theme::size::faderTravel + panRow     // the room a pan knob used to take, given to the fader,
                                 + theme::size::buttonCompact + theme::space::xs;   // and the output menu's row (returns' outputs are on the FX page)
     constexpr int faderHeight = faderTravel + theme::size::faderCap;
-    constexpr int readoutHeight = 12;
+    constexpr int readoutHeight = 16, readoutWidth = 58;   // the dB readout's box, centred under the fader
     constexpr int scaleWidth = 18, faderWidth = 26;
 
     constexpr int insertsTop = stripPadding + stripHeaderHeight + theme::space::xs + 2;
@@ -200,7 +200,7 @@ void MixerStrip::mouseDown (const juce::MouseEvent&)
 
 juce::Rectangle<int> MixerStrip::getReadoutArea() const
 {
-    return { stripPadding, readoutTop, getWidth() - 2 * stripPadding, readoutHeight };
+    return juce::Rectangle<int> (readoutWidth, readoutHeight).withCentre ({ fader.getBounds().getCentreX(), readoutTop + readoutHeight / 2 });
 }
 
 void MixerStrip::paint (juce::Graphics& g)
@@ -265,9 +265,16 @@ void MixerStrip::paint (juce::Graphics& g)
                     juce::Justification::centredRight, false);
     }
 
+    // The dB readout, in a box under the fader, as on Lithium Studio's mixer.
+    const auto readout = getReadoutArea();
+    const auto box = readout.toFloat().reduced (0.5f);
+    g.setColour (colours::readoutBox);
+    g.fillRoundedRectangle (box, 3.0f);
+    g.setColour (colours::border);
+    g.drawRoundedRectangle (box, 3.0f, 1.0f);
     g.setColour (colours::text);
     g.setFont (mono (type::caption));
-    g.drawText (formatFaderDb (fader.getValue()) + " dB", getReadoutArea(), juce::Justification::centred, false);
+    g.drawText (formatFaderDb (fader.getValue()) + " dB", readout, juce::Justification::centred, false);
 }
 
 void MixerStrip::resized()
