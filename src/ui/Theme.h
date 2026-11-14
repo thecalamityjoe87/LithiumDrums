@@ -35,6 +35,41 @@ namespace colours
     inline const juce::Colour fxRoom       { 0xff7fa8e0 };
     inline const juce::Colour fxPlate      { 0xffb39dff };
     inline const juce::Colour fxDelay      { 0xff6fd3b0 };
+
+    // The machined knob: a turned-metal cap on a skirt, an engraved pointer,
+    // a tick scale around the value arc, lit from the top left. The same as
+    // Lithium Studio's dark theme.
+    inline const juce::Colour knobTrack           { 0xff0a0e12 };
+    inline const juce::Colour knobTicks           { 0xff3a4c5b };
+    inline const juce::Colour knobShadow          { 0x80000000 };
+    inline const juce::Colour knobSkirtTop        { 0xff2e3c49 };
+    inline const juce::Colour knobSkirtBottom     { 0xff0b1015 };
+    inline const juce::Colour knobSkirtEdge       { 0xff06090c };
+    inline const juce::Colour knobCapLight        { 0xff7a8895 };
+    inline const juce::Colour knobCapMid          { 0xff3e4a56 };
+    inline const juce::Colour knobCapDark         { 0xff1b232b };
+    inline const juce::Colour knobCapEdge         { 0xff0a0e12 };
+    inline const juce::Colour knobSheen           { 0x33ffffff };
+    inline const juce::Colour knobRings           { 0x12ffffff };
+    inline const juce::Colour knobGroove          { 0xff0b1015 };
+    inline const juce::Colour knobGrooveHighlight { 0x38ffffff };
+
+    // The console fader: a ribbed gunmetal cap shaded, top to bottom, light,
+    // high, mid, groove (its middle, where the line is), mid, high, bottom;
+    // in a sunken slot. The same as Lithium Studio's dark theme.
+    inline const juce::Colour faderSlot           { 0xff05080b };
+    inline const juce::Colour faderCapLight       { 0xff56636f };
+    inline const juce::Colour faderCapHigh        { 0xff3b4752 };
+    inline const juce::Colour faderCapMid         { 0xff2c3640 };
+    inline const juce::Colour faderCapGroove      { 0xff1a2129 };
+    inline const juce::Colour faderCapBottom      { 0xff242d36 };
+    inline const juce::Colour faderCapBorder      { 0xff05080b };
+    inline const juce::Colour faderCapHighlight   { 0x38ffffff };
+    inline const juce::Colour faderCapRibs        { 0x61000000 };
+    inline const juce::Colour faderCapShadow      { 0x8c000000 };
+
+    // The soft glow around knob value arcs and fader cap lines, as an alpha.
+    inline constexpr float controlGlow = 0.3f;
 }
 
 /** The colour of an FX return, by params::FxReturn index (Room, Plate, Delay). */

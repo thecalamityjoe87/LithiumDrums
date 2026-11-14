@@ -250,6 +250,88 @@ void LithiumLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, 
 }
 
 //==============================================================================
+namespace
+{
+    juce::PathStrokeType roundStroke (float width)
+    {
+        return juce::PathStrokeType (width, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    }
+
+    // The console fader's slot: sunk into the panel, so darker at its edges
+    // than down its middle, with a faint highlight along its lower lip.
+    void drawSlot (juce::Graphics& g, juce::Rectangle<float> slot)
+    {
+        using namespace theme::colours;
+
+        const auto radius = std::min (slot.getWidth(), slot.getHeight()) * 0.5f;
+        const bool vertical = slot.getHeight() > slot.getWidth();
+        g.setColour (faderCapHighlight.withMultipliedAlpha (0.25f));
+        g.fillRoundedRectangle (slot.translated (0.0f, 1.0f), radius);
+
+        const auto edge = faderSlot.darker (0.6f);
+        juce::ColourGradient shade (edge, slot.getTopLeft(), edge, vertical ? slot.getTopRight() : slot.getBottomLeft(), false);
+        shade.addColour (0.5, faderSlot);
+        g.setGradientFill (shade);
+        g.fillRoundedRectangle (slot, radius);
+    }
+
+    // The console fader cap, as on Lithium Studio: ribbed, shaded along the
+    // fader's travel, with a line across its middle in the channel's colour.
+    // A horizontal cap has its ribs and line upright.
+    void drawConsoleCap (juce::Graphics& g, juce::Rectangle<float> cap, bool vertical, juce::Colour line, bool enabled)
+    {
+        using namespace theme::colours;
+
+        const auto corner = std::min (4.0f, std::min (cap.getWidth(), cap.getHeight()) * 0.25f);
+
+        if (! enabled)
+            g.beginTransparencyLayer (0.5f);
+
+        // Its shadow: two soft steps below it (cheaper than blurring a
+        // DropShadow on every repaint while the fader moves).
+        g.setColour (faderCapShadow.withMultipliedAlpha (0.35f));
+        g.fillRoundedRectangle (cap.translated (0.0f, 4.0f).expanded (1.0f), corner + 1.0f);
+        g.setColour (faderCapShadow.withMultipliedAlpha (0.6f));
+        g.fillRoundedRectangle (cap.translated (0.0f, 2.0f), corner);
+
+        juce::ColourGradient body (faderCapLight, cap.getTopLeft(),
+                                   faderCapBottom, vertical ? cap.getBottomLeft() : cap.getTopRight(), false);
+        body.addColour (0.10, faderCapHigh);
+        body.addColour (0.42, faderCapMid);
+        body.addColour (0.50, faderCapGroove);
+        body.addColour (0.58, faderCapMid);
+        body.addColour (0.90, faderCapHigh);
+        g.setGradientFill (body);
+        g.fillRoundedRectangle (cap, corner);
+
+        // The ribs: across the cap every 3px, either side of the line.
+        const auto start = vertical ? cap.getY() : cap.getX();
+        const auto mid = start + (vertical ? cap.getHeight() : cap.getWidth()) * 0.5f;
+        const auto across = (vertical ? cap.getWidth() : cap.getHeight()) - 6.0f;
+        g.setColour (faderCapRibs);
+
+        for (auto t = start + 3.0f; t < mid - 3.0f; t += 3.0f)
+            for (const auto rib : { t, 2.0f * mid - t - 1.0f })
+                g.fillRect (vertical ? juce::Rectangle<float> (cap.getX() + 3.0f, rib, across, 1.0f)
+                                     : juce::Rectangle<float> (rib, cap.getY() + 3.0f, 1.0f, across));
+
+        g.setColour (faderCapBorder);
+        g.drawRoundedRectangle (cap.reduced (0.5f), corner, 1.0f);
+        g.setColour (faderCapHighlight);
+        g.fillRect (juce::Rectangle<float> (cap.getX() + corner, cap.getY() + 1.0f, cap.getWidth() - 2.0f * corner, 1.0f));
+
+        const auto lineArea = vertical ? juce::Rectangle<float> (cap.getWidth() - 4.0f, 2.0f).withCentre (cap.getCentre())
+                                       : juce::Rectangle<float> (2.0f, cap.getHeight() - 4.0f).withCentre (cap.getCentre());
+        g.setColour (line.withMultipliedAlpha (controlGlow));
+        g.fillRoundedRectangle (lineArea.expanded (2.0f), 2.0f);
+        g.setColour (line);
+        g.fillRoundedRectangle (lineArea, 1.0f);
+
+        if (! enabled)
+            g.endTransparencyLayer();
+    }
+}
+
 void LithiumLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                                            float sliderPos, float minSliderPos, float maxSliderPos,
                                            juce::Slider::SliderStyle style, juce::Slider& slider)
@@ -285,20 +367,33 @@ void LithiumLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
         return;
     }
 
+    // A volume (it has a unity tick): the console fader on its side, a
+    // sunken slot, a tick at 0 dB and the ribbed cap.
+    if (const auto unity = slider.getProperties()["unityValue"]; ! unity.isVoid())
+    {
+        const auto slot = bounds.withSizeKeepingCentre (bounds.getWidth() + 8.0f, 4.0f);
+        drawSlot (g, slot);
+
+        const auto ux = (float) slider.getPositionOfValue ((double) unity);
+        g.setColour (theme::colours::borderStrong);
+        g.fillRect (juce::Rectangle<float> (ux - 0.5f, slot.getY() - 4.0f, 1.0f, slot.getHeight() + 8.0f));
+
+        const auto capWidth = 2.0f * (float) getSliderThumbRadius (slider);
+        const auto cap = juce::Rectangle<float> (capWidth, std::min (18.0f, bounds.getHeight())).withCentre ({ sliderPos, bounds.getCentreY() });
+        drawConsoleCap (g, cap, false, slider.findColour (juce::Slider::trackColourId), enabled);
+
+        if (slider.hasKeyboardFocus (false))
+            drawFocusRing (g, cap.expanded (3.0f), 4.0f);
+
+        return;
+    }
+
     g.setColour (slider.findColour (juce::Slider::backgroundColourId));
     g.fillRoundedRectangle (track, 2.0f);
 
     auto fillColour = slider.findColour (juce::Slider::trackColourId);
     g.setColour (enabled ? fillColour : fillColour.withMultipliedAlpha (0.4f));
     g.fillRoundedRectangle (track.withRight (sliderPos), 2.0f);
-
-    // Unity-gain tick, when the slider has one (volume faders).
-    if (const auto unity = slider.getProperties()["unityValue"]; ! unity.isVoid())
-    {
-        const auto ux = (float) slider.getPositionOfValue ((double) unity);
-        g.setColour (theme::colours::borderStrong);
-        g.fillRect (juce::Rectangle<float> (ux - 0.5f, track.getY() - 3.0f, 1.0f, track.getHeight() + 6.0f));
-    }
 
     const auto thumb = juce::Rectangle<float> (6.0f, 14.0f).withCentre ({ sliderPos, bounds.getCentreY() });
     g.setColour (slider.findColour (juce::Slider::thumbColourId).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
@@ -317,34 +412,25 @@ int LithiumLookAndFeel::getSliderThumbRadius (juce::Slider& slider)
 
 void LithiumLookAndFeel::drawFader (juce::Graphics& g, juce::Rectangle<int> area, float sliderPos, juce::Slider& slider)
 {
-    using namespace theme::colours;
-
+    // The console fader, as on Lithium Studio: a sunken slot, a tick across
+    // it at unity gain (the "unityValue" property, if set), and the ribbed
+    // cap with its line in the channel's colour (trackColourId). The cap is
+    // as tall as JUCE keeps free at each end of the travel (size::faderCap),
+    // so it never leaves the slider's bounds.
     const auto bounds = area.toFloat();
-    const auto track = bounds.withSizeKeepingCentre (4.0f, bounds.getHeight());
-    const auto enabled = slider.isEnabled();
-
-    g.setColour (slider.findColour (juce::Slider::backgroundColourId));
-    g.fillRoundedRectangle (track, 2.0f);
-
-    auto fillColour = slider.findColour (juce::Slider::trackColourId);
-    g.setColour (enabled ? fillColour.withMultipliedAlpha (0.8f) : fillColour.withMultipliedAlpha (0.3f));
-    g.fillRoundedRectangle (track.withTop (sliderPos), 2.0f);
+    const auto slot = bounds.withSizeKeepingCentre (6.0f, bounds.getHeight() + 6.0f);
+    drawSlot (g, slot);
 
     if (const auto unity = slider.getProperties()["unityValue"]; ! unity.isVoid())
     {
         const auto uy = (float) slider.getPositionOfValue ((double) unity);
-        g.setColour (borderStrong);
-        g.fillRect (juce::Rectangle<float> (track.getX() - 6.0f, uy - 0.5f, track.getWidth() + 12.0f, 1.0f));
+        g.setColour (theme::colours::borderStrong);
+        g.fillRect (juce::Rectangle<float> (slot.getX() - 6.0f, uy - 0.5f, slot.getWidth() + 12.0f, 1.0f));
     }
 
-    // The cap: a small raised block with a line across its middle.
-    const auto cap = juce::Rectangle<float> (std::min (26.0f, bounds.getWidth()), 14.0f).withCentre ({ bounds.getCentreX(), sliderPos });
-    g.setColour (raisedHigh.brighter (0.25f).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
-    g.fillRoundedRectangle (cap, 3.0f);
-    g.setColour (borderStrong.brighter (0.3f));
-    g.drawRoundedRectangle (cap.reduced (0.5f), 3.0f, 1.0f);
-    g.setColour (text);
-    g.fillRect (cap.withSizeKeepingCentre (cap.getWidth() - 8.0f, 1.5f));
+    const auto capHeight = 2.0f * (float) getSliderThumbRadius (slider);
+    const auto cap = juce::Rectangle<float> (std::min (26.0f, bounds.getWidth()), capHeight).withCentre ({ slot.getCentreX(), sliderPos });
+    drawConsoleCap (g, cap, true, slider.findColour (juce::Slider::trackColourId), slider.isEnabled());
 
     if (slider.hasKeyboardFocus (false))
         drawFocusRing (g, cap.expanded (2.0f), 4.0f);
@@ -355,11 +441,18 @@ void LithiumLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int 
 {
     using namespace theme::colours;
 
+    // The machined knob, as on Lithium Studio. Drawn in units of a hundredth
+    // of the knob's size (u), so it scales. Outside in: the tick scale, the
+    // value arc in its groove, the skirt with its shadow, the turned-metal
+    // cap with two bands of sheen, and the pointer. The shading is fixed
+    // (lit from the top left); only the arc and pointer move with the value.
+    // A compact knob (the mixer strips' 22px dials) has no ticks and a plain
+    // pointer.
     const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat();
     const auto size = std::min (bounds.getWidth(), bounds.getHeight());
-    const auto centre = bounds.getCentre();
-    const auto radius = size * 0.5f - 2.0f;
-    const auto thickness = std::max (2.0f, size * 0.08f);
+    const auto compact = size < 32.0f;
+    const auto u = size / 100.0f;
+    const auto c = bounds.getCentre();
     const auto enabled = slider.isEnabled();
     const auto angle = startAngle + position * (endAngle - startAngle);
 
@@ -367,37 +460,126 @@ void LithiumLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int 
     const auto bipolar = (bool) slider.getProperties()["bipolar"];
     const auto fromAngle = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
 
-    auto arc = [&] (float a0, float a1)
+    auto circle = [&] (float radius, float dy = 0.0f)
+    {
+        return juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (c.translated (0.0f, dy));
+    };
+    auto arc = [&] (float radius, float a0, float a1)
     {
         juce::Path p;
-        p.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, a0, a1, true);
+        p.addCentredArc (c.x, c.y, radius, radius, 0.0f, a0, a1, true);
         return p;
     };
 
-    const juce::PathStrokeType stroke (thickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
-    g.setColour (raisedHigh.brighter (0.1f));
-    g.strokePath (arc (startAngle, endAngle), stroke);
+    if (! compact)
+    {
+        juce::Path ticks;
 
-    const auto colour = slider.findColour (juce::Slider::rotarySliderFillColourId);
-    g.setColour (enabled ? colour : colour.withMultipliedAlpha (0.35f));
-    g.strokePath (arc (std::min (fromAngle, angle), std::max (fromAngle, angle)), stroke);
+        for (int i = 0; i <= 10; ++i)
+        {
+            const auto a = startAngle + (endAngle - startAngle) * (float) i / 10.0f;
+            ticks.startNewSubPath (c.getPointOnCircumference (45.5f * u, a));
+            ticks.lineTo (c.getPointOnCircumference (49.5f * u, a));
+        }
 
-    // The knob body and its pointer.
-    const auto body = radius - thickness - 2.0f;
-    g.setColour (slider.isMouseOverOrDragging() && enabled ? raisedHigh.brighter (0.12f) : raisedHigh);
-    g.fillEllipse (juce::Rectangle<float> (body * 2.0f, body * 2.0f).withCentre (centre));
-    g.setColour (border);
-    g.drawEllipse (juce::Rectangle<float> (body * 2.0f, body * 2.0f).withCentre (centre), 1.0f);
+        g.setColour (knobTicks);
+        g.strokePath (ticks, roundStroke (std::max (1.0f, 1.6f * u)));
+    }
 
-    const auto tip = centre.getPointOnCircumference (body - 1.5f, angle);
-    const auto root = centre.getPointOnCircumference (body * 0.35f, angle);
-    g.setColour (enabled ? text : textMuted);
-    g.drawLine ({ root, tip }, std::max (1.5f, size * 0.05f));
+    // The value arc, in rotarySliderFillColourId, with a soft glow.
+    const auto arcRadius = (compact ? 44.0f : 40.0f) * u;
+    const auto arcWidth = std::max (2.0f, (compact ? 7.0f : 4.5f) * u);
+    g.setColour (knobTrack);
+    g.strokePath (arc (arcRadius, startAngle, endAngle), roundStroke (arcWidth));
+
+    if (std::abs (angle - fromAngle) > 0.001f)
+    {
+        const auto value = arc (arcRadius, std::min (fromAngle, angle), std::max (fromAngle, angle));
+        auto colour = slider.findColour (juce::Slider::rotarySliderFillColourId);
+
+        if (! enabled)
+            colour = colour.withMultipliedAlpha (0.35f);
+        else if (! compact)
+        {
+            g.setColour (colour.withMultipliedAlpha (controlGlow));
+            g.strokePath (value, roundStroke (arcWidth * 2.2f));
+        }
+
+        g.setColour (colour);
+        g.strokePath (value, roundStroke (arcWidth));
+    }
+
+    // The skirt, on its shadow.
+    const auto skirt = circle ((compact ? 31.0f : 32.0f) * u);
+    g.setColour (knobShadow);
+    g.fillEllipse (circle (skirt.getWidth() * 0.5f, 3.5f * u));
+    g.setGradientFill (juce::ColourGradient (knobSkirtTop, skirt.getTopLeft(), knobSkirtBottom, skirt.getBottomLeft(), false));
+    g.fillEllipse (skirt);
+    g.setColour (knobSkirtEdge);
+    g.drawEllipse (skirt.reduced (0.5f), 1.0f);
+
+    // The cap: lit from the top left, two bands of sheen from the bottom
+    // left to the top right, and (on big knobs) faint turning rings.
+    const auto cap = circle ((compact ? 22.0f : 24.0f) * u);
+    juce::ColourGradient capFill (knobCapLight, cap.getX() + cap.getWidth() * 0.15f, cap.getY() + cap.getHeight() * 0.1f,
+                                  knobCapDark, cap.getX() + cap.getWidth() * 0.85f, cap.getY() + cap.getHeight() * 0.95f, false);
+    capFill.addColour (0.5, knobCapMid);
+    g.setGradientFill (capFill);
+    g.fillEllipse (cap);
+
+    juce::ColourGradient sheenFill (knobSheen.withAlpha (0.0f), cap.getBottomLeft(), knobSheen.withAlpha (0.0f), cap.getTopRight(), false);
+    sheenFill.addColour (0.32, knobSheen);
+    sheenFill.addColour (0.5, knobSheen.withAlpha (0.0f));
+    sheenFill.addColour (0.68, knobSheen.withMultipliedAlpha (0.8f));
+    g.setGradientFill (sheenFill);
+    g.fillEllipse (cap);
+
+    if (slider.isMouseOverOrDragging() && enabled)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.fillEllipse (cap);
+    }
+
+    if (! compact)
+    {
+        g.setColour (knobRings);
+        g.drawEllipse (circle (18.0f * u), 1.0f);
+        g.drawEllipse (circle (11.0f * u), 1.0f);
+        g.setColour (knobCapEdge);
+        g.drawEllipse (cap, 1.0f);
+    }
+
+    // The pointer, drawn pointing up and turned to the value (getPointOnCircumference
+    // and AffineTransform::rotation both go clockwise from 12 o'clock, like
+    // the slider). A big knob has a bright mark on the skirt that runs into
+    // an engraved groove across the cap; a compact one a plain bar.
+    const auto turn = juce::AffineTransform::rotation (angle, c.x, c.y);
+    auto line = [&] (float r0, float r1, float lineWidth, juce::Colour colour, float dx = 0.0f)
+    {
+        juce::Path p;
+        p.startNewSubPath (c.x + dx, c.y - r0);
+        p.lineTo (c.x + dx, c.y - r1);
+        g.setColour (colour);
+        g.strokePath (p, roundStroke (lineWidth), turn);
+    };
+
+    const auto pointer = enabled ? text : textMuted;
+
+    if (compact)
+    {
+        line (29.0f * u, 14.0f * u, std::max (1.5f, 6.0f * u), pointer);
+    }
+    else
+    {
+        line (30.5f * u, 24.0f * u, std::max (1.5f, 3.2f * u), pointer);
+        line (22.0f * u, 10.0f * u, std::max (1.2f, 2.6f * u), knobGroove);
+        line (21.5f * u, 10.5f * u, std::max (0.6f, 0.8f * u), knobGrooveHighlight, 1.2f * u);
+    }
 
     if (slider.hasKeyboardFocus (false))
     {
-        g.setColour (theme::colours::focus);
-        g.drawEllipse (juce::Rectangle<float> (body * 2.0f, body * 2.0f).withCentre (centre), (float) theme::size::focusRing);
+        g.setColour (focus);
+        g.drawEllipse (skirt.expanded (1.5f), (float) theme::size::focusRing);
     }
 }
 

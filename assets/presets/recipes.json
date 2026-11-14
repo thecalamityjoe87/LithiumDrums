@@ -506,6 +506,262 @@
         "master_tape_on": true, "master_tape_drive": 4,
         "master_limit_on": true, "master_limit_ceiling": -0.5
       }
+    },
+    {
+      "name": "Low Chug",
+      "group": "Djent",
+      "kit": "crocellkit-full",
+      "description": "Djent: a deep, round kick under low-tuned guitars with the beater clicking through, a fat snare, low toms that boom, the mids scooped and everything squashed hard.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": 1, "decay": 65, "eq_hpf": 25, "eq_low_freq": 45, "eq_low_gain": 5, "eq_mid1_freq": 72, "eq_mid1_gain": 5, "eq_mid1_q": 0.9, "eq_mid2_freq": 4500, "eq_mid2_gain": 14, "eq_mid2_q": 0.7, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 18, "comp_release": 60, "comp_makeup": 4, "sat_on": true, "sat_drive": 4, "sat_mix": 40, "trans_on": true, "trans_attack": 60, "trans_sustain": -20, "eq_high_freq": 8000, "eq_high_gain": 4 },
+        "snare": { "tune": 0, "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 3, "eq_mid1_freq": 800, "eq_mid1_gain": -7, "eq_mid1_q": 0.8, "eq_mid2_freq": 4000, "eq_mid2_gain": 4, "eq_mid2_q": 0.8, "eq_high_freq": 10000, "eq_high_gain": -2, "trans_on": true, "trans_attack": 15, "trans_sustain": 0, "comp_on": true, "comp_threshold": -18, "comp_ratio": 5, "comp_attack": 6, "comp_release": 90, "comp_makeup": 4, "sat_on": true, "sat_drive": 5, "sat_mix": 40, "reverb_send": -18 },
+        "toms": { "tune": -1.5, "eq_hpf": 70, "eq_low_freq": 130, "eq_low_gain": 1, "eq_mid1_freq": 320, "eq_mid1_gain": -6, "eq_mid1_q": 1.0, "eq_mid2_freq": 4000, "eq_mid2_gain": 3, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 8, "comp_release": 80, "comp_makeup": 3, "reverb_send": -18, "trans_on": true, "trans_attack": 20, "trans_sustain": -25, "decay": 60 },
+        "hihat": { "volume": -3, "eq_hpf": 350 },
+        "cymbals": { "volume": -2, "eq_hpf": 350, "eq_mid1_freq": 600, "eq_mid1_gain": -3 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 300 },
+        "mic:ambience": { "volume": -4, "eq_hpf": 120, "eq_mid1_freq": 500, "eq_mid1_gain": -6, "comp_on": true, "comp_threshold": -30, "comp_ratio": 10, "comp_attack": 1, "comp_release": 80 },
+        "mic:kick_in": { "volume": -3 }
+      },
+      "fx": {
+        "reverb_size": 35, "reverb_decay": 0.9, "reverb_predelay": 10, "reverb_lowcut": 250,
+        "master_eq_on": true, "master_eq_low_freq": 70, "master_eq_low_gain": 2, "master_eq_mid1_freq": 550, "master_eq_mid1_gain": -3.5, "master_eq_mid1_q": 0.7, "master_eq_mid2_freq": 4000, "master_eq_mid2_gain": 3, "master_eq_mid2_q": 0.6, "master_eq_high_freq": 8000, "master_eq_high_gain": 2.5,
+        "master_comp_on": true, "master_comp_threshold": -22, "master_comp_ratio": 4, "master_comp_attack": 5, "master_comp_release": 90,
+        "master_crush_on": true, "master_crush_drive": 18, "master_crush_blend": 35, "master_crush_attack": 5, "master_crush_release": 100,
+        "master_tape_on": true, "master_tape_drive": 4, "master_tape_tone": 0,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Punching Up",
+      "group": "Djent",
+      "kit": "crocellkit-full",
+      "description": "Djent with a lighter hand: the kick's punch sits higher and clicks through, with less sub, a louder snare and gentler squash.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": 2, "decay": 65, "eq_hpf": 25, "eq_low_freq": 45, "eq_low_gain": 4, "eq_mid1_freq": 80, "eq_mid1_gain": 5, "eq_mid1_q": 0.9, "eq_mid2_freq": 4500, "eq_mid2_gain": 14, "eq_mid2_q": 0.7, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 18, "comp_release": 60, "comp_makeup": 4, "sat_on": true, "sat_drive": 4, "sat_mix": 20, "trans_on": true, "trans_attack": 60, "trans_sustain": -20, "eq_high_freq": 8000, "eq_high_gain": 4 },
+        "snare": { "tune": 0, "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 6, "eq_mid1_freq": 500, "eq_mid1_gain": -8, "eq_mid1_q": 0.7, "eq_mid2_freq": 4000, "eq_mid2_gain": 4, "eq_mid2_q": 0.8, "eq_high_freq": 10000, "eq_high_gain": -2, "trans_on": true, "trans_attack": 15, "trans_sustain": 0, "comp_on": true, "comp_threshold": -18, "comp_ratio": 5, "comp_attack": 6, "comp_release": 90, "comp_makeup": 4, "sat_on": true, "sat_drive": 5, "sat_mix": 20, "reverb_send": -18, "volume": 2 },
+        "toms": { "tune": -1.5, "eq_hpf": 70, "eq_low_freq": 130, "eq_low_gain": 1, "eq_mid1_freq": 320, "eq_mid1_gain": -6, "eq_mid1_q": 1.0, "eq_mid2_freq": 4000, "eq_mid2_gain": 3, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 8, "comp_release": 80, "comp_makeup": 3, "reverb_send": -18, "trans_on": true, "trans_attack": 20, "trans_sustain": -25, "decay": 60 },
+        "hihat": { "volume": -3, "eq_hpf": 350 },
+        "cymbals": { "volume": -2, "eq_hpf": 350, "eq_mid1_freq": 600, "eq_mid1_gain": -3 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 300 },
+        "mic:ambience": { "volume": -4, "eq_hpf": 120, "eq_mid1_freq": 500, "eq_mid1_gain": -6, "comp_on": true, "comp_threshold": -30, "comp_ratio": 10, "comp_attack": 1, "comp_release": 80 },
+        "mic:kick_in": { "volume": -5 }
+      },
+      "fx": {
+        "reverb_size": 35, "reverb_decay": 0.9, "reverb_predelay": 10, "reverb_lowcut": 250,
+        "master_eq_on": true, "master_eq_low_freq": 70, "master_eq_low_gain": 0, "master_eq_mid1_freq": 550, "master_eq_mid1_gain": -1, "master_eq_mid1_q": 0.7, "master_eq_mid2_freq": 3200, "master_eq_mid2_gain": 3.5, "master_eq_mid2_q": 0.6, "master_eq_high_freq": 8000, "master_eq_high_gain": 2.5,
+        "master_comp_on": true, "master_comp_threshold": -18, "master_comp_ratio": 4, "master_comp_attack": 5, "master_comp_release": 90,
+        "master_crush_on": true, "master_crush_drive": 18, "master_crush_blend": 35, "master_crush_attack": 5, "master_crush_release": 100,
+        "master_tape_on": true, "master_tape_drive": 4, "master_tape_tone": 0,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Cotton Mouth",
+      "group": "Djent",
+      "kit": "crocellkit-full",
+      "description": "Bone-dry djent: Low Chug's deep kick with the snare and toms cut short, no room mic and the mids scooped hard.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": 1, "decay": 65, "eq_hpf": 25, "eq_low_freq": 45, "eq_low_gain": 5, "eq_mid1_freq": 72, "eq_mid1_gain": 5, "eq_mid1_q": 0.9, "eq_mid2_freq": 4500, "eq_mid2_gain": 14, "eq_mid2_q": 0.7, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 18, "comp_release": 60, "comp_makeup": 4, "sat_on": true, "sat_drive": 4, "sat_mix": 40, "trans_on": true, "trans_attack": 60, "trans_sustain": -20, "eq_high_freq": 8000, "eq_high_gain": 4 },
+        "snare": { "tune": 0, "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 3, "eq_mid1_freq": 800, "eq_mid1_gain": -7, "eq_mid1_q": 0.8, "eq_mid2_freq": 4000, "eq_mid2_gain": 4, "eq_mid2_q": 0.8, "eq_high_freq": 10000, "eq_high_gain": -2, "trans_on": true, "trans_attack": 15, "trans_sustain": -55, "comp_on": true, "comp_threshold": -18, "comp_ratio": 5, "comp_attack": 6, "comp_release": 90, "comp_makeup": 4, "sat_on": true, "sat_drive": 5, "sat_mix": 40, "decay": 60 },
+        "toms": { "tune": -1.5, "eq_hpf": 70, "eq_low_freq": 130, "eq_low_gain": 1, "eq_mid1_freq": 320, "eq_mid1_gain": -6, "eq_mid1_q": 1.0, "eq_mid2_freq": 4000, "eq_mid2_gain": 3, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 8, "comp_release": 80, "comp_makeup": 3, "decay": 60, "trans_on": true, "trans_attack": 20, "trans_sustain": -25 },
+        "hihat": { "volume": -3, "eq_hpf": 350 },
+        "cymbals": { "volume": -2, "eq_hpf": 350, "eq_mid1_freq": 600, "eq_mid1_gain": -3 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 300, "volume": -2 },
+        "mic:ambience": { "mute": true },
+        "mic:kick_in": { "volume": -3 }
+      },
+      "fx": {
+        "reverb_size": 35, "reverb_decay": 0.9, "reverb_predelay": 10, "reverb_lowcut": 250,
+        "master_eq_on": true, "master_eq_low_freq": 70, "master_eq_low_gain": 2, "master_eq_mid1_freq": 600, "master_eq_mid1_gain": -5.5, "master_eq_mid1_q": 0.6, "master_eq_mid2_freq": 4000, "master_eq_mid2_gain": 3, "master_eq_mid2_q": 0.6, "master_eq_high_freq": 8000, "master_eq_high_gain": 2.5,
+        "master_comp_on": true, "master_comp_threshold": -22, "master_comp_ratio": 4, "master_comp_attack": 5, "master_comp_release": 90,
+        "master_crush_on": true, "master_crush_drive": 18, "master_crush_blend": 35, "master_crush_attack": 5, "master_crush_release": 100,
+        "master_tape_on": true, "master_tape_drive": 4, "master_tape_tone": 0,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Big Chug",
+      "group": "Djent",
+      "kit": "crocellkit-full",
+      "description": "Djent at its heaviest: a longer, booming kick, a thick snare, low toms that ring out and extra low-mid weight.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": 1, "decay": 75, "eq_hpf": 25, "eq_low_freq": 45, "eq_low_gain": 5, "eq_mid1_freq": 77, "eq_mid1_gain": 8, "eq_mid1_q": 0.9, "eq_mid2_freq": 4500, "eq_mid2_gain": 14, "eq_mid2_q": 0.7, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 18, "comp_release": 80, "comp_makeup": 4, "sat_on": true, "sat_drive": 4, "sat_mix": 40, "trans_on": true, "trans_attack": 60, "trans_sustain": -5, "eq_high_freq": 8000, "eq_high_gain": 4 },
+        "snare": { "tune": 0, "eq_hpf": 80, "eq_low_freq": 300, "eq_low_gain": 4, "eq_mid1_freq": 900, "eq_mid1_gain": -3, "eq_mid1_q": 0.8, "eq_mid2_freq": 4000, "eq_mid2_gain": 4, "eq_mid2_q": 0.8, "eq_high_freq": 10000, "eq_high_gain": -2, "trans_on": true, "trans_attack": 15, "trans_sustain": 0, "comp_on": true, "comp_threshold": -18, "comp_ratio": 5, "comp_attack": 6, "comp_release": 90, "comp_makeup": 4, "sat_on": true, "sat_drive": 5, "sat_mix": 40, "reverb_send": -18 },
+        "toms": { "tune": -2.5, "eq_hpf": 70, "eq_low_freq": 130, "eq_low_gain": 1, "eq_mid1_freq": 320, "eq_mid1_gain": -6, "eq_mid1_q": 1.0, "eq_mid2_freq": 4000, "eq_mid2_gain": 3, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 8, "comp_release": 80, "comp_makeup": 3, "reverb_send": -18, "trans_on": true, "trans_sustain": -20, "trans_attack": 20, "decay": 65 },
+        "hihat": { "volume": -3, "eq_hpf": 350 },
+        "cymbals": { "volume": -2, "eq_hpf": 350, "eq_mid1_freq": 600, "eq_mid1_gain": -3 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 300 },
+        "mic:ambience": { "volume": -4, "eq_hpf": 120, "eq_mid1_freq": 500, "eq_mid1_gain": -6, "comp_on": true, "comp_threshold": -30, "comp_ratio": 10, "comp_attack": 1, "comp_release": 80 },
+        "mic:kick_in": { "volume": 0 }
+      },
+      "fx": {
+        "reverb_size": 35, "reverb_decay": 0.9, "reverb_predelay": 10, "reverb_lowcut": 250,
+        "master_eq_on": true, "master_eq_low_freq": 70, "master_eq_low_gain": 1, "master_eq_mid1_freq": 200, "master_eq_mid1_gain": 3, "master_eq_mid1_q": 0.7, "master_eq_mid2_freq": 3500, "master_eq_mid2_gain": 6, "master_eq_mid2_q": 0.5, "master_eq_high_freq": 8000, "master_eq_high_gain": 5.5,
+        "master_comp_on": true, "master_comp_threshold": -22, "master_comp_ratio": 4, "master_comp_attack": 5, "master_comp_release": 90,
+        "master_crush_on": true, "master_crush_drive": 18, "master_crush_blend": 35, "master_crush_attack": 5, "master_crush_release": 100,
+        "master_tape_on": true, "master_tape_drive": 4, "master_tape_tone": 0,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Middle Child",
+      "group": "Modern",
+      "kit": "tchimera",
+      "description": "Modern rock: a punchy kick with its weight around 80 Hz, a ringing snare with a short plate, a small studio room and a bright top.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": 3, "decay": 70, "eq_hpf": 20, "eq_low_freq": 40, "eq_low_gain": 6, "eq_mid1_freq": 80, "eq_mid1_gain": 4, "eq_mid2_freq": 3500, "eq_mid2_gain": 4, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 15, "comp_release": 60, "comp_makeup": 3, "trans_on": true, "trans_attack": 25, "trans_sustain": -15, "eq_mid1_q": 1.0 },
+        "snare": { "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 3, "eq_mid2_freq": 5000, "eq_mid2_gain": 3, "eq_high_freq": 10000, "eq_high_gain": 2, "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 8, "comp_release": 150, "comp_makeup": 3, "room_send": -4, "trans_on": true, "trans_sustain": 20, "reverb_send": -6 },
+        "toms": { "eq_hpf": 60, "eq_mid1_freq": 350, "eq_mid1_gain": -4, "eq_mid2_freq": 4000, "eq_mid2_gain": 3, "trans_on": true, "trans_attack": 15, "trans_sustain": -15, "room_send": -16 },
+        "hihat": { "volume": -2, "eq_hpf": 300 },
+        "cymbals": { "volume": -2, "eq_hpf": 250 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 200 }
+      },
+      "fx": {
+        "room_ir": "Studio", "room_return": -2, "room_lowcut": 200,
+        "reverb_size": 40, "reverb_decay": 1.2, "reverb_predelay": 10, "reverb_lowcut": 250,
+        "master_eq_on": true, "master_eq_low_freq": 70, "master_eq_low_gain": 1, "master_eq_high_freq": 10000, "master_eq_high_gain": 9, "master_eq_mid1_freq": 550, "master_eq_mid1_gain": -3, "master_eq_mid1_q": 0.7, "master_eq_mid2_freq": 5000, "master_eq_mid2_gain": 5, "master_eq_mid2_q": 0.5,
+        "master_comp_on": true, "master_comp_threshold": -18, "master_comp_ratio": 3, "master_comp_attack": 10, "master_comp_release": 120,
+        "master_tape_on": true, "master_tape_drive": 4,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Low Drag",
+      "group": "Modern",
+      "kit": "crocellkit-full",
+      "description": "Modern rock, darker: a deep kick with real sub under it, a snare that's all body and less crack, the boom kept short and the top rolled off a touch.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": -2.5, "decay": 70, "eq_hpf": 25, "eq_mid1_freq": 64, "eq_mid1_gain": 4, "eq_mid2_freq": 3500, "eq_mid2_gain": 4, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 15, "comp_release": 60, "comp_makeup": 3, "trans_on": true, "trans_attack": 20, "trans_sustain": -15 },
+        "snare": { "tune": 1, "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 6, "eq_mid1_freq": 800, "eq_mid1_gain": -8, "eq_high_freq": 8000, "eq_high_gain": -3, "trans_on": true, "trans_sustain": -15, "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 10, "comp_release": 90, "comp_makeup": 3, "eq_mid1_q": 1.0 },
+        "toms": { "eq_hpf": 60, "eq_mid1_freq": 350, "eq_mid1_gain": -4, "trans_on": true, "trans_sustain": -15 },
+        "hihat": { "volume": -2, "eq_hpf": 300 },
+        "cymbals": { "volume": -2, "eq_hpf": 250 }
+      },
+      "mics": {
+        "mic:ambience": { "volume": -6 },
+        "mic:kick_in": { "volume": -3 }
+      },
+      "fx": {
+        "master_eq_on": true, "master_eq_high_freq": 9000, "master_eq_high_gain": -2, "master_eq_mid1_freq": 105, "master_eq_mid1_gain": -7, "master_eq_mid1_q": 1.0, "master_eq_mid2_freq": 3500, "master_eq_mid2_gain": 3, "master_eq_mid2_q": 0.6,
+        "master_comp_on": true, "master_comp_threshold": -18, "master_comp_ratio": 3, "master_comp_attack": 10, "master_comp_release": 120,
+        "master_tape_on": true, "master_tape_drive": 5, "master_tape_tone": -10,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Bone Dry",
+      "group": "Modern",
+      "kit": "basalt-garnet",
+      "description": "Close mics only and no reverb: a short, tight kick, a snare cut off right after the crack, short toms and the honk taken out of the mids.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "decay": 40, "eq_hpf": 25, "eq_low_freq": 45, "eq_low_gain": 3, "eq_mid1_freq": 60, "eq_mid1_gain": 4, "eq_mid2_freq": 110, "eq_mid2_gain": -4, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 15, "comp_release": 60, "comp_makeup": 2, "trans_on": true, "trans_attack": 10, "trans_sustain": -45, "eq_mid1_q": 1.0, "eq_mid2_q": 1.2, "hold": 30 },
+        "snare": { "decay": 35, "eq_hpf": 100, "eq_low_freq": 260, "eq_low_gain": 5, "eq_mid1_freq": 600, "eq_mid1_gain": -6, "eq_mid1_q": 0.8, "eq_high_freq": 8000, "eq_high_gain": -3, "trans_on": true, "trans_attack": 10, "trans_sustain": -50, "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 10, "comp_release": 80, "comp_makeup": 2 },
+        "toms": { "decay": 60, "eq_hpf": 60, "eq_mid1_freq": 400, "eq_mid1_gain": -5, "trans_on": true, "trans_sustain": -25 },
+        "hihat": { "volume": -3, "eq_hpf": 300 },
+        "cymbals": { "volume": -3, "eq_hpf": 300 }
+      },
+      "fx": {
+        "master_eq_on": true, "master_eq_mid1_freq": 1000, "master_eq_mid1_gain": -5, "master_eq_high_freq": 9000, "master_eq_high_gain": -2, "master_eq_mid1_q": 0.6,
+        "master_comp_on": true, "master_comp_threshold": -16, "master_comp_ratio": 2, "master_comp_attack": 20, "master_comp_release": 120,
+        "master_tape_on": true, "master_tape_drive": 3,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Bloody & Bruised",
+      "group": "Modern",
+      "kit": "muldjordkit",
+      "description": "Modern metal, dry and squashed: a kick tuned down with the beater clicking through, a cracking snare, the low mids scooped and parallel crush on the mix.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": -3, "decay": 65, "eq_hpf": 22, "eq_low_freq": 50, "eq_low_gain": 10, "eq_mid1_freq": 300, "eq_mid1_gain": -6, "eq_mid2_freq": 4500, "eq_mid2_gain": 8, "eq_mid2_q": 0.8, "comp_on": true, "comp_threshold": -16, "comp_ratio": 5, "comp_attack": 12, "comp_release": 60, "comp_makeup": 3, "trans_on": true, "trans_attack": 40, "trans_sustain": -20 },
+        "snare": { "eq_hpf": 90, "eq_low_freq": 220, "eq_low_gain": 3, "eq_mid1_freq": 700, "eq_mid1_gain": -5, "eq_mid2_freq": 4500, "eq_mid2_gain": 4, "trans_on": true, "trans_attack": 20, "comp_on": true, "comp_threshold": -18, "comp_ratio": 5, "comp_attack": 6, "comp_release": 90, "comp_makeup": 3, "reverb_send": -10, "tune": 1 },
+        "toms": { "tune": -1, "eq_hpf": 60, "eq_mid1_freq": 400, "eq_mid1_gain": -6, "eq_mid2_freq": 4000, "eq_mid2_gain": 4, "trans_on": true, "trans_attack": 20, "trans_sustain": -20 },
+        "hihat": { "volume": -3, "eq_hpf": 350 },
+        "cymbals": { "volume": -2, "eq_hpf": 300 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 250 },
+        "room": { "volume": -8 }
+      },
+      "fx": {
+        "reverb_size": 35, "reverb_decay": 1.0, "reverb_predelay": 10, "reverb_lowcut": 250,
+        "master_eq_on": true, "master_eq_mid1_freq": 600, "master_eq_mid1_gain": -6, "master_eq_mid1_q": 0.5, "master_eq_mid2_freq": 1600, "master_eq_mid2_gain": -4, "master_eq_mid2_q": 0.8, "master_eq_low_freq": 60, "master_eq_low_gain": 3,
+        "master_comp_on": true, "master_comp_threshold": -22, "master_comp_ratio": 4, "master_comp_attack": 5, "master_comp_release": 90,
+        "master_crush_on": true, "master_crush_drive": 15, "master_crush_blend": 35, "master_crush_attack": 5, "master_crush_release": 60,
+        "master_tape_on": true, "master_tape_drive": 4,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Massive Attack",
+      "group": "Modern",
+      "kit": "naked-drums",
+      "description": "Huge and roomy: the room mics compressed hard, a hall around the kick, a long plate on the snare and the boxiness taken out of the rooms.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "eq_hpf": 30, "eq_low_freq": 70, "eq_low_gain": 4, "eq_mid1_freq": 300, "eq_mid1_gain": -4, "eq_mid2_freq": 3500, "eq_mid2_gain": 3, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 20, "comp_release": 80, "comp_makeup": 3, "trans_on": true, "trans_sustain": 20, "room_send": -6 },
+        "snare": { "eq_hpf": 80, "eq_low_freq": 200, "eq_low_gain": 3, "eq_mid2_freq": 290, "eq_mid2_gain": -5, "eq_high_freq": 10000, "eq_high_gain": -2, "comp_on": true, "comp_threshold": -18, "comp_ratio": 4, "comp_attack": 10, "comp_release": 120, "comp_makeup": 3, "room_send": -6, "reverb_send": -2, "tune": 1.3, "eq_mid1_freq": 205, "eq_mid1_gain": 5, "eq_mid1_q": 1.5, "eq_mid2_q": 2.0 },
+        "toms": { "eq_hpf": 60, "eq_mid1_freq": 350, "eq_mid1_gain": -3, "room_send": -10 },
+        "hihat": { "volume": -3, "eq_hpf": 300 },
+        "cymbals": { "volume": -3, "eq_hpf": 250 }
+      },
+      "mics": {
+        "mic:close_room": { "volume": 2, "eq_mid1_freq": 600, "eq_mid1_gain": -6, "eq_mid1_q": 0.8 },
+        "mic:far_rooms": { "volume": 1, "eq_hpf": 100, "comp_on": true, "comp_threshold": -28, "comp_ratio": 6, "comp_attack": 5, "comp_release": 120, "eq_mid1_freq": 600, "eq_mid1_gain": -6, "eq_mid1_q": 0.8 },
+        "mic:mid_side": { "volume": -4, "eq_mid1_freq": 600, "eq_mid1_gain": -6, "eq_mid1_q": 0.8 }
+      },
+      "fx": {
+        "room_ir": "Hall", "room_return": -4, "room_lowcut": 200,
+        "reverb_size": 60, "reverb_decay": 2.2, "reverb_predelay": 20, "reverb_lowcut": 250,
+        "master_eq_on": true, "master_eq_low_freq": 80, "master_eq_low_gain": 1.5, "master_eq_high_freq": 9000, "master_eq_high_gain": -2, "master_eq_mid1_freq": 800, "master_eq_mid1_gain": -8, "master_eq_mid1_q": 0.5,
+        "master_comp_on": true, "master_comp_threshold": -20, "master_comp_ratio": 3, "master_comp_attack": 15, "master_comp_release": 150,
+        "master_tape_on": true, "master_tape_drive": 5,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
+    },
+    {
+      "name": "Fat Daddy",
+      "group": "Modern",
+      "kit": "crocellkit-full",
+      "description": "A snare tuned down to a fat, low thud that sits level with the kick, its crack rounded off and the mids scooped deep, over a round kick and short toms.",
+      "makeup": "master_tape_output",
+      "pieces": {
+        "kick": { "tune": 5, "decay": 75, "eq_hpf": 25, "eq_mid1_freq": 62, "eq_mid1_gain": 6, "eq_mid1_q": 1.0, "eq_mid2_freq": 300, "eq_mid2_gain": -5, "eq_mid2_q": 1.0, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 15, "comp_release": 60, "comp_makeup": 3, "trans_on": true, "trans_sustain": -15 },
+        "snare": { "tune": -2.9, "eq_hpf": 110, "eq_mid1_freq": 160, "eq_mid1_gain": 8, "eq_mid1_q": 1.0, "eq_mid2_freq": 600, "eq_mid2_gain": -13, "eq_mid2_q": 0.5, "eq_high_freq": 5000, "eq_high_gain": 0, "comp_on": true, "comp_threshold": -18, "comp_ratio": 5, "comp_attack": 3, "comp_release": 100, "comp_makeup": 9, "reverb_send": -18, "volume": 2, "trans_on": true, "trans_attack": -20 },
+        "toms": { "tune": -1, "eq_hpf": 70, "eq_mid1_freq": 320, "eq_mid1_gain": -6, "trans_on": true, "trans_attack": 15, "trans_sustain": -25, "comp_on": true, "comp_threshold": -16, "comp_ratio": 4, "comp_attack": 8, "comp_release": 80, "comp_makeup": 2, "decay": 60 },
+        "hihat": { "volume": -4, "eq_hpf": 350 },
+        "cymbals": { "volume": -4, "eq_hpf": 300 }
+      },
+      "mics": {
+        "overheads": { "eq_hpf": 250 },
+        "mic:ambience": { "volume": -6 },
+        "mic:snare_bottom": { "volume": 0 }
+      },
+      "fx": {
+        "reverb_size": 40, "reverb_decay": 1.2, "reverb_predelay": 10, "reverb_lowcut": 200,
+        "master_eq_on": true, "master_eq_mid1_freq": 600, "master_eq_mid1_gain": -7, "master_eq_mid1_q": 0.6, "master_eq_high_freq": 8000, "master_eq_high_gain": 2, "master_eq_mid2_freq": 1800, "master_eq_mid2_gain": -3, "master_eq_mid2_q": 0.7, "master_eq_low_freq": 70, "master_eq_low_gain": 0,
+        "master_comp_on": true, "master_comp_threshold": -18, "master_comp_ratio": 3, "master_comp_attack": 15, "master_comp_release": 120,
+        "master_tape_on": true, "master_tape_drive": 4,
+        "master_limit_on": true, "master_limit_ceiling": -0.3
+      }
     }
   ]
 }
