@@ -2,6 +2,7 @@
 
 #include "EditPage.h"
 #include "FxPage.h"
+#include "GrooveImportPanel.h"
 #include "GroovesPage.h"
 #include "HeaderBar.h"
 #include "InfoPanels.h"
@@ -40,6 +41,7 @@ private:
     SettingsPanel settingsPanel;
     MidiPanel midiPanel;
     KitBrowser browser;
+    GrooveImportPanel importPanel;
     PromptPanel prompt;
 };
 

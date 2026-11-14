@@ -39,4 +39,41 @@ struct ImportedPack
 
 juce::Result importGrooveMidiDataset (const ImportOptions&, ImportedPack& result);
 
+//==============================================================================
+// Any folder of standard MIDI files (.mid, .midi), such as a groove pack
+// bought or downloaded elsewhere, for the user's own use. Nothing about the
+// files is known beyond what they say, so:
+//
+// - Styles come from the folders: the first folder under the one chosen is
+//   the style ("Metal/Fast/blast 01.mid" is Metal, with Fast as its
+//   substyle). Folders that only say what's in them ("MIDI", "Grooves",
+//   "Fills", "Beats") are skipped; files with no other folder take the
+//   pack's name as their style.
+// - Tempo and meter are the file's first tempo and time signature (120 BPM
+//   and 4/4 without them).
+// - A file with "fill" in its name, or in one of its folders, is a fill. It
+//   goes with every groove in its folder, or failing that in the nearest
+//   folder above it that has grooves. Fills with no groove anywhere above
+//   them are grooves of their own.
+//
+// The pack is named by the user and reads its notes through the map they
+// pick (General MIDI by default).
+
+struct MidiFolderOptions
+{
+    juce::File source;
+    juce::File groovesFolder;
+    juce::String name;                     // the pack's name; empty = the source folder's
+    juce::String noteMap = "general-midi"; // a factory map id (see MidiMap::factoryMaps)
+    int phraseBars = 4;
+    bool overwrite = false;
+    std::function<void (const juce::String&)> log;
+};
+
+/** The folder a pack of this name is written to, so a caller can ask before
+    replacing one. */
+juce::File packFolderFor (const juce::File& groovesFolder, const juce::String& name);
+
+juce::Result importMidiFolder (const MidiFolderOptions&, ImportedPack& result);
+
 } // namespace lithium::grooves

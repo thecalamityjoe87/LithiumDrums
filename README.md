@@ -6,7 +6,7 @@
 
 ![The Kit page: a drum kit on stage in a studio room, with the selected piece and the groove player in the corners](docs/images/kit.jpg)
 
-VST3, CLAP, AU and a standalone app · Linux, Windows and macOS · Version 0.9.5 · Free software, [GNU AGPLv3](LICENSE)
+VST3, CLAP, AU and a standalone app · Linux, Windows and macOS · Version 0.9.6 · Free software, [GNU AGPLv3](LICENSE)
 
 By Isaac Joseph ([Calamity Audio](https://github.com/thecalamityjoe87)).
 
@@ -113,7 +113,7 @@ The box in the middle of the header is the preset menu: your presets, the factor
 
 Every kit plays from the same MIDI map, Lithium Standard: General MIDI plus a fixed note for every other kind of hit. Cymbals are choked by notes 85-92, also the same on every kit. The MIDI panel (the MIDI button in the header, which flashes as notes arrive) also offers each library's own map, General MIDI and the e-kit maps. Learn remaps any articulation; Save as keeps the map for other projects, and Set as default starts every new instance with it. E-kit settings belong to the MIDI map, not to presets, so loading a preset never changes your hardware setup.
 
-On the Grooves page, pick a style and a groove, then click any phrase or fill tile to hear it. With the tempo on Host it follows your project's tempo and stays in step while the project plays. Drag a tile (or the Drag MIDI handle) onto a track to get its MIDI, written in the notes of whichever MIDI map you use.
+On the Grooves page, pick a style and a groove, then click any phrase or fill tile to hear it. With the tempo on Host it follows your project's tempo and stays in step while the project plays. Drag a tile (or the Drag MIDI handle) onto a track to get its MIDI, written in the notes of whichever MIDI map you use. Import, next to Rescan, adds a folder of your own MIDI grooves (or a pack from elsewhere) to the page, styled by its folders ([docs/grooves.md](docs/grooves.md)).
 
 For mixing in a DAW, enable the plugin's sixteen stereo aux outs in the host, then pick an output for each channel in the Mixer; several can share one, such as all the toms on Aux 4. The plugin adds no latency unless you switch on the limiter's lookahead on the FX page, which adds 2 ms and tells the host.
 
@@ -159,13 +159,13 @@ Each system gets a graphical installer that shows the two ways to use Lithium Dr
 
 | System | Installer | Built by | Installs to |
 |---|---|---|---|
-| Linux | `LithiumDrums-<version>-linux-x86_64.tar.gz`: unpack, double-click "Install Lithium Drums" (its own window, `tools/installer/`) | `scripts/package.sh` | the home folder, no password: `~/.vst3`, `~/.clap`, `~/.local/share/lithium-drums` plus an app-menu entry |
+| Linux | `LithiumDrums-<version>-linux-x86_64.tar.gz`: unpack, double-click "Install Lithium Drums" (its own window, `tools/installer/`) | `scripts/package.sh` | the home folder, no password: `~/.vst3`, `~/.clap`, `~/.local/lib/lithium-drums` plus an app-menu entry |
 | Windows | `LithiumDrums-<version>-windows-setup.exe` (Inno Setup, `packaging/windows/LithiumDrums.iss`) | `scripts/package.ps1` (needs Inno Setup 6 or 7) | `Program Files`, `Common Files\VST3`, `Common Files\CLAP` |
 | macOS | `LithiumDrums-<version>-macos.pkg` (the Installer app, `packaging/macos/`) | `scripts/package.sh` | `/Applications`, `/Library/Audio/Plug-Ins/{VST3,CLAP,Components}` |
 
-Running the Linux installer again offers Update and Remove; Remove deletes only what it installed (it keeps a list in `~/.local/share/lithium-drums/install.json`), never kits, presets or settings. It also runs from a terminal: `./"Install Lithium Drums" --install` (or `--remove`).
+Running the Linux installer again offers Update and Remove; Remove deletes only what it installed (it keeps a list in `~/.local/lib/lithium-drums/install.json`), never kits, presets or settings. It also runs from a terminal: `./"Install Lithium Drums" --install` (or `--remove`).
 
-`.github/workflows/release.yml` builds all three on GitHub's machines: run it from the Actions tab, or push a version tag (`v0.9.5`) to get a draft release with the installers attached. Unsigned, Windows shows a SmartScreen warning and macOS an "unidentified developer" one; the workflow's comments list the secrets that turn on macOS signing and notarization (an Apple Developer account).
+`.github/workflows/release.yml` builds all three on GitHub's machines: run it from the Actions tab, or push a version tag (`v0.9.6`) to get a draft release with the installers attached. Unsigned, Windows shows a SmartScreen warning and macOS an "unidentified developer" one; the workflow's comments list the secrets that turn on macOS signing and notarization (an Apple Developer account).
 
 The icon and the installers' artwork (`assets/icon/`) are drawn from the same code as the header's logo (`src/ui/Logo.cpp`); after changing it, run `scripts/make-icons.sh` (needs ImageMagick).
 

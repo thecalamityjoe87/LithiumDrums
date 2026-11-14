@@ -8,7 +8,14 @@ namespace
     const juce::String appId = "io.github.thecalamityjoe87.lithiumdrums";
 
     juce::File home()          { return juce::File::getSpecialLocation (juce::File::userHomeDirectory); }
-    juce::File programFolder() { return Installation::dataHome().getChildFile ("lithium-drums"); }
+    // The program's own files: the standalone app, the licence, and the
+    // manifest. In ~/.local/lib, like /usr/lib/<app> for a system install,
+    // so ~/.local/share holds only the user's data folder ("Lithium Drums").
+    juce::File programFolder() { return home().getChildFile (".local/lib/lithium-drums"); }
+
+    // Where versions up to 0.9.5 put it. An update or Remove still finds an
+    // install there (its manifest lists those paths) and clears it away.
+    juce::File legacyProgramFolder() { return Installation::dataHome().getChildFile ("lithium-drums"); }
 
     // The menu entry. Exec is quoted because the path has a space in it;
     // StartupWMClass is JUCE's X11 window class (the app name), which lets
@@ -71,7 +78,10 @@ juce::File Installation::dataHome()
 
 juce::File Installation::manifestFile()
 {
-    return programFolder().getChildFile ("install.json");
+    // The install that's there: the current place, else the old one.
+    const auto current = programFolder().getChildFile ("install.json");
+    const auto legacy = legacyProgramFolder().getChildFile ("install.json");
+    return ! current.existsAsFile() && legacy.existsAsFile() ? legacy : current;
 }
 
 juce::File Installation::standaloneApp() const
@@ -137,9 +147,10 @@ juce::String Installation::remove (const Progress& progress)
 
     manifestFile().deleteFile();
 
-    // The program folder, if nothing else is left in it.
-    if (programFolder().isDirectory() && programFolder().getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0)
-        programFolder().deleteFile();
+    // The program folder (and the old one), if nothing else is left in it.
+    for (const auto& folder : { programFolder(), legacyProgramFolder() })
+        if (folder.isDirectory() && folder.getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0)
+            folder.deleteFile();
 
     refreshDesktop();
     progress ("Removed", 1.0f);

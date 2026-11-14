@@ -596,4 +596,39 @@ void HelpButton::clicked()
     HelpPopover::show (*this, getLocalBounds(), heading, paragraphs);
 }
 
+//==============================================================================
+void drawStyleChip (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& name, int count, bool on, bool hover)
+{
+    using namespace theme;
+    r = r.reduced (0.5f);
+    const auto radius = r.getHeight() * 0.5f;
+
+    g.setColour (on ? colours::accent.withAlpha (0.16f) : (hover ? colours::raisedHigh : colours::raised));
+    g.fillRoundedRectangle (r, radius);
+    g.setColour (on ? colours::accent : colours::border);
+    g.drawRoundedRectangle (r, radius, 1.0f);
+
+    auto text = r.reduced (14.0f, 0.0f);
+
+    if (count >= 0)
+    {
+        g.setColour (on ? colours::accent : colours::textMuted);
+        g.setFont (mono (11.5f));
+        const auto countText = juce::String (count);
+        g.drawText (countText, text.removeFromRight (getTrackedTextWidth (countText, mono (11.5f), 0.0f)),
+                    juce::Justification::centredRight, false);
+        text.removeFromRight (6.0f);
+    }
+
+    g.setColour (on ? colours::text : colours::text.withAlpha (0.85f));
+    g.setFont (body (13.5f, Weight::medium));
+    g.drawText (name, text.withTrimmedRight (-4.0f), juce::Justification::centredLeft, false);
+}
+
+float styleChipWidth (const juce::String& name, int count)
+{
+    return theme::getTrackedTextWidth (name, theme::body (13.5f, theme::Weight::medium), 0.0f)
+         + theme::getTrackedTextWidth (juce::String (count), theme::mono (11.5f), 0.0f) + 44.0f;
+}
+
 } // namespace lithium

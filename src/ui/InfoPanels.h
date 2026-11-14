@@ -32,12 +32,13 @@ protected:
     virtual void layoutContent (juce::Rectangle<int>) {}
 
     juce::Rectangle<int> getCardBounds() const;
+    void setCardSize (int width, int height)        { cardWidth = width; cardHeight = height; resized(); repaint(); }
     void setTitle (juce::String t)                  { title = std::move (t); repaint(); }
     juce::TextButton& getCloseButton() noexcept     { return closeButton; }
 
 private:
     juce::String title;
-    const int cardWidth, cardHeight;
+    int cardWidth, cardHeight;
     juce::TextButton closeButton { "Close" };
 };
 

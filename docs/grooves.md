@@ -26,6 +26,53 @@ environment variable points the plugin at another one). Rescan on the Grooves
 tab reads the folder again. `--phrase-bars <n>` changes how many bars each
 phrase card holds (4 by default).
 
+## Your own MIDI grooves
+
+Import (on the Grooves tab, next to Rescan) turns any folder of standard MIDI
+files (`.mid`, `.midi`) into a groove pack: your own, or a pack bought or
+downloaded elsewhere. Pick the folder, give the pack a name and choose the MIDI
+map its notes are written in (General MIDI by default; a pack written for a
+particular e-kit or drum program needs a map with that layout, or its hi-hat
+and cymbal articulations may land on other pieces). The files are copied into
+the grooves folder, so the original folder can move or go afterwards. A name
+that's already installed is pointed out, and the Import button becomes Replace.
+When it's done, a summary shows how many grooves, fills and styles came in
+(click a style to see it), and which files were left out and why.
+
+`LithiumImport --midi-folder <folder> [--name <pack name>] [--map <map id>]`
+does the same from a terminal; `LithiumImport --map` lists the map ids.
+
+Nothing is known about the files beyond what they say, so:
+
+- **Styles come from the folders, or else the file names.** The first folder
+  that names a genre is the style, and the last folder, if it's another one,
+  the substyle: `Metal/Fast/blast 01.mid` is Metal, tagged Fast. Where no
+  folder names a genre, a genre in the file name is used
+  (`drummer1/session1/1_funk_80_beat.mid` is Funk), and failing that the
+  first folder. Folders that only say
+  what's in them (MIDI, Grooves, Fills, Beats, Loops, Patterns, Drums) are
+  skipped, and so are folders with a version number in their name
+  ("Pack v1.2", the folder a download unpacks into). Files with no other
+  folder take the pack's name as their style.
+  A style is one chip across packs: imported Punk joins the dataset's Punk.
+- **Tempo and meter** are the file's first tempo and time signature, or 120
+  BPM and 4/4 without them.
+- **Fills** are files with a word starting with "fill" in their name or one of
+  their folders. A fill goes with every groove in its folder (skipping the
+  generic folder names, so `Metal/Fills/` goes with `Metal/Grooves/`), or
+  failing that with the grooves in the nearest folder above. Where some of
+  those grooves share the fill's style and tempo, only those count. Up to
+  eight such grooves (a song's verse, chorus and so on) each get the fill;
+  with more, it goes to the nearest one before it in file order. A fill with
+  no groove anywhere above it is shown as a groove.
+- **The hi-hat pedal** is read from CC4, 0 open to 127 closed.
+- Files with no notes, or timed in SMPTE frames, are left out, and the import
+  says which. Hidden files and folders are skipped, and at most 50,000 files
+  are read.
+
+The imported pack is only on your computer. Whether you can share it depends
+on the licence of the files you imported.
+
 ## How the dataset becomes grooves
 
 The dataset is a list of takes in `info.csv`, each a "beat" (a groove, often a

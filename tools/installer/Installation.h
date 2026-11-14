@@ -13,14 +13,17 @@
 // Everything goes into the user's home folder, so no password is needed:
 //   VST3            ~/.vst3/Lithium Drums.vst3
 //   CLAP            ~/.clap/Lithium Drums.clap
-//   standalone app  ~/.local/share/lithium-drums/Lithium Drums, a menu entry,
+//   standalone app  ~/.local/lib/lithium-drums/Lithium Drums, a menu entry,
 //                   icons, and ~/.local/bin/lithium-drums (a link to it)
 //   LithiumImport   ~/.local/bin/LithiumImport
 //   factory presets ~/.local/share/Lithium Drums/Factory Presets (where
 //                   Settings::getFactoryPresetsFolder looks for a per-user install)
-// (~/.local/share is $XDG_DATA_HOME when that's set.)
+// (~/.local/share is $XDG_DATA_HOME when that's set.) The program's own
+// folder is in ~/.local/lib, so ~/.local/share only holds the user's data
+// folder; up to 0.9.5 it was ~/.local/share/lithium-drums, and an update or
+// Remove still finds an install there.
 //
-// Every path it creates is listed in ~/.local/share/lithium-drums/install.json,
+// Every path it creates is listed in ~/.local/lib/lithium-drums/install.json,
 // and Remove deletes exactly those, so the user's kits, presets and settings
 // (which live next to them) are never touched.
 
@@ -77,7 +80,7 @@ public:
     juce::File standaloneApp() const;
 
     static juce::File dataHome();     // $XDG_DATA_HOME or ~/.local/share
-    static juce::File manifestFile();
+    static juce::File manifestFile();   // the installed one, in the current or the old program folder
 
 private:
     juce::File payload;

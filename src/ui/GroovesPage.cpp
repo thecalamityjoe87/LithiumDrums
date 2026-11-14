@@ -231,6 +231,10 @@ class GroovesPage::StyleChips final : public juce::Component
 public:
     explicit StyleChips (GroovesPage& p) : page (p)   { setRepaintsOnMouseActivity (true); }
 
+    /** Back to "All" (after an import, so the new pack shows), or one style. */
+    void showAll()                                  { choose ({}); }
+    void showStyle (const juce::String& key)        { choose (key); }
+
     void setStyles (const grooves::Library& library)
     {
         std::map<juce::String, std::pair<juce::String, int>> counts;   // key -> name, count
@@ -393,36 +397,12 @@ private:
 
     static float chipWidth (const Chip& c)
     {
-        return theme::getTrackedTextWidth (c.name, theme::body (13.5f, theme::Weight::medium), 0.0f)
-             + theme::getTrackedTextWidth (juce::String (c.count), theme::mono (11.5f), 0.0f) + 44.0f;
+        return styleChipWidth (c.name, c.count);
     }
 
     static void drawChip (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& name, int count, bool on, bool hover)
     {
-        using namespace theme;
-        r = r.reduced (0.5f);
-        const auto radius = r.getHeight() * 0.5f;
-
-        g.setColour (on ? colours::accent.withAlpha (0.16f) : (hover ? colours::raisedHigh : colours::raised));
-        g.fillRoundedRectangle (r, radius);
-        g.setColour (on ? colours::accent : colours::border);
-        g.drawRoundedRectangle (r, radius, 1.0f);
-
-        auto text = r.reduced (14.0f, 0.0f);
-
-        if (count >= 0)
-        {
-            g.setColour (on ? colours::accent : colours::textMuted);
-            g.setFont (mono (11.5f));
-            const auto countText = juce::String (count);
-            g.drawText (countText, text.removeFromRight (getTrackedTextWidth (countText, mono (11.5f), 0.0f)),
-                        juce::Justification::centredRight, false);
-            text.removeFromRight (6.0f);
-        }
-
-        g.setColour (on ? colours::text : colours::text.withAlpha (0.85f));
-        g.setFont (body (13.5f, Weight::medium));
-        g.drawText (name, text.withTrimmedRight (-4.0f), juce::Justification::centredLeft, false);
+        drawStyleChip (g, r, name, count, on, hover);
     }
 
     GroovesPage& page;
@@ -495,7 +475,10 @@ public:
         g.setFont (body (14.5f, Weight::semibold));
         g.drawText (groove.name, top, juce::Justification::centredLeft, true);
 
-        auto sub = groove.styleName + dot + groove.drummer;
+        auto sub = groove.styleName;
+
+        if (groove.drummer.isNotEmpty())   // imported MIDI has none
+            sub << dot << groove.drummer;
 
         if (! groove.fills.empty())
             sub << dot << (int) groove.fills.size() << (groove.fills.size() == 1 ? " fill" : " fills");
@@ -1299,6 +1282,10 @@ GroovesPage::GroovesPage (LithiumDrumsProcessor& p)
     tempoRange.onValueChange = [this] { applyFilter(); repaint (leftArea); };
     addAndMakeVisible (tempoRange);
 
+    importButton.setTooltip ("Make a groove pack from a folder of MIDI files");
+    importButton.onClick = [this] { chooseImportFolder(); };
+    addAndMakeVisible (importButton);
+
     rescanButton.setTooltip ("Read the grooves folder again");
     rescanButton.onClick = [this] { rescan(); };
     addAndMakeVisible (rescanButton);
@@ -1804,6 +1791,49 @@ void GroovesPage::saveMidi()
                           });
 }
 
+//==============================================================================
+// Import: a folder of MIDI files becomes a groove pack (grooves::importMidiFolder).
+
+void GroovesPage::chooseImportFolder()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Choose a folder of MIDI grooves",
+                                                   juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [safe = juce::Component::SafePointer (this)] (const juce::FileChooser& fc)
+                          {
+                              if (safe != nullptr && fc.getResult().isDirectory() && safe->onImportFolder)
+                                  safe->onImportFolder (fc.getResult());
+                          });
+}
+
+void GroovesPage::showImportedPack (const juce::File& packFolder)
+{
+    rescan();
+
+    for (size_t p = 0; p < library.packs.size(); ++p)
+    {
+        if (library.packs[p].folder == packFolder && ! library.packs[p].grooves.empty())
+        {
+            search.clear();
+            chips->showAll();
+            selectGroove ({ (int) p, 0 }, true);
+        }
+    }
+}
+
+void GroovesPage::showPack (const juce::String& packName)
+{
+    chips->showAll();
+    search.setText (packName, true);
+}
+
+void GroovesPage::showStyle (const juce::String& styleKey)
+{
+    search.setText ({}, true);
+    chips->showStyle (styleKey);
+}
+
 juce::String GroovesPage::describe (Part part) const
 {
     if (const auto clip = makeClip (part))
@@ -2051,7 +2081,10 @@ void GroovesPage::paint (juce::Graphics& g)
         if (groove->substyle.isNotEmpty() && ! groove->name.containsIgnoreCase (groove->substyle))
             sub << dot << groove->substyle;
 
-        sub << dot << groove->drummer << dot << juce::String (juce::roundToInt (groove->bpm)) << " BPM" << dot << groove->meter()
+        if (groove->drummer.isNotEmpty())
+            sub << dot << groove->drummer;
+
+        sub << dot << juce::String (juce::roundToInt (groove->bpm)) << " BPM" << dot << groove->meter()
             << dot << groove->bars << " bars";
 
         if (const auto* pack = selectedPack())
@@ -2160,10 +2193,12 @@ void GroovesPage::resized()
         filters.removeFromTop (14);
         auto typeRow = filters.removeFromTop (28);
         typeRow.removeFromLeft (60);
-        beatsButton.setBounds (typeRow.removeFromLeft (80));
-        typeRow.removeFromLeft (6);
-        fillsButton.setBounds (typeRow.removeFromLeft (80));
-        rescanButton.setBounds (typeRow.removeFromRight (78));
+        beatsButton.setBounds (typeRow.removeFromLeft (62));
+        typeRow.removeFromLeft (4);
+        fillsButton.setBounds (typeRow.removeFromLeft (62));
+        rescanButton.setBounds (typeRow.removeFromRight (64));
+        typeRow.removeFromRight (4);
+        importButton.setBounds (typeRow.removeFromRight (70));
 
         filters.removeFromTop (30);
         tempoRange.setBounds (filters.removeFromTop (24));

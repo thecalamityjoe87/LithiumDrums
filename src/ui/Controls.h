@@ -200,6 +200,13 @@ private:
 };
 
 //==============================================================================
+/** A groove style chip, as the Grooves page's style row and the import
+    summary draw it: the style's name and how many grooves it has, in a pill.
+    A count below 0 leaves the count out. */
+void drawStyleChip (juce::Graphics&, juce::Rectangle<float>, const juce::String& name, int count, bool on, bool hover);
+float styleChipWidth (const juce::String& name, int count);
+
+//==============================================================================
 /** Draws the help mark: a "?" in a ring, the "?" centred by its ink. (Not an
     "i": the header's "i" button is the About panel.) */
 void drawHelpMark (juce::Graphics&, juce::Rectangle<float> ring, bool highlighted);

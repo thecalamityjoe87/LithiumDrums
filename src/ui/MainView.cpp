@@ -39,6 +39,18 @@ MainView::MainView (LithiumDrumsProcessor& p)
     browser.onClose = [this] { showPanel (nullptr); };
     browser.onPrompt = [this] (PromptPanel::Request r) { showPrompt (std::move (r)); };
     midiPanel.onClose = [this] { showPanel (nullptr); };
+
+    // Importing MIDI grooves: the page picks the folder, the card does the rest.
+    groovesPage.onImportFolder = [this] (const juce::File& folder)
+    {
+        importPanel.showForm (folder);
+        showPanel (&importPanel);
+    };
+    importPanel.onClose = [this] { showPanel (nullptr); };
+    importPanel.onImported = [this] (const juce::File& packFolder) { groovesPage.showImportedPack (packFolder); };
+    importPanel.onShowPack = [this] (const juce::String& name) { groovesPage.showPack (name); };
+    importPanel.onShowStyle = [this] (const juce::String& key) { groovesPage.showStyle (key); };
+    importPanel.onChooseFolder = [this] { groovesPage.chooseImportFolder(); };
     settingsPanel.onKitsFolderChanged = [this] { header.refreshKitBox(); };
 
     addAndMakeVisible (header);
@@ -51,6 +63,7 @@ MainView::MainView (LithiumDrumsProcessor& p)
     addChildComponent (settingsPanel);
     addChildComponent (midiPanel);
     addChildComponent (browser);
+    addChildComponent (importPanel);
     addChildComponent (prompt);          // over everything, even the other panels
 
     // Tab moves through the controls, with a visible outline (a mouse click
@@ -87,6 +100,7 @@ void MainView::showPanel (OverlayPanel* panel)
     settingsPanel.setVisible (panel == &settingsPanel);
     midiPanel.setVisible (panel == &midiPanel);
     browser.setVisible (panel == &browser);
+    importPanel.setVisible (panel == &importPanel);
 
     // The browser puts the focus in its search box (once visible); the
     // others take it themselves, for Escape.
@@ -122,6 +136,7 @@ void MainView::resized()
     settingsPanel.setBounds (getLocalBounds());
     midiPanel.setBounds (getLocalBounds());
     browser.setBounds (getLocalBounds());
+    importPanel.setBounds (getLocalBounds());
     prompt.setBounds (getLocalBounds());
 }
 

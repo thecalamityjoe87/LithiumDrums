@@ -4,6 +4,7 @@
 //   LithiumImport <folder, drumkit.xml or .sfz> [options]
 //   LithiumImport --install <pack id | all> [--kits-folder <dir>] [--grooves-folder <dir>]
 //   LithiumImport --list-packs
+//   LithiumImport --midi-folder <dir> [--map <map id>] [--name <pack name>] [--grooves-folder <dir>]
 //
 //   --kits-folder <dir>   where to put the pack (default: the plugin's kits folder)
 //   --grooves-folder <dir> where to put a groove pack (default: the plugin's grooves folder)
@@ -23,11 +24,18 @@
 // --install downloads a pack from the built-in catalog, unpacks and imports
 // it, as the plugin's Download buttons do (docs/packs.md); --list-packs shows
 // the catalog and what's installed.
+//
+// --midi-folder makes a groove pack from any folder of MIDI files (your own,
+// or a pack from elsewhere), read through a built-in MIDI map (general-midi
+// by default; --map with no id lists them), as the Grooves page's Import
+// button does (docs/grooves.md).
 
 #include "Settings.h"
 #include "grooves/GrooveImporter.h"
 #include "importer/Importer.h"
 #include "packs/PackInstaller.h"
+
+#include <LithiumAssets.h>
 
 #include <iostream>
 
@@ -39,8 +47,38 @@ namespace
                      "                     [--zones <n>] [--min-rr <n>] [--overwrite] [--copy]\n"
                      "       LithiumImport <Groove MIDI Dataset folder> [--grooves-folder <dir>] [--phrase-bars <n>] [--overwrite]\n"
                      "       LithiumImport --install <pack id | all> [--kits-folder <dir>] [--grooves-folder <dir>]\n"
-                     "       LithiumImport --list-packs\n";
+                     "       LithiumImport --list-packs\n"
+                     "       LithiumImport --midi-folder <dir> [--map <map id>] [--name <pack name>] [--grooves-folder <dir>]\n"
+                     "                     [--phrase-bars <n>] [--overwrite]\n";
         return 2;
+    }
+
+    // The built-in MIDI maps' ids and names, from the plugin's own map files
+    // (the ones MidiMap::factoryMaps reads, less Kit default). Named one by
+    // one: going through LithiumAssets' resource list would link every
+    // embedded asset (renders, IRs) into this tool.
+    std::vector<std::pair<juce::String, juce::String>> builtInMaps()
+    {
+        const std::pair<const char*, int> files[] {
+            { LithiumAssets::lithiumstandard_json, LithiumAssets::lithiumstandard_jsonSize },
+            { LithiumAssets::generalmidi_json, LithiumAssets::generalmidi_jsonSize },
+            { LithiumAssets::rolandvdrums_json, LithiumAssets::rolandvdrums_jsonSize },
+            { LithiumAssets::alesis_json, LithiumAssets::alesis_jsonSize },
+            { LithiumAssets::drumitfive_json, LithiumAssets::drumitfive_jsonSize },
+            { LithiumAssets::efnote_json, LithiumAssets::efnote_jsonSize },
+            { LithiumAssets::hxmm019_json, LithiumAssets::hxmm019_jsonSize },
+            { LithiumAssets::lemont950_json, LithiumAssets::lemont950_jsonSize },
+            { LithiumAssets::milleniummps1000_json, LithiumAssets::milleniummps1000_jsonSize },
+            { LithiumAssets::yamahadtx402_json, LithiumAssets::yamahadtx402_jsonSize },
+        };
+
+        std::vector<std::pair<juce::String, juce::String>> maps;
+
+        for (const auto& [data, size] : files)
+            if (const auto json = juce::JSON::parse (juce::String::fromUTF8 (data, size)); json["format"].toString() == "lithium-midi-map")
+                maps.emplace_back (json["id"].toString(), json["name"].toString());
+
+        return maps;
     }
 
     juce::String formatBytes (std::int64_t bytes)
@@ -67,6 +105,9 @@ int main (int argc, char* argv[])
     juce::String installId;
     auto listPacks = false;
 
+    lithium::grooves::MidiFolderOptions midiOptions;
+    auto listMaps = false;
+
     for (int i = 1; i < argc; ++i)
     {
         const juce::String arg (argv[i]);
@@ -81,6 +122,10 @@ int main (int argc, char* argv[])
         else if (arg == "--overwrite")                options.overwrite = true;
         else if (arg == "--install" && hasValue)      installId = argv[++i];
         else if (arg == "--list-packs")               listPacks = true;
+        else if (arg == "--midi-folder" && hasValue)  midiOptions.source = cwd.getChildFile (argv[++i]);
+        else if (arg == "--name" && hasValue)         midiOptions.name = argv[++i];
+        else if (arg == "--map" && hasValue)          midiOptions.noteMap = argv[++i];
+        else if (arg == "--map")                      listMaps = true;
         else if (arg == "--copy")                     options.copyAudio = true;
         else if (! arg.startsWith ("--") && options.source == juce::File())
                                                       options.source = cwd.getChildFile (arg);
@@ -93,6 +138,48 @@ int main (int argc, char* argv[])
             std::cout << p.id.paddedRight (' ', 28) << p.name.paddedRight (' ', 22)
                       << lithium::packs::formatSize (p.downloadSize()).paddedLeft (' ', 8) << "  " << p.licenseName << std::endl;
 
+        return 0;
+    }
+
+    if (listMaps)
+    {
+        for (const auto& [id, name] : builtInMaps())
+            std::cout << id.paddedRight (' ', 22) << name << std::endl;
+
+        return 0;
+    }
+
+    if (midiOptions.source != juce::File())
+    {
+        const auto maps = builtInMaps();
+
+        if (std::none_of (maps.begin(), maps.end(), [&] (const auto& m) { return m.first == midiOptions.noteMap; }))
+        {
+            std::cerr << "No built-in MIDI map called " << midiOptions.noteMap << " (--map on its own lists them)" << std::endl;
+            return 2;
+        }
+
+        midiOptions.groovesFolder = grooveOptions.groovesFolder;
+        midiOptions.phraseBars = grooveOptions.phraseBars;
+        midiOptions.overwrite = options.overwrite;
+        midiOptions.log = options.log;
+        std::cout << "Grooves folder: " << midiOptions.groovesFolder.getFullPathName() << std::endl;
+
+        lithium::grooves::ImportedPack pack;
+        const auto result = lithium::grooves::importMidiFolder (midiOptions, pack);
+
+        for (const auto& w : pack.warnings)
+            std::cout << "  warning: " << w << std::endl;
+
+        if (result.failed())
+        {
+            std::cerr << "Import failed: " << result.getErrorMessage() << std::endl;
+            return 1;
+        }
+
+        std::cout << "  " << pack.name << ": " << pack.numGrooves << " grooves (" << pack.numPhrases << " phrases of "
+                  << midiOptions.phraseBars << " bars), " << pack.numFills << " fills\n    -> "
+                  << pack.folder.getFullPathName() << std::endl;
         return 0;
     }
 

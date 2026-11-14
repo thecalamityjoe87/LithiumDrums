@@ -6,6 +6,8 @@
 #include "grooves/GrooveImporter.h"
 #include "grooves/GrooveMidi.h"
 
+#include <map>
+
 namespace lithium
 {
 
@@ -392,6 +394,161 @@ public:
             expect (grooves::importGrooveMidiDataset (options, imported).failed(), "it doesn't overwrite unless asked");
             options.overwrite = true;
             expect (grooves::importGrooveMidiDataset (options, imported).wasOk());
+        }
+
+        beginTest ("A folder of MIDI files: styles from folders, fills, tempo and meter");
+        {
+            const auto source = root.getChildFile ("My MIDI");
+            const auto beat = makeTake ({ { 0.0, 36, 100 }, { 2.0, 38, 100 }, { 15.0, 38, 100 } });   // 4 bars at 120 BPM
+
+            write (beat, source.getChildFile ("Metal/Grooves/Blast_01.mid"));
+            write (beat, source.getChildFile ("Metal/Grooves/Gallop 02.MID"));
+            write (makeTake ({ { 0.0, 48, 100 } }), source.getChildFile ("Metal/Fills/Fill 01.mid"));
+            write (beat, source.getChildFile ("Alt Rock/Verse.midi"));
+            write (makeTake ({ { 0.0, 43, 100 } }), source.getChildFile ("Alt Rock/Slow/big fill.mid"));   // up to Alt Rock's groove
+            write (beat, source.getChildFile ("loose.mid"));
+            write (makeTake ({}), source.getChildFile ("Empty/nothing.mid"));
+            write (beat, source.getChildFile (".hidden/skip.mid"));
+            source.getChildFile ("Metal/readme.txt").replaceWithText ("not MIDI");
+
+            // 7/8 at 140 BPM.
+            {
+                juce::MidiMessageSequence track;
+                track.addEvent (juce::MidiMessage::tempoMetaEvent (60'000'000 / 140), 0.0);
+                track.addEvent (juce::MidiMessage::timeSignatureMetaEvent (7, 8), 0.0);
+                track.addEvent (juce::MidiMessage::noteOn (10, 36, (juce::uint8) 100), 0.0);
+                track.addEvent (juce::MidiMessage::noteOn (10, 38, (juce::uint8) 100), 480.0 * 3.5 + 480.0 * 2.0);   // bar 2 at 3.5 beats a bar
+                track.sort();
+                juce::MidiFile file;
+                file.setTicksPerQuarterNote (480);
+                file.addTrack (track);
+                write (file, source.getChildFile ("Djent/odd.mid"));
+            }
+
+            grooves::MidiFolderOptions options;
+            options.source = source;
+            options.groovesFolder = root.getChildFile ("Grooves");
+            options.name = "Bought Pack";
+            options.noteMap = "general-midi";
+
+            grooves::ImportedPack imported;
+            const auto result = grooves::importMidiFolder (options, imported);
+            expect (result.wasOk(), result.getErrorMessage());
+            expectEquals (imported.numGrooves, 5);   // Blast, Gallop, Verse, loose, odd
+            expectEquals (imported.numFills, 2);
+            expectEquals (imported.warnings.size(), 1);   // the empty file
+
+            grooves::Pack pack;
+            expect (grooves::readPack (grooves::packFolderFor (options.groovesFolder, "Bought Pack"), pack).wasOk());
+            expectEquals (pack.noteMap, juce::String ("general-midi"));
+            expectEquals (pack.pedalClosedAt, 127);
+            expectEquals (pack.licenseName, juce::String());
+
+            std::map<juce::String, const grooves::Groove*> byName;
+
+            for (const auto& g : pack.grooves)
+                byName[g.name] = &g;
+
+            expectEquals ((int) byName.size(), 5);
+
+            if (byName.size() == 5)
+            {
+                // Generic folders ("Grooves", "Fills") are skipped, so Metal's fill goes with both its grooves.
+                expectEquals (byName["Blast 01"]->style, juce::String ("metal"));
+                expectEquals (byName["Blast 01"]->styleName, juce::String ("Metal"));
+                expectEquals ((int) byName["Blast 01"]->fills.size(), 1);
+                expectEquals ((int) byName["Gallop 02"]->fills.size(), 1);
+                expect (byName["Gallop 02"]->fills[0].file.existsAsFile());
+                expectEquals (byName["Blast 01"]->bars, 4);
+                expectEquals (byName["Blast 01"]->bpm, 120.0);
+
+                expectEquals (byName["Verse"]->style, juce::String ("altrock"));
+                expectEquals (byName["Verse"]->styleName, juce::String ("Alt Rock"));
+                expectEquals (byName["Verse"]->fills.size() == 1 ? byName["Verse"]->fills[0].name : juce::String(), juce::String ("big fill"));
+
+                // A file at the top takes the pack's name as its style.
+                expectEquals (byName["loose"]->styleName, juce::String ("Bought Pack"));
+
+                expectEquals (byName["odd"]->meter(), juce::String ("7/8"));
+                expectEquals (byName["odd"]->bpm, 140.0);
+                expectEquals (byName["odd"]->bars, 2);
+            }
+
+            expect (grooves::importMidiFolder (options, imported).failed(), "it doesn't overwrite unless asked");
+            options.overwrite = true;
+            expect (grooves::importMidiFolder (options, imported).wasOk());
+
+            // A download's own folder ("Pack v1.2") isn't a style, and in a
+            // flat folder a fill goes with the grooves at its tempo.
+            {
+                const auto wrapped = root.getChildFile ("Download");
+                const auto atTempo = [] (int bpm, double lastBeat)
+                {
+                    juce::MidiMessageSequence track;
+                    track.addEvent (juce::MidiMessage::tempoMetaEvent (60'000'000 / bpm), 0.0);
+                    track.addEvent (juce::MidiMessage::noteOn (10, 36, (juce::uint8) 100), 0.0);
+                    track.addEvent (juce::MidiMessage::noteOn (10, 38, (juce::uint8) 100), lastBeat * 480.0);
+                    track.sort();
+                    juce::MidiFile file;
+                    file.setTicksPerQuarterNote (480);
+                    file.addTrack (track);
+                    return file;
+                };
+
+                write (atTempo (100, 15.0), wrapped.getChildFile ("Thrash Pack v1.2/Thrash/slow beat.mid"));
+                write (atTempo (180, 15.0), wrapped.getChildFile ("Thrash Pack v1.2/Thrash/fast beat.mid"));
+                write (atTempo (180, 3.0), wrapped.getChildFile ("Thrash Pack v1.2/Thrash/fast fill.mid"));
+
+                grooves::MidiFolderOptions wrappedOptions;
+                wrappedOptions.source = wrapped;
+                wrappedOptions.groovesFolder = root.getChildFile ("Grooves");
+                wrappedOptions.name = "Downloaded";
+
+                grooves::ImportedPack thrash;
+                expect (grooves::importMidiFolder (wrappedOptions, thrash).wasOk());
+
+                grooves::Pack pack2;
+                expect (grooves::readPack (thrash.folder, pack2).wasOk());
+
+                for (const auto& g : pack2.grooves)
+                {
+                    expectEquals (g.styleName, juce::String ("Thrash"));
+                    expectEquals ((int) g.fills.size(), g.name == "fast beat" ? 1 : 0, g.name);
+                }
+            }
+
+            // With no genre in the folders, the file names give it.
+            {
+                const auto flat = root.getChildFile ("Flat");
+                write (beat, flat.getChildFile ("drummer1/session1/1_funk_120_beat_4-4_3.midi"));
+                write (beat, flat.getChildFile ("drummer1/session1/2_hiphop_120_beat_4-4_1.midi"));
+                write (beat, flat.getChildFile ("drummer1/session1/death_metal_01.mid"));
+                write (beat, flat.getChildFile ("drummer1/session1/whatever.mid"));
+
+                grooves::MidiFolderOptions flatOptions;
+                flatOptions.source = flat;
+                flatOptions.groovesFolder = root.getChildFile ("Grooves");
+                flatOptions.name = "Flat";
+
+                grooves::ImportedPack flatPack;
+                expect (grooves::importMidiFolder (flatOptions, flatPack).wasOk());
+
+                grooves::Pack pack3;
+                expect (grooves::readPack (flatPack.folder, pack3).wasOk());
+                juce::StringArray styles;
+
+                for (const auto& g : pack3.grooves)
+                    styles.add (g.style + "=" + g.styleName + (g.substyle.isNotEmpty() ? "/" + g.substyle : juce::String()));
+
+                // "whatever" names no genre, so its first folder is its style, as before.
+                expectEquals (styles.joinIntoString (","), juce::String ("funk=Funk,hiphop=Hip-Hop,deathmetal=Death Metal,drummer1=drummer1/session1"));
+            }
+
+            // A folder can't be imported into itself, or into a folder inside it.
+            options.source = options.groovesFolder;
+            expect (grooves::importMidiFolder (options, imported).failed());
+            options.source = root;
+            expect (grooves::importMidiFolder (options, imported).failed());
         }
     }
 };

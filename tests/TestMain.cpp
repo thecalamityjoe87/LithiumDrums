@@ -5,6 +5,7 @@
 //   LithiumDrumsTests --snapshot f.png [--scale 1.5] [--select <piece id>] [--kit <folder>] [--click <button>]
 //                                     [--mixer-channel piece:<n> | mic:<n> | fx:<module>]   (module: 0 Room .. 8 Limiter)
 //                                     [--swap <piece or slot-id>=<kit id>/<piece id>,...] [--midi-activity] [--preset <file>]
+//                                     [--import-folder <dir>]   (the groove import card for that folder; --click Import imports it)
 //                                     render the editor to an image (needs a display, e.g. xvfb-run)
 //   LithiumDrumsTests --preset-sync <preset file>,... [--kit <folder>] [--image f.png]
 //                                     open the editor, load each preset in turn and check that every mixer
@@ -59,6 +60,7 @@
 #include "engine/StreamCache.h"
 #include "engine/MidiMapping.h"
 #include "grooves/GrooveMidi.h"
+#include "ui/GroovesPage.h"
 #include "ui/MixerPage.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -138,8 +140,9 @@ class SnapshotWriter final : private juce::Timer
 {
 public:
     SnapshotWriter (juce::File f, float s, juce::String select, const juce::File& kit, juce::String click, const juce::String& mixerChannel,
-                    const juce::String& swaps, bool midi, const juce::File& preset = {})
-        : file (std::move (f)), scale (s), selectId (std::move (select)), clickName (std::move (click)), midiActivity (midi)
+                    const juce::String& swaps, bool midi, const juce::File& preset = {}, const juce::File& folderToImport = {})
+        : file (std::move (f)), scale (s), selectId (std::move (select)), clickName (std::move (click)), midiActivity (midi),
+          importFolder (folderToImport)
     {
         if (mixerChannel.startsWith ("fx:"))
             processor.selectedFxModule = mixerChannel.fromFirstOccurrenceOf (":", false, false).getIntValue();
@@ -193,6 +196,11 @@ private:
             editor->setSize (juce::roundToInt (1280 * scale), juce::roundToInt (800 * scale));
             readyTick = ticks;
 
+            // The groove import card, for a folder (as if the Grooves page's Import had picked it).
+            if (importFolder != juce::File())
+                if (auto* page = findComponent<lithium::GroovesPage> (*editor); page != nullptr && page->onImportFolder)
+                    page->onImportFolder (importFolder);
+
             // Several buttons may be given, comma-separated, and are clicked in order.
             for (const auto& name : juce::StringArray::fromTokens (clickName, ",", {}))
                 if (auto* button = findButton (*editor, name))
@@ -218,6 +226,19 @@ private:
         }
     }
 
+    template <typename ComponentType>
+    static ComponentType* findComponent (juce::Component& c)
+    {
+        if (auto* found = dynamic_cast<ComponentType*> (&c))
+            return found;
+
+        for (auto* child : c.getChildren())
+            if (auto* found = findComponent<ComponentType> (*child))
+                return found;
+
+        return nullptr;
+    }
+
     static juce::Button* findButton (juce::Component& c, const juce::String& name)
     {
         if (name.isEmpty())
@@ -239,6 +260,7 @@ private:
     float scale;
     juce::String selectId, clickName;
     bool midiActivity = false;
+    juce::File importFolder;
     int ticks = 0, readyTick = 0;
 };
 
@@ -1220,7 +1242,9 @@ static int writeSnapshot (const juce::StringArray& args)
     const auto swaps = args.contains ("--swap") ? args[args.indexOf ("--swap") + 1] : juce::String();
     const auto preset = args.contains ("--preset") ? juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--preset") + 1])
                                                    : juce::File();
-    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel, swaps, args.contains ("--midi-activity"), preset);
+    const auto importFolder = args.contains ("--import-folder")
+                                ? juce::File::getCurrentWorkingDirectory().getChildFile (args[args.indexOf ("--import-folder") + 1]) : juce::File();
+    SnapshotWriter writer (file, scale, select, kit, click, mixerChannel, swaps, args.contains ("--midi-activity"), preset, importFolder);
     juce::MessageManager::getInstance()->runDispatchLoop();
     return writer.result;
 }

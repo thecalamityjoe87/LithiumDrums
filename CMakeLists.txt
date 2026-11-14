@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(LithiumDrums VERSION 0.9.5 LANGUAGES C CXX)
+project(LithiumDrums VERSION 0.9.6 LANGUAGES C CXX)
 
 if(APPLE)
     # JUCE's macOS sources are Objective-C++.
@@ -137,7 +137,8 @@ target_sources(LithiumDrums PRIVATE
     src/ui/EdrumsView.cpp
     src/ui/VelocityCurveEditor.cpp
     src/ui/MidiKeyboard.cpp
-    src/ui/GroovesPage.cpp)
+    src/ui/GroovesPage.cpp
+    src/ui/GrooveImportPanel.cpp)
 
 target_include_directories(LithiumDrums PRIVATE src)
 

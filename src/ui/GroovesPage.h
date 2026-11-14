@@ -23,7 +23,9 @@ namespace lithium
 
     The groove library is read from the grooves folder the first time the
     tab is shown, and again with Rescan. With no grooves installed, the
-    catalog's groove pack is shown greyed out, with a Download button. */
+    catalog's groove pack is shown greyed out, with a Download button.
+    Import picks a folder of the user's own MIDI files, for the import card
+    (GrooveImportPanel, shown by the main view) to make a groove pack of. */
 class GroovesPage final : public juce::Component, private juce::Timer, private juce::ChangeListener
 {
 public:
@@ -80,6 +82,21 @@ public:
     /** Selects the previous (-1) or next (+1) tile, in the order the page
         shows them, and plays it if a groove is playing. */
     void stepPart (int delta);
+
+    //==============================================================================
+    // Import.
+
+    /** Asks for a folder of MIDI files, then hands it to onImportFolder. */
+    void chooseImportFolder();
+    std::function<void (const juce::File&)> onImportFolder;
+
+    /** After an import: reads the grooves folder again and selects the new
+        pack's first groove, with every style showing. */
+    void showImportedPack (const juce::File& packFolder);
+
+    /** Shows only one pack's grooves (by searching for its name), or one style. */
+    void showPack (const juce::String& packName);
+    void showStyle (const juce::String& styleKey);
 
 private:
     class StyleChips;
@@ -140,7 +157,7 @@ private:
     juce::TextEditor search;
     juce::TextButton beatsButton { "Beats" }, fillsButton { "Fills" };
     juce::Slider tempoRange { juce::Slider::TwoValueHorizontal, juce::Slider::NoTextBox };
-    juce::TextButton rescanButton { "Rescan" };
+    juce::TextButton importButton { "Import..." }, rescanButton { "Rescan" };
     juce::SharedResourcePointer<packs::Installer> installer;
     juce::TextButton downloadButton;
 
