@@ -1,5 +1,6 @@
 #include "FxPage.h"
 
+#include "LithiumLookAndFeel.h"
 #include "Theme.h"
 
 namespace lithium
@@ -498,6 +499,7 @@ public:
 
         on.attach (state, onId);
         on.setTooltip (juce::String (info.name) + " on/off");
+        LithiumLookAndFeel::setPowerStyle (on);
         addAndMakeVisible (on);
         addAndMakeVisible (presets);
     }
@@ -552,7 +554,7 @@ public:
     {
         using namespace theme;
         auto header = getLocalBounds().reduced (space::sm, 0).removeFromTop (cardHeaderHeight).translated (0, 2);
-        on.setBounds (header.removeFromLeft (30).withSizeKeepingCentre (30, size::buttonCompact));
+        on.setBounds (header.removeFromLeft (46).withSizeKeepingCentre (46, size::buttonCompact));   // room for the power icon and OFF
         presets.setBounds (header.removeFromRight (size::buttonCompact + 6).withSizeKeepingCentre (size::buttonCompact + 6, size::buttonCompact + 2));
 
         auto area = getLocalBounds().reduced (space::xs).withTrimmedTop (cardHeaderHeight + space::xs);
@@ -620,6 +622,9 @@ public:
                   theme::colours::groupKick);
         addKnobs (limiter, limiterKnobs, { { "Ceiling", params::limitCeiling }, { "Release", params::limitRelease } },
                   theme::colours::groupToms);
+
+        for (auto* b : { &crushOn, &tapeOn, &limiterOn })
+            LithiumLookAndFeel::setPowerStyle (*b);
 
         crushOn.attach (state, params::crushOn);
         tapeOn.attach (state, params::tapeOn);
@@ -713,8 +718,8 @@ public:
         auto content = [] (juce::Component& c) { return c.getLocalBounds().reduced (space::md).withTrimmedTop (cardHeaderHeight); };
         auto onButton = [] (juce::Component& card, juce::Component& button)
         {
-            button.setBounds (card.getLocalBounds().reduced (space::md - 2, 0).removeFromTop (cardHeaderHeight).removeFromRight (38)
-                                  .withSizeKeepingCentre (38, 20).translated (0, 2));
+            button.setBounds (card.getLocalBounds().reduced (space::md - 2, 0).removeFromTop (cardHeaderHeight).removeFromRight (54)
+                                  .withSizeKeepingCentre (54, 20).translated (0, 2));
         };
 
         {

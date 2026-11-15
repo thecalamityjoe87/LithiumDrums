@@ -1,5 +1,6 @@
 #include "ChannelModules.h"
 
+#include "LithiumLookAndFeel.h"
 #include "Theme.h"
 
 namespace lithium
@@ -76,7 +77,7 @@ void Module::layoutHeaderButtons (juce::Component* on, juce::Component* reset)
     }
 
     if (on != nullptr)
-        on->setBounds (row.removeFromRight (38));
+        on->setBounds (row.removeFromRight (54));   // room for the power icon and OFF
 }
 
 //==============================================================================
@@ -95,6 +96,7 @@ EqModule::EqModule (juce::AudioProcessorValueTreeState& s) : Module ("EQ"), stat
 
     reset.setTooltip ("Flatten this channel's EQ");
     reset.onClick = [this] { if (channel.isValid()) params::resetEq (state, channel); };
+    LithiumLookAndFeel::setPowerStyle (on);
 
     for (auto* c : std::initializer_list<juce::Component*> { &graph, &on, &reset, &hpf, &lowFreq, &lowGain, &mid1Freq, &mid1Gain,
                                                              &mid1Q, &mid2Freq, &mid2Gain, &mid2Q, &highFreq, &highGain })
@@ -267,6 +269,7 @@ CompModule::CompModule (juce::AudioProcessorValueTreeState& s)
 
     reset.setTooltip ("Put this channel's compressor back to its defaults");
     reset.onClick = [this] { if (channel.isValid()) params::resetCompressor (state, channel); };
+    LithiumLookAndFeel::setPowerStyle (on);
 
     for (auto* c : std::initializer_list<juce::Component*> { graph.get(), &on, &reset, &meter })
         addAndMakeVisible (c);
@@ -341,6 +344,8 @@ TwoKnobModule::TwoKnobModule (juce::AudioProcessorValueTreeState& s, Kind k)
     second.setArcColour (colour);
     first.setBipolar (kind == Kind::transient);
     second.setBipolar (kind == Kind::transient);
+
+    LithiumLookAndFeel::setPowerStyle (on);
 
     for (auto* c : std::initializer_list<juce::Component*> { &on, &first, &second })
         addAndMakeVisible (c);

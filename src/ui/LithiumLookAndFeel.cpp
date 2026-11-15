@@ -189,13 +189,63 @@ juce::Font LithiumLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonH
     return theme::label (juce::jlimit (9.5f, 14.0f, (float) buttonHeight * 0.5f), theme::Weight::semibold);
 }
 
+namespace
+{
+    const juce::Identifier powerStyleId { "power" };
+
+    /** The power symbol: a stem, and a ring open at the top. Drawn in a
+        24-unit box, the same path as Lithium Studio's icon. */
+    const juce::Path& powerIcon()
+    {
+        static const auto path = juce::Drawable::parseSVGPath ("M12 4v8 M7.5 7a7 7 0 1 0 9 0");
+        return path;
+    }
+}
+
+void LithiumLookAndFeel::setPowerStyle (juce::Button& button)
+{
+    button.getProperties().set (powerStyleId, true);
+    button.repaint();
+}
+
 void LithiumLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool, bool)
 {
-    const auto colour = button.findColour (button.getToggleState() ? juce::TextButton::textColourOnId
-                                                                   : juce::TextButton::textColourOffId);
+    const auto on = button.getToggleState();
+    const auto colour = button.findColour (on ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId);
+    const auto font = getTextButtonFont (button, button.getHeight());
+    constexpr auto tracking = 0.06f;
     g.setColour (button.isEnabled() ? colour : colour.withMultipliedAlpha (0.5f));
-    theme::drawTrackedText (g, button.getButtonText().toUpperCase(), getTextButtonFont (button, button.getHeight()),
-                            0.06f, button.getLocalBounds().toFloat(), juce::Justification::centred);
+
+    if (button.getProperties()[powerStyleId])
+    {
+        // Icon + ON/OFF, centred together as one group. The fit is checked
+        // against OFF, the longer word, so the button doesn't switch styles
+        // as it's clicked.
+        const auto text = juce::String (on ? "ON" : "OFF");
+        const auto iconSize = std::round (font.getHeight() * 1.15f);
+        const auto gap = std::round (iconSize * 0.3f);
+        const auto padding = 6.0f;
+        const auto widest = theme::getTrackedTextWidth ("OFF", font, tracking);
+
+        if (padding * 2.0f + iconSize + gap + widest <= (float) button.getWidth())
+        {
+            const auto textWidth = theme::getTrackedTextWidth (text, font, tracking);
+            auto group = button.getLocalBounds().toFloat().withSizeKeepingCentre (iconSize + gap + textWidth, (float) button.getHeight());
+
+            // Studio strokes its 24-unit icons 2 units wide, scaled with the icon.
+            const auto box = group.removeFromLeft (iconSize).withSizeKeepingCentre (iconSize, iconSize);
+            auto icon = powerIcon();
+            icon.applyTransform (juce::AffineTransform::scale (iconSize / 24.0f).translated (box.getX(), box.getY()));
+            g.strokePath (icon, juce::PathStrokeType (2.0f * iconSize / 24.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+            group.removeFromLeft (gap);
+            theme::drawTrackedText (g, text, font, tracking, group, juce::Justification::centredLeft);
+            return;
+        }
+    }
+
+    theme::drawTrackedText (g, button.getButtonText().toUpperCase(), font, tracking, button.getLocalBounds().toFloat(),
+                            juce::Justification::centred);
 }
 
 //==============================================================================

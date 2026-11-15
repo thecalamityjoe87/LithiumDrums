@@ -34,6 +34,12 @@ public:
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool isMouseOverButton, bool isButtonDown) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
 
+    /** Marks a toggle as an on/off switch for a card or module: it then
+        draws a power icon and ON or OFF (whichever it is), as Lithium
+        Studio's EQ switch does. A button too narrow for that keeps its
+        own text. */
+    static void setPowerStyle (juce::Button&);
+
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
                        int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
     juce::Font getComboBoxFont (juce::ComboBox&) override;
