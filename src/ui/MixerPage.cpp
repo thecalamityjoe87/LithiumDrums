@@ -59,6 +59,16 @@ MixerStrip::MixerStrip (LithiumDrumsProcessor& p, Kind k, int s, const KitInfo* 
     fader.setDoubleClickReturnValue (true, 0.0);
     fader.onValueChange = [this] { repaint (getReadoutArea()); };
     addAndMakeVisible (fader);
+
+    dbEntry.setTitle ("Volume in dB");
+    dbEntry.setFont (theme::mono (theme::type::caption));
+    dbEntry.setJustification (juce::Justification::centred);
+    dbEntry.setIndents (2, 0);
+    dbEntry.setInputRestrictions (7, "-+.0123456789");
+    dbEntry.onReturnKey = [this] { finishDbEntry (true); };
+    dbEntry.onEscapeKey = [this] { finishDbEntry (false); };
+    dbEntry.onFocusLost = [this] { finishDbEntry (true); };
+    addChildComponent (dbEntry);
     addAndMakeVisible (meter);
 
     auto attachFader = [&] (const juce::String& id)
@@ -192,10 +202,43 @@ void MixerStrip::pushLevels (float left, float right)
     meter.push (left, right);
 }
 
-void MixerStrip::mouseDown (const juce::MouseEvent&)
+void MixerStrip::mouseDown (const juce::MouseEvent& e)
 {
     if (onSelect)
         onSelect();
+
+    if (getReadoutArea().contains (e.getPosition()))
+        startDbEntry();
+}
+
+void MixerStrip::mouseMove (const juce::MouseEvent& e)
+{
+    setMouseCursor (getReadoutArea().contains (e.getPosition()) ? juce::MouseCursor::IBeamCursor : juce::MouseCursor::NormalCursor);
+}
+
+void MixerStrip::startDbEntry()
+{
+    const auto db = fader.getValue();
+    dbEntry.setText (db <= params::minVolumeDb + 0.05 ? juce::String() : juce::String (db, 1), false);
+    dbEntry.setBounds (getReadoutArea());
+    dbEntry.setVisible (true);
+    dbEntry.grabKeyboardFocus();
+    dbEntry.selectAll();
+}
+
+void MixerStrip::finishDbEntry (bool keep)
+{
+    if (! dbEntry.isVisible())
+        return;
+
+    dbEntry.setVisible (false);   // first: hiding it takes its focus, which calls this again
+
+    // The fader keeps it within its range, and its attachment tells the
+    // parameter (and the host) as one gesture.
+    const auto text = dbEntry.getText().trim();
+
+    if (keep && text.containsAnyOf ("0123456789"))
+        fader.setValue (text.getDoubleValue(), juce::sendNotificationSync);
 }
 
 juce::Rectangle<int> MixerStrip::getReadoutArea() const

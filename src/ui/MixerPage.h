@@ -42,9 +42,16 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
 
 private:
     juce::Rectangle<int> getReadoutArea() const;
+
+    // Typing a level into the dB readout: click the box, type (e.g. -6 or
+    // 2.5), Enter. Escape leaves it as it was; clicking elsewhere keeps what
+    // was typed.
+    void startDbEntry();
+    void finishDbEntry (bool keep);
     bool hasInserts() const noexcept     { return kind == Kind::piece || kind == Kind::mic; }
 
     juce::String name, tag;
@@ -58,6 +65,7 @@ private:
     ParamToggle transient { "Trn", "Transient shaper on/off" }, saturation { "Sat", "Saturation on/off" };
     ParamToggle mute { "M", "Mute" }, solo { "S", "Solo" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> faderAttachment;   // after the fader it uses
+    juce::TextEditor dbEntry;   // over the dB readout while a level is typed in
 };
 
 /** The top of the Mixer page: the selected channel's EQ, and its fader, pan,
