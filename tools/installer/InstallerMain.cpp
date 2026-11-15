@@ -275,15 +275,21 @@ namespace
             logo::drawMark (g, { 28.0f, 22.0f, 36.0f, 36.0f }, colours::accent, colours::panel);
             const auto bold = label (26.0f, Weight::bold);
             const auto lithiumWidth = getTrackedTextWidth ("LITHIUM", bold, 0.14f);
-            const auto drumsWidth = getTrackedTextWidth ("DRUMS", label (26.0f, Weight::semibold), 0.14f);
             const juce::Rectangle<float> row (80.0f, 16.0f, 400.0f, 30.0f);
             g.setColour (colours::text);
             drawTrackedText (g, "LITHIUM", bold, 0.14f, row, juce::Justification::centredLeft);
             g.setColour (colours::textMuted);
             drawTrackedText (g, "DRUMS", label (26.0f, Weight::semibold), 0.14f, row.withTrimmedLeft (lithiumWidth + 8.0f), juce::Justification::centredLeft);
-            g.setFont (mono (13.0f));
-            g.drawText (LITHIUM_VERSION_STRING, row.withTrimmedLeft (lithiumWidth + drumsWidth + 22.0f).withTrimmedTop (4.0f),
-                        juce::Justification::centredLeft, false);
+            // The version after the wordmark, sitting on the same baseline.
+            {
+                const auto drumsWidth = getTrackedTextWidth ("DRUMS", label (26.0f, Weight::semibold), 0.14f);
+                const auto wordmarkBaseline = row.getCentreY() - bold.getHeight() * 0.5f + bold.getAscent();
+                juce::GlyphArrangement glyphs;
+                glyphs.addLineOfText (mono (13.0f), "v" LITHIUM_VERSION_STRING,
+                                      row.getX() + lithiumWidth + drumsWidth + 16.0f, wordmarkBaseline);
+                glyphs.draw (g);
+            }
+
             g.setFont (body (14.0f));
             g.drawText ("by Isaac Joseph, Calamity Audio", juce::Rectangle<float> (81.0f, 46.0f, 400.0f, 20.0f), juce::Justification::centredLeft, false);
 
