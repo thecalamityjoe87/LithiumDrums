@@ -1,0 +1,308 @@
+Lithium Drums: fix JUCE 9.0.4's Linux drag-out (performExternalDragDropOfFiles)
+under XWayland, which is how every JUCE app runs on a Wayland desktop.
+Applied by cmake/ApplyPatch.cmake from cmake/Dependencies.cmake.
+
+1. Finding the drop target. JUCE followed XQueryPointer's child chain from the
+   root. Under XWayland that chain is empty once the pointer leaves the app's
+   own windows (even over another X11 app), so no target was ever found. Now,
+   when the chain finds nothing, the target is picked from the pointer's root
+   position and the stacking order (as GTK and Qt do), and failing that the
+   compositor's XDnD proxy (GNOME maps one over the Wayland surface under the
+   pointer, but in logical coordinates, so with display scaling it isn't where
+   the position test looks).
+2. Answering TARGETS. GNOME's X11-to-Wayland bridge asks the XdndSelection
+   owner for TARGETS before anything else. JUCE refused, so the bridge had no
+   type to offer the Wayland app and the drop delivered nothing.
+3. Percent-encoding the file URIs. "file://" + path left spaces raw, which
+   makes an invalid text/uri-list entry that file managers reject.
+4. Leaving a target for nothing. targetWindow was kept, so the old target got
+   an XdndLeave on every pointer move. It's now cleared. The type list is also
+   no longer added to again on every drag.
+5. Ending the drag. XdndSelection was never given up, and GNOME keeps its side
+   of an X11-to-Wayland drag going while the source owns it, which could leave
+   the desktop not taking clicks. It's released when the drag ends. A drop the
+   target never answers with XdndFinished no longer blocks later drags forever.
+
+diff --git a/modules/juce_gui_basics/native/juce_DragAndDrop_linux.cpp b/modules/juce_gui_basics/native/juce_DragAndDrop_linux.cpp
+index 3f3116eb7..53daab5b2 100644
+--- a/modules/juce_gui_basics/native/juce_DragAndDrop_linux.cpp
++++ b/modules/juce_gui_basics/native/juce_DragAndDrop_linux.cpp
+@@ -47,6 +47,12 @@ public:
+     //==============================================================================
+     bool isDragging() const noexcept
+     {
++        // A target that never answers a drop with XdndFinished would otherwise
++        // leave the drag "in progress" for good, and every later drag would be
++        // refused. The grab is already gone by then, so give up after a while.
++        if (dragging && dropSentAt != 0 && Time::getMillisecondCounter() - dropSentAt > 5000)
++            return false;
++
+         return dragging;
+     }
+ 
+@@ -70,8 +76,24 @@ public:
+         s.xselection.time      = evt.xselectionrequest.time;
+ 
+         auto* display = getDisplay();
++        const auto targetsAtom = XWindowSystemUtilities::Atoms::getCreating (display, "TARGETS");
+ 
+-        if (allowedTypes.contains (targetType))
++        if (targetType == targetsAtom)
++        {
++            // Answer TARGETS (ICCCM): the types on offer. GNOME's X11-to-Wayland
++            // bridge asks for these before anything else, and without an answer
++            // it has nothing to offer the Wayland app the drop lands in.
++            Array<Atom> targets (allowedTypes);
++            targets.addIfNotAlreadyThere (targetsAtom);
++
++            s.xselection.property = evt.xselectionrequest.property;
++
++            X11Symbols::getInstance()->xChangeProperty (display, evt.xselectionrequest.requestor, evt.xselectionrequest.property,
++                                                        XA_ATOM, 32, PropModeReplace,
++                                                        reinterpret_cast<const unsigned char*> (targets.getRawDataPointer()),
++                                                        targets.size());
++        }
++        else if (allowedTypes.contains (targetType))
+         {
+             s.xselection.property = evt.xselectionrequest.property;
+ 
+@@ -115,6 +137,7 @@ public:
+         if (canDrop)
+         {
+             sendExternalDragAndDropDrop();
++            dropSentAt = jmax (1u, Time::getMillisecondCounter());
+         }
+         else
+         {
+@@ -125,17 +148,17 @@ public:
+ 
+     void handleExternalDragMotionNotify()
+     {
+-        auto* display = getDisplay();
+-
+-        auto newTargetWindow = externalFindDragTargetWindow (X11Symbols::getInstance()
+-                                                               ->xRootWindow (display,
+-                                                                              X11Symbols::getInstance()->xDefaultScreen (display)));
++        auto newTargetWindow = externalFindDragTargetWindow();
+ 
+         if (targetWindow != newTargetWindow)
+         {
+             if (targetWindow != None)
+                 sendExternalDragAndDropLeave();
+ 
++            // Forget the old target, so it isn't sent another XdndLeave on
++            // every move while the pointer is over nothing that takes drops.
++            targetWindow = None;
++            expectingStatus = false;
+             canDrop = false;
+             silentRect = {};
+ 
+@@ -343,12 +366,26 @@ public:
+ 
+     void externalResetDragAndDrop()
+     {
+-        if (dragging)
++        const auto wasDragging = dragging;
++        dragging = false;
++        dropSentAt = 0;
++
++        if (wasDragging)
++        {
+             XWindowSystem::getInstance()->ungrabPointer();
+ 
+-        NullCheckedInvocation::invoke (completionCallback);
++            // Give up XdndSelection once the drag is over. Compositors that
++            // bridge X11 drags to Wayland (GNOME's Mutter) keep their side of
++            // the drag going for as long as the source owns it, which can
++            // leave the desktop not taking clicks.
++            const auto& atoms = getAtoms();
++            XWindowSystemUtilities::ScopedXLock xLock;
+ 
+-        dragging = false;
++            if (X11Symbols::getInstance()->xGetSelectionOwner (getDisplay(), atoms.XdndSelection) == windowH)
++                X11Symbols::getInstance()->xSetSelectionOwner (getDisplay(), atoms.XdndSelection, None, CurrentTime);
++        }
++
++        NullCheckedInvocation::invoke (completionCallback);
+     }
+ 
+     bool externalDragInit (::Window window, bool text, const String& str, std::function<void()>&& cb)
+@@ -357,10 +394,15 @@ public:
+         isText             = text;
+         textOrFiles        = str;
+         targetWindow       = windowH;
++        expectingStatus    = false;
++        canDrop            = false;
++        dropSentAt         = 0;
+         completionCallback = std::move (cb);
+ 
+         auto* display = getDisplay();
+ 
++        // Only this drag's type: it used to be added again on every drag.
++        allowedTypes.clearQuick();
+         allowedTypes.add (XWindowSystemUtilities::Atoms::getCreating (display, isText ? "text/plain" : "text/uri-list"));
+ 
+         XWindowSystemUtilities::ScopedXLock xLock;
+@@ -548,7 +590,38 @@ private:
+         return -1;
+     }
+ 
+-    ::Window externalFindDragTargetWindow (::Window target)
++    /*  The XdndAware window under the pointer, or None.
++
++        On a plain X server, XQueryPointer's child chain leads to it. Under
++        XWayland it doesn't: once the pointer leaves this app's own windows,
++        XWayland reports no child at all, even over another X11 app. So when
++        the child chain finds nothing, the window is picked from the pointer's
++        position and the stacking order instead (as GTK and Qt do), and failing
++        that the compositor's drop proxy is used (see findCompositorDropProxy).
++    */
++    ::Window externalFindDragTargetWindow()
++    {
++        auto* display = getDisplay();
++        auto* x11 = X11Symbols::getInstance();
++        const auto root = x11->xRootWindow (display, x11->xDefaultScreen (display));
++
++        ::Window rootReturn = None, child = None;
++        int rootX = 0, rootY = 0, winX = 0, winY = 0;
++        unsigned int mask = 0;
++
++        if (! x11->xQueryPointer (display, root, &rootReturn, &child, &rootX, &rootY, &winX, &winY, &mask))
++            return None;
++
++        if (const auto w = findAwareAlongPointer (child); w != None)
++            return w;
++
++        if (const auto w = findAwareAt (root, 0, 0, rootX, rootY); w != None)
++            return w;
++
++        return findCompositorDropProxy (root);
++    }
++
++    ::Window findAwareAlongPointer (::Window target)
+     {
+         if (target == None)
+             return None;
+@@ -562,7 +635,100 @@ private:
+ 
+         X11Symbols::getInstance()->xQueryPointer (getDisplay(), target, &phonyWin, &child, &phony, &phony, &phony, &phony, &uphony);
+ 
+-        return externalFindDragTargetWindow (child);
++        return findAwareAlongPointer (child);
++    }
++
++    /*  Looks through parent's children, topmost first, for the viewable one
++        containing (x, y) in root coordinates; (originX, originY) is parent's
++        own origin in root coordinates. Returns that window if it's XdndAware,
++        else whatever this finds inside it. Input-only windows that aren't
++        XdndAware (and have nothing aware inside) are looked through, since
++        they draw nothing the user could be aiming at.
++    */
++    ::Window findAwareAt (::Window parent, int originX, int originY, int x, int y, int depth = 0)
++    {
++        if (depth > 16)
++            return None;
++
++        auto* display = getDisplay();
++        auto* x11 = X11Symbols::getInstance();
++
++        ::Window rootReturn = None, parentReturn = None;
++        ::Window* children = nullptr;
++        unsigned int numChildren = 0;
++
++        if (! x11->xQueryTree (display, parent, &rootReturn, &parentReturn, &children, &numChildren) || children == nullptr)
++            return None;
++
++        ::Window result = None;
++
++        for (auto i = (int) numChildren; --i >= 0;)
++        {
++            XWindowAttributes attr;
++
++            if (! x11->xGetWindowAttributes (display, children[i], &attr) || attr.map_state != IsViewable)
++                continue;
++
++            const auto left = originX + attr.x + attr.border_width;
++            const auto top  = originY + attr.y + attr.border_width;
++
++            if (! Rectangle<int> (left, top, attr.width, attr.height).contains (x, y))
++                continue;
++
++            if (isWindowDnDAware (children[i]))
++            {
++                result = children[i];
++                break;
++            }
++
++            result = findAwareAt (children[i], left, top, x, y, depth + 1);
++
++            if (result != None || attr.c_class != InputOnly)
++                break;
++        }
++
++        x11->xFree (children);
++        return result;
++    }
++
++    /*  Under Wayland, the compositor bridges X11 drags to Wayland apps by
++        mapping an input-only, override-redirect, XdndAware window of its own
++        over the Wayland surface under the pointer, and passing on what it's
++        sent. It only maps that window while the pointer is over a Wayland
++        surface, but it may not be where findAwareAt looks for it: with display
++        scaling, GNOME places it in logical rather than X11 coordinates. So if
++        nothing is found under the pointer and such a window is showing, it's
++        the target.
++    */
++    ::Window findCompositorDropProxy (::Window root)
++    {
++        auto* display = getDisplay();
++        auto* x11 = X11Symbols::getInstance();
++
++        ::Window rootReturn = None, parentReturn = None;
++        ::Window* children = nullptr;
++        unsigned int numChildren = 0;
++
++        if (! x11->xQueryTree (display, root, &rootReturn, &parentReturn, &children, &numChildren) || children == nullptr)
++            return None;
++
++        ::Window result = None;
++
++        for (auto i = (int) numChildren; --i >= 0 && result == None;)
++        {
++            XWindowAttributes attr;
++
++            if (children[i] != windowH
++                && x11->xGetWindowAttributes (display, children[i], &attr)
++                && attr.map_state == IsViewable
++                && attr.override_redirect
++                && attr.c_class == InputOnly
++                && isWindowDnDAware (children[i]))
++                result = children[i];
++        }
++
++        x11->xFree (children);
++        return result;
+     }
+ 
+     void handleDragAndDropDataReceived()
+@@ -591,6 +757,7 @@ private:
+     ::Window windowH = 0, targetWindow = 0, dragAndDropSourceWindow = 0;
+ 
+     int xdndVersion = -1;
++    uint32 dropSentAt = 0;  // when XdndDrop went out (0: none outstanding)
+     bool isText = false, dragging = false, expectingStatus = false, canDrop = false, finishAfterDropDataReceived = false;
+ 
+     Atom dragAndDropCurrentMimeType;
+diff --git a/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp b/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp
+index 892881b09..3a970590b 100644
+--- a/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp
++++ b/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp
+@@ -2985,7 +2985,7 @@ bool XWindowSystem::externalDragFileInit (LinuxComponentPeer* peer, const String
+         if (f.matchesWildcard ("?*://*", false))
+             uriList.add (f);
+         else
+-            uriList.add ("file://" + f);
++            uriList.add (URL (File (f)).toString (false)); // percent-encoded: a raw space makes the URI invalid, and file managers drop it
+     }
+ 
+     return dragState.externalDragInit ((::Window) peer->getNativeHandle(), false, uriList.joinIntoString ("\r\n"), std::move (callback));

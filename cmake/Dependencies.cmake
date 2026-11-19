@@ -11,11 +11,20 @@
 
 include(FetchContent)
 
+# JUCE gets one patch, to its Linux drag-out code (dragging a groove's MIDI
+# into a DAW or file manager). Under XWayland, which is how every JUCE app
+# runs on a Wayland desktop, JUCE couldn't find any drop target outside its
+# own window, and a drag that went nowhere could leave GNOME's desktop not
+# taking clicks. See cmake/patches/juce-linux-drag-out.patch for the details.
+# A local JUCE given with FETCHCONTENT_SOURCE_DIR_JUCE is used as it is,
+# without the patch.
 FetchContent_Declare(JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
     GIT_TAG        9.0.4
     GIT_SHALLOW    TRUE
     GIT_PROGRESS   TRUE
+    PATCH_COMMAND  ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_LIST_DIR}/patches/juce-linux-drag-out.patch
+                                    -P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
     # SYSTEM marks JUCE's headers as system headers, so our strict warning
     # flags apply to our code and not to JUCE's.
     SYSTEM)

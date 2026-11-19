@@ -347,9 +347,15 @@ def cymbal(name, R, loc, rot, china=False, felt=True, parent=None, cname=None):
     if felt:
         top = 0.036 * R / 0.229
         z0 = loc[2] if parent is not None else 0
-        cyl(0.018, 0.01, (o.location.x, o.location.y, z0 + top + 0.006), m='felt', parent=e, cname=cname or name, verts=32)
-        box((0.034, 0.008, 0.012), (o.location.x, o.location.y, z0 + top + 0.018), m='chrome', parent=e, cname=cname or name)
-        cyl(0.004, 0.05, (o.location.x, o.location.y, z0 + top), m='chrome', parent=e, cname=cname or name, verts=12)
+        # A tall top felt and a wing nut (hub and two upright lobes), as on real stands.
+        cx, cy, cn = o.location.x, o.location.y, cname or name
+        cyl(0.016, 0.016, (cx, cy, z0 + top + 0.009), m='felt', parent=e, cname=cn, verts=32)
+        cyl(0.0105, 0.003, (cx, cy, z0 + top + 0.0185), m='chrome', parent=e, cname=cn, verts=32)    # washer
+        cyl(0.006, 0.008, (cx, cy, z0 + top + 0.024), m='chrome', parent=e, cname=cn, verts=24)      # hub
+        for s in (-1, 1):
+            w = blob((0.0072, 0.0018, 0.0065), (cx + s * 0.0098, cy, z0 + top + 0.0275), m='chrome', parent=e, cname=cn)
+            w.rotation_euler = (0, math.radians(-14) * s, 0)   # (R is the radius here)
+        cyl(0.004, 0.064, (cx, cy, z0 + top), m='chrome', parent=e, cname=cn, verts=12)
     return e
 
 # ---------- kit ----------
@@ -368,7 +374,12 @@ hh = empty('hihat', (0.68, 0.42, 0.0), (0, 0, 0))
 cymbal('hihat', 0.178, (0, 0, 0.92), None, felt=False, parent=hh, cname='hihat')
 top = cymbal('hihat', 0.178, (0, 0, 0.945), None, felt=False, parent=hh, cname='hihat')
 cyl(0.004, 0.25, (0, 0, 1.02), m='chrome', parent=hh, cname='hihat', verts=12)
-cyl(0.022, 0.014, (0, 0, 0.985), m='black', parent=hh, cname='hihat', verts=32)
+# Clutch: a felt on the top cymbal, a lock nut, and the clutch body on the
+# pull rod with its wing screw (world coordinates: hh sits at (0.68, 0.42, 0)).
+cyl(0.017, 0.012, (0, 0, 0.985), m='felt', parent=hh, cname='hihat', verts=32)
+cyl(0.0105, 0.006, (0, 0, 0.994), m='chrome', parent=hh, cname='hihat', verts=6)                 # lock nut
+cyl(0.0095, 0.036, (0, 0, 1.015), m='chrome', parent=hh, cname='hihat', verts=32)                # clutch body
+cyl(0.0115, 0.004, (0, 0, 1.031), m='chrome', parent=hh, cname='hihat', verts=32)                # its rim (wing screw: with the hi-hat stand below)
 
 CRASH1 = ((0.34, 0.04, 1.28), (R(-17), R(-10), 0))   # over the rack tom, at crash 2's height
 KIT['crash'] = cymbal('crash', 0.229, *CRASH1)
@@ -438,44 +449,144 @@ def footboard(toe, heel, toe_w, heel_w, thick):
             bm = o.modifiers.new('hole', 'BOOLEAN'); bm.operation = 'DIFFERENCE'; bm.object = c
     return o
 
-def t_bolt(p, out):
-    """A T-handled clamp bolt sticking out of p."""
+def orient(o, x, y, z):
+    """Turn o so its local axes point along x, y and z (world vectors)."""
+    o.rotation_mode = 'QUATERNION'
+    o.rotation_quaternion = Matrix((x, y, z)).transposed().to_quaternion()
+    return o
+
+def wing_bolt(p, out, size=1.0, cname='base'):
+    """A wing screw out of a casting at p, as on real stands: a short threaded
+    stud, a round boss and a flat two-lobed wing whose face is square to the
+    casting's side. About 2.5 cm out in all, like the cowbell's wing nut."""
     p, out = Vector(p), Vector(out).normalized()
-    tip = p + out * 0.034
-    tube(p, tip, 0.0035, m='chrome')
-    bar = Vector((0, 0, 1)) if abs(out.z) < 0.7 else out.cross(Vector((1, 0, 0))).normalized()
-    tube(tip - bar * 0.015, tip + bar * 0.015, 0.0045, m='chrome')
+    up = Vector((0, 0, 1)) if abs(out.z) < 0.7 else out.cross(Vector((1, 0, 0))).normalized()
+    up = (up - out * up.dot(out)).normalized()
+    flat = up.cross(out)
+    boss = p + out * 0.01 * size
+    tube(p, boss, 0.0032 * size, m='chrome', cname=cname)                              # stud
+    ring(boss, 0.0058 * size, 0.006 * size, axis=out, m='chrome', cname=cname)         # boss
+    for s in (-1, 1):                                                                  # the wing's two lobes
+        w = blob((0.0018 * size, 0.0078 * size, 0.0062 * size), boss + out * 0.006 * size + up * s * 0.0082 * size, m='chrome', cname=cname)
+        orient(w, flat, up, out)
+
+def ratchet(p, axis, r, cname='base'):
+    """A ratchet tilter: two toothed discs face to face on axis (the seam
+    between them is the teeth), clamped by a wing screw through the middle."""
+    p, axis = Vector(p), Vector(axis).normalized()
+    w = r * 0.62
+    for s in (-1, 1):
+        ring(p + axis * s * w / 2, r, w - 0.001, axis=axis, m='chrome', verts=40, cname=cname)
+        ring(p + axis * s * (w + 0.001), r * 0.82, 0.003, axis=axis, m='chrome', verts=40, cname=cname)   # stepped face
+    ring(p, r * 0.97, 0.0016, axis=axis, m='black', verts=40, cname=cname)               # the teeth's seam
+    wing_bolt(p + axis * (w + 0.0025), axis, size=r / 0.02, cname=cname)
+
+def ears(p, d, side, gap, length, height, pin=0.0028):
+    """A pair of lugs on a casting with a pivot pin across them: where a leg or
+    brace is bolted on. d points out from the casting, side across the pair."""
+    p, d, side = Vector(p), Vector(d), Vector(side)
+    for s in (-1, 1):
+        o = box((length, 0.0035, height), tuple(p + side * s * gap), m='chrome')
+        orient(o, d, side, d.cross(side).normalized() if d.z else Vector((0, 0, 1)))
+    tube(p - side * (gap + 0.003), p + side * (gap + 0.003), pin, m='chrome')
+    for s in (-1, 1):
+        ring(p + side * s * (gap + 0.003), pin * 1.6, 0.002, axis=side, m='chrome', verts=16)   # bolt head and nut
+
+def rubber_foot(foot, along, r=0.02, up=0.05, width=1.0, cname='base'):
+    """A rubber boot on the end of a leg (both bars of a double leg go into
+    one): a chunky round sleeve along the leg with moulded ribs, cut flat
+    where it stands on the floor. along points down the leg, toward the floor."""
+    foot, along = Vector(foot), Vector(along).normalized()
+    top, bottom = foot - along * up, foot + along * 0.06
+    z = (top - bottom); L = z.length; z.normalize()
+    side = z.cross(Vector((0, 0, 1))).normalized()
+    y = z.cross(side)
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=28, radius1=1.0, radius2=0.94, depth=1.0)
+    # Unit cone -> world: x across the leg pair (wider), y across the leg, z along it.
+    cols = (side * r * width, y * r, z * L)
+    shape = Matrix([[c[k] for c in cols] + [0] for k in range(3)] + [[0, 0, 0, 1]])
+    bmesh.ops.transform(bm, verts=bm.verts, matrix=Matrix.Translation((top + bottom) / 2) @ shape)
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, 0, 0.0004), plane_no=(0, 0, 1), clear_inner=True)
+    bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary], sides=0)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new('foot'); bm.to_mesh(me); bm.free()
+    for f in me.polygons:   # flat sole and top, smooth sides
+        f.use_smooth = abs(f.normal.z) < 0.9 and abs(Vector(f.normal).dot(z)) < 0.9
+    o = bpy.data.objects.new('foot', me); scn.collection.objects.link(o)
+    place(o, None, cname, 'rubber')
+    bev = o.modifiers.new('b', 'BEVEL'); bev.width = 0.005; bev.segments = 3; bev.limit_method = 'ANGLE'
+    for t in (0.3, 0.55):                                          # moulded ribs round the boot
+        ring(top - z * (up * t), r * width * 1.04, 0.003, axis=z, m='rubber', verts=28, cname=cname)
+    ring(top + z * 0.001, r * 0.62, 0.005, axis=z, m='rubber', verts=24, cname=cname)   # the boot's neck round the bars
+    return o
 
 FRONT = (0.45, -1, 0)   # bolts face the camera, as a drummer's tech would set them up for a photo
 
-def tripod(x, y, spread=0.3, hinge=0.34, collar=0.13, facing=90):
+def bar(a, b, wide, thick, side, m='chrome'):
+    """A flat (pressed) steel bar from a to b, its wide face square to side."""
+    a, b, side = Vector(a), Vector(b), Vector(side)
+    z = (b - a); L = z.length; z.normalize()
+    x = (side - z * side.dot(z)).normalized()
+    o = box((thick, wide, L), tuple((a + b) / 2), m=m)
+    return orient(o, x, z.cross(x), z)
+
+def tripod(x, y, spread=0.3, hinge=0.34, collar=None, facing=90):
+    """A double-braced tripod, as on real heavy stands. Each leg is a pair of
+    flat bars, pinned apart between lugs on the hinge casting and meeting in a
+    U at the rubber foot, so side-on a leg reads as one wide bar and end-on as
+    a long, narrow V. Each brace is one flat bar from a collar low on the tube
+    (about as high as the feet) up and out into the gap between its leg's bars,
+    pinned there about 40% of the way down. Returns the collar height."""
+    if collar is None:
+        collar = hinge * 0.22
     c = Vector((x, y, 0))
     ring((x, y, hinge), 0.024, 0.055, m='chrome')                  # leg hinge casting
-    ring((x, y, collar), 0.021, 0.032)                             # sliding brace collar
-    t_bolt((x, y, collar), FRONT)
+    ring((x, y, hinge + 0.0285), 0.019, 0.006, m='chrome')         # its stepped top
+    ring((x, y, collar), 0.02, 0.03, m='chrome')                   # brace collar
+    ring((x, y, collar - 0.017), 0.016, 0.006, m='chrome')         # its stepped foot
+    f = Vector(FRONT).normalized()
     for i in range(3):
         a = R(facing + i * 120)
         d = Vector((math.cos(a), math.sin(a), 0)); side = Vector((-d.y, d.x, 0))
-        top = c + d * 0.026 + Vector((0, 0, hinge - 0.012))
+        top = c + d * 0.03 + Vector((0, 0, hinge - 0.012))
         foot = c + d * spread + Vector((0, 0, 0.018))
-        mid = top.lerp(foot, 0.52)
-        base = c + d * 0.024 + Vector((0, 0, collar))
-        for s in (-1, 1):                                          # double-braced: every leg and brace is a pair
-            off = side * (0.0075 * s)
-            tube(top + off, foot + off, 0.0052, m='chrome')
-            tube(base + off, mid + off, 0.0042, m='chrome')
-        blob((0.008, 0.012, 0.008), mid, m='chrome')               # brace pivot
-        blob((0.022, 0.022, 0.015), foot - Vector((0, 0, 0.004)), m='rubber')
+        base = c + d * 0.026 + Vector((0, 0, collar))
+        T = 0.42
+        mid = top.lerp(foot, T)
+        leg = (foot - top).normalized()
+        for s in (-1, 1):                                          # the leg's two bars: apart at the top, together at the foot
+            bar(top + side * s * 0.012, foot + side * s * 0.0042, 0.013, 0.0065, side)
+        bar(base, mid, 0.011, 0.005, side)                         # the brace, between the leg's bars
+        ears(top, d, side, 0.0175, 0.028, 0.026)                   # leg pinned to the hinge casting
+        ears(base, d, side, 0.0052, 0.02, 0.018, pin=0.0024)       # brace pinned to the collar
+        gap = 0.012 + (0.0042 - 0.012) * T + 0.0045
+        tube(mid - side * gap, mid + side * gap, 0.0024, m='chrome')   # the bolt through leg and brace
+        for s in (-1, 1):
+            ring(mid + side * s * gap, 0.0042, 0.0025, axis=side, m='chrome', verts=16)   # its head and nut
+        rubber_foot(foot, leg)
+    wing_bolt(Vector((x, y, collar)) + f * 0.02, f)
+    return collar
 
 def column(x, y, stages, start=0.11):
-    """Telescoping tube: (top height, radius) per stage, widest first."""
+    """Telescoping tube: (top height, radius) per stage, widest first. Each
+    joint has a chrome height clamp with a wing screw, and a memory lock on the
+    tube above with its own small wing screw."""
     z = start
+    f = Vector(FRONT).normalized()
+    f2 = Vector((-0.8, -0.6, 0))                                   # the memory lock's screw, turned a little from the clamp's
     for i, (top, r) in enumerate(stages):
         tube((x, y, z), (x, y, top), r, m='chrome')
         if i < len(stages) - 1:
-            ring((x, y, top), r + 0.008, 0.034, m='plastic')        # height clamp
-            t_bolt((x, y, top), FRONT)
-            ring((x, y, top + 0.024), stages[i + 1][1] + 0.006, 0.012, m='chrome')   # memory lock
+            r2 = stages[i + 1][1]
+            p = Vector((x, y, top - 0.004))
+            ring(p, r + 0.0065, 0.036, m='chrome', verts=40)        # height clamp
+            for dz in (-0.017, 0.017):
+                ring(p + Vector((0, 0, dz)), r + 0.0085, 0.004, m='chrome', verts=40)   # its rims
+            wing_bolt(p + f * (r + 0.0065), f)
+            ring((x, y, top + 0.024), r2 + 0.0058, 0.013, m='chrome', verts=40)        # memory lock
+            wing_bolt(Vector((x, y, top + 0.024)) + f2 * (r2 + 0.0058), f2, size=0.7)
         z = top - 0.03
     return Vector((x, y, stages[-1][0]))
 
@@ -485,8 +596,8 @@ def stages_to(height):
     return [(0.56, 0.0127), (0.84, 0.0105), (height, 0.009)]
 
 def cymbal_stand(x, y, height, loc, rot, radius, china=False, spread=0.3, facing=90, owner=None):
-    tripod(x, y, spread=spread, facing=facing)
-    top = column(x, y, stages_to(height))
+    collar = tripod(x, y, spread=spread, facing=facing)
+    top = column(x, y, stages_to(height), start=collar - 0.025)
     boom = mark()   # from here on: the boom, which the cymbal's slot picture shows with it
 
     axis = Euler(rot).to_matrix() @ Vector((0, 0, 1))
@@ -505,12 +616,25 @@ def cymbal_stand(x, y, height, loc, rot, radius, china=False, spread=0.3, facing
     pivot = top + Vector((0, 0, 0.03))
     arm = (knuckle - pivot).normalized()
     side = arm.cross(Vector((0, 0, 1))).normalized()
-    ring(pivot, 0.024, 0.04, axis=side, m='chrome')                # boom tilter (ratchet)
-    t_bolt(pivot + side * 0.02, side)
-    ring(knuckle, 0.016, 0.03, axis=side, m='chrome')              # cymbal tilter (ratchet)
-    t_bolt(knuckle + side * 0.015, side)
+    if side.dot(Vector(FRONT)) < 0:                                # wing screws toward the camera
+        side = -side
+    lift = side.cross(arm).normalized()
+    if lift.z < 0:
+        lift = -lift
+    # Boom tilter: a casting on the top tube (a sleeve and a neck) carries a
+    # ratchet; the boom slides through a clamp on the ratchet, locked by a wing screw.
+    ring(top - Vector((0, 0, 0.004)), 0.0135, 0.03, m='chrome', verts=40)   # sleeve on the top tube
+    tube(top + Vector((0, 0, 0.008)), pivot, 0.009, m='chrome')              # neck up to the ratchet
+    ratchet(pivot, side, 0.021)
+    ring(pivot + arm * 0.032, 0.0135, 0.03, axis=arm, m='chrome', verts=32)  # boom clamp
+    wing_bolt(pivot + arm * 0.032 + lift * 0.0135, lift, size=0.85)
+    # Cymbal tilter at the boom's end: an end clamp on the arm, a smaller
+    # ratchet, and a short post up to the threaded rod.
+    ring(knuckle - arm * 0.024, 0.0115, 0.022, axis=arm, m='chrome', verts=32)   # end clamp
+    ratchet(knuckle, side, 0.0155)
+    ring(knuckle - down * 0.019, 0.0072, 0.012, axis=down, m='chrome', verts=6)  # hex nut at the rod's foot
     tube(pivot - arm * 0.17, knuckle - arm * 0.012, 0.0085, m='chrome')   # boom arm
-    ring(pivot - arm * 0.19, 0.017, 0.06, axis=arm, m='chrome')    # counterweight
+    ring(pivot - arm * 0.172, 0.0092, 0.008, axis=arm, m='black', verts=32)   # end cap on the boom's tail
     if owner:
         claim(owner, boom)
 
@@ -526,6 +650,8 @@ cymbal_stand(-1.17, 0.21, 0.96, (-0.90, 0.36, 1.26), CHINA_ROT, 0.229, china=Tru
 # The footboard's toe sits right under the stand; a chain runs straight up
 # from it to the pull rod that comes out of the bottom of the tube.
 hx, hy = 0.68, 0.42
+_f = Vector(FRONT).normalized()
+wing_bolt(Vector((hx, hy, 1.018)) + _f * 0.0095, _f, size=0.8, cname='hihat')   # the clutch's wing screw (on the hi-hat's layer)
 tripod(hx, hy, spread=0.28, hinge=0.36, collar=0.21, facing=300)
 column(hx, hy, [(0.62, 0.0127), (0.925, 0.011)], start=0.19)
 ring((hx, hy, 0.93), 0.028, 0.012, m='felt')                       # bottom cymbal seat
@@ -557,10 +683,9 @@ for i in range(links):                                             # chain: alte
 # Snare: basket stand gripping the bottom hoop.
 m = mark()
 SN_LOC, SN_ROT, SN_R, SN_D = (0.36, 0.42, 0.58), (R(-7), R(-3), 0), 0.178, 0.165
-tripod(0.36, 0.42, spread=0.24, hinge=0.27, collar=0.11)
-column(0.36, 0.42, [(0.36, 0.0127), (0.42, 0.0105)])
-blob((0.019, 0.019, 0.019), (0.36, 0.42, 0.44), m='chrome')        # tilter
-t_bolt((0.36, 0.42, 0.44), FRONT)
+collar = tripod(0.36, 0.42, spread=0.24, hinge=0.27)
+column(0.36, 0.42, [(0.36, 0.0127), (0.42, 0.0105)], start=collar - 0.025)
+ratchet((0.36, 0.42, 0.44), FRONT, 0.018)                          # tilter, its face to the camera
 hub = Vector((0.36, 0.42, 0.462))
 ring(hub, 0.024, 0.016, m='chrome')
 for i in range(3):
@@ -569,7 +694,13 @@ for i in range(3):
     elbow = Vector((hub.x + (tip.x - hub.x) * 0.92, hub.y + (tip.y - hub.y) * 0.92, tip.z - 0.03))
     tube(hub, elbow, 0.0055, m='chrome')
     tube(elbow, tip, 0.0055, m='chrome')
-    blob((0.009, 0.009, 0.012), tip, m='rubber')
+    # Rubber gripper: an L-shaped boot over the arm's end, its upright lip
+    # standing outside the bottom hoop to hold the drum.
+    axis = Euler(SN_ROT).to_matrix() @ Vector((0, 0, 1))
+    radial = (tip - to_world(SN_LOC, SN_ROT, (0, 0, -SN_D / 2 - 0.003))).normalized()
+    heel = tip + radial * 0.008
+    bar(elbow.lerp(tip, 0.45), heel + radial * 0.002, 0.017, 0.011, axis, m='rubber')
+    bar(heel - axis * 0.005, heel + axis * 0.038, 0.017, 0.009, radial, m='rubber')
 
 claim('snare', m)
 
@@ -601,7 +732,8 @@ for loc, rot, r, a, sx in (((0.165, 0.10, 0.84), (R(-13), R(-7), 0), 0.127, 135,
     tube(elbow, bracket, 0.0095, m='chrome')
     box((0.03, 0.03, 0.06), tuple(bracket), m='chrome')
     ring(bracket - Vector((0, 0, 0.038)), 0.014, 0.012, m='chrome')   # memory lock
-    t_bolt(bracket, (sx, -0.3, 0))
+    out = Vector((sx, -0.3, 0)).normalized()
+    wing_bolt(bracket + out * 0.016, out)
 
 # Floor tom legs, through brackets on the shell.
 m = mark()
@@ -610,12 +742,12 @@ for deg in (210, 330, 90):
     a = R(deg); d = Vector((math.cos(a), math.sin(a), 0))
     bracket = to_world(FT_LOC, FT_ROT, ((FT_R + 0.016) * math.cos(a), (FT_R + 0.016) * math.sin(a), 0.07))
     o = box((0.03, 0.032, 0.05), tuple(bracket), m='chrome'); o.rotation_euler = (0, 0, a)
-    t_bolt(bracket + d * 0.015, d)
+    wing_bolt(bracket + d * 0.015, d)
     top = bracket + d * 0.024 + Vector((0, 0, 0.05))
     foot = Vector((FT_LOC[0], FT_LOC[1], 0.018)) + d * (FT_R + 0.1)
     tube(top, foot, 0.0064, m='chrome')
     blob((0.0075, 0.0075, 0.006), top, m='chrome')
-    blob((0.016, 0.016, 0.013), foot - Vector((0, 0, 0.004)), m='rubber')
+    rubber_foot(foot, foot - top, r=0.014, up=0.04)
 
 claim('floor', m)
 
@@ -625,11 +757,12 @@ for sx in (1, -1):
     a = R(28)
     bracket = Vector((sx * 0.293 * math.cos(a), -0.11, 0.31 - 0.293 * math.sin(a)))
     box((0.03, 0.06, 0.045), tuple(bracket), m='chrome')
-    t_bolt(bracket, (sx, -0.25, 0.2))
+    out = Vector((sx, -0.25, 0.2)).normalized()
+    wing_bolt(bracket + out * 0.016, out)
     foot = Vector((sx * 0.34, -0.30, 0.016))                       # just outside the shell and a little forward: steep, as real spurs stand
     d = (foot - bracket).normalized()
     tube(bracket - d * 0.05, foot, 0.0085, m='chrome')
-    blob((0.016, 0.016, 0.013), foot - Vector((0, 0, 0.004)), m='rubber')
+    rubber_foot(foot, d, r=0.014, up=0.04)
 
 claim('kick', m)
 
